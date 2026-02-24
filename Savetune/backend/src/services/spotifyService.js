@@ -40,11 +40,13 @@ class SpotifyService {
         trackLinks.forEach((link) => {
           const href = link.getAttribute('href') || '';
           const trackId = href.split('/track/')[1]?.split('?')[0];
-          if (!trackId || seen.has(trackId)) return;
-          seen.add(trackId);
+          if (!href) return;
+          if (trackId && seen.has(trackId)) return;
+          if (trackId) seen.add(trackId);
 
           // Título
           const title = link.textContent.trim() || 'Unknown';
+          if (!title) return;
 
           // Intentar localizar la fila/row de la canción, pero si falla seguimos con datos mínimos
           let row =
@@ -54,6 +56,7 @@ class SpotifyService {
 
           // Artistas
           let artists = 'Unknown Artist';
+          let album = 'Unknown Album';
           if (row) {
             const artistLinks = row.querySelectorAll('a[href*="/artist/"]');
             const artistText = Array.from(artistLinks)
@@ -62,6 +65,14 @@ class SpotifyService {
               .join(', ');
             if (artistText) {
               artists = artistText;
+            }
+
+            const albumLink = row.querySelector('a[href*="/album/"]');
+            if (albumLink) {
+              const albumText = albumLink.textContent.trim();
+              if (albumText) {
+                album = albumText;
+              }
             }
           }
 
@@ -86,9 +97,10 @@ class SpotifyService {
           }
 
           songs.push({
-            id: trackId,
+            id: trackId || href,
             title,
             artist: artists,
+            album,
             imageUrl,
             duration,
           });
