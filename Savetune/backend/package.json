@@ -8,17 +8,19 @@
     "start": "node src/app.js"
   },
   "dependencies": {
+    "ytdl-core": "^4.11.5",
     "compression": "^1.8.0",
     "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "googleapis": "^169.0.0",
     "helmet": "^8.1.0",
-    "puppeteer": "^24.37.5",
-    "ytdl-core": "^4.11.5"
+    "puppeteer": "^24.37.5"
   },
   "overrides": {
     "minimatch": "^10.1.2",
     "glob": "^13.0.6",
-    "rimraf": "^6.0.1"
+    "rimraf": "^6.0.1",
+    "undici": "^6.23.0"
   }
 }
