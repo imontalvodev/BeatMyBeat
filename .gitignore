@@ -1,0 +1,34 @@
+# Node / backend
+node_modules/
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+.npmrc
+dist/
+build/
+.vercel/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Android / Gradle
+**/.gradle/
+**/build/
+local.properties
+*.iml
+.idea/
+captures/
+.cxx/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / Cursor
+.vscode/
+.history/
+.cursor/
+

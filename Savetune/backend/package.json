@@ -1,0 +1,24 @@
+{
+  "name": "savetune-backend",
+  "version": "1.0.0",
+  "description": "Backend API for SaveTune (Spotify playlist scraper + YouTube MP3 downloader)",
+  "main": "src/app.js",
+  "scripts": {
+    "dev": "node src/app.js",
+    "start": "node src/app.js"
+  },
+  "dependencies": {
+    "compression": "^1.8.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "googleapis": "^169.0.0",
+    "helmet": "^8.1.0",
+    "puppeteer": "^24.37.5",
+    "ytdl-core": "^4.11.5"
+  },
+  "overrides": {
+    "minimatch": "^10.1.2",
+    "glob": "^13.0.6",
+    "rimraf": "^6.0.1"
+  }
+}
