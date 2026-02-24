@@ -44,54 +44,78 @@ class SpotifyService {
           if (trackId && seen.has(trackId)) return;
           if (trackId) seen.add(trackId);
 
-          // Título
-          const title = link.textContent.trim() || 'Unknown';
-          if (!title) return;
-
-          // Intentar localizar la fila/row de la canción, pero si falla seguimos con datos mínimos
+          // Intentar localizar la fila/row de la canción
           let row =
             link.closest('[data-testid="tracklist-row"]') ||
             link.closest('div[role="row"]') ||
             link.parentElement?.parentElement;
 
+          // Título: priorizar elementos específicos dentro de la fila
+          let title = 'Unknown';
+          if (row) {
+            const titleEl =
+              row.querySelector('[data-testid="track-name"]') ||
+              row.querySelector('a[href*="/track/"]') ||
+              row.querySelector('span');
+            if (titleEl && titleEl.textContent.trim()) {
+              title = titleEl.textContent.trim();
+            }
+          }
+          if (title === 'Unknown') {
+            const fromLink = link.textContent.trim();
+            if (fromLink) title = fromLink;
+          }
+          if (!title || title === 'Unknown') return;
+
           // Artistas
           let artists = 'Unknown Artist';
-          let album = 'Unknown Album';
           if (row) {
-            const artistLinks = row.querySelectorAll('a[href*="/artist/"]');
-            const artistText = Array.from(artistLinks)
+            const artistLinks =
+              row.querySelectorAll('a[href*="/artist/"]') ||
+              row.querySelectorAll('span a');
+            const artistText = Array.from(artistLinks || [])
               .map((a) => a.textContent.trim())
               .filter(Boolean)
               .join(', ');
             if (artistText) {
               artists = artistText;
             }
+          }
 
-            const albumLink = row.querySelector('a[href*="/album/"]');
-            if (albumLink) {
-              const albumText = albumLink.textContent.trim();
-              if (albumText) {
-                album = albumText;
-              }
+          // Álbum
+          let album = 'Unknown Album';
+          if (row) {
+            const albumLink =
+              row.querySelector('a[href*="/album/"]') ||
+              row.querySelector('[data-testid="album-link"]');
+            if (albumLink && albumLink.textContent.trim()) {
+              album = albumLink.textContent.trim();
             }
           }
 
           // Imagen
           let imageUrl = '';
           if (row) {
-            const img = row.querySelector('img');
+            const img =
+              row.querySelector('img') || document.querySelector('figure img');
             if (img) imageUrl = img.src;
           }
 
           // Duración
           let duration = 0;
           if (row) {
-            const durationEl = row.querySelector('[data-testid="duration"]');
-            if (durationEl) {
+            const durationEl =
+              row.querySelector('[data-testid="duration"]') ||
+              row.querySelector('div[aria-colindex="5"] span');
+            if (durationEl && durationEl.textContent.trim()) {
               const timeStr = durationEl.textContent.trim();
               const parts = timeStr.split(':');
               if (parts.length === 2) {
-                duration = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                const mins = parseInt(parts[0], 10);
+                const secs = parseInt(parts[1], 10);
+                if (!Number.isNaN(mins) && !Number.isNaN(secs)) {
+                  duration = mins * 60 + secs;
+                }
               }
             }
           }
