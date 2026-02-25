@@ -2,4 +2,7 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Color para el botón PLAY ALL TRACKS (similar a teal_200 por defecto) -->
+    <color name="teal_200">#03DAC5</color>
 </resources>
