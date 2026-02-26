@@ -227,6 +227,16 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         "outtmpl": out_tmpl,
         "quiet": True,
         "no_warnings": True,
+        # Usar ffmpeg para extraer siempre audio en MP3
+        "prefer_ffmpeg": True,
+        "keepvideo": False,
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }
+        ],
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
