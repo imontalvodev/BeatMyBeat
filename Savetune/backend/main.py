@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 
 from services.spotify import SpotifyPlaylistScraper
 import yt_dlp
+from mutagen import File as MutagenFile
 
 
 app = FastAPI(title="SaveTune Python Backend")
@@ -230,12 +231,22 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         # Usar ffmpeg para extraer siempre audio en MP3
         "prefer_ffmpeg": True,
         "keepvideo": False,
+        # Escribir metadatos + portada en el MP3
+        "writethumbnail": True,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
                 "preferredquality": "192",
-            }
+            },
+            {
+                # Copia título / artista / álbum al ID3
+                "key": "FFmpegMetadata",
+            },
+            {
+                # Inserta la miniatura de YouTube como carátula del MP3
+                "key": "EmbedThumbnail",
+            },
         ],
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -245,7 +256,8 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         raise ValueError("No se pudo obtener información del vídeo")
 
     video_id = info.get("id") or "unknown"
-    title = (info.get("title") or "audio").replace("/", "-").replace("\\", "-")[:200]
+    raw_title = info.get("title") or "audio"
+    title_safe = raw_title.replace("/", "-").replace("\\", "-")[:200]
 
     # Buscar el archivo descargado (m4a/webm/mp3)
     path_file = ""
@@ -264,6 +276,33 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         raise ValueError("No se encontró el archivo de audio descargado")
 
     ext = os.path.splitext(path_file)[1].lstrip(".")
+
+    # Enriquecer metadatos ID3 del MP3 (título, artista, álbum) usando info de YouTube
+    if ext == "mp3":
+        track_title = raw_title
+        artist = info.get("artist") or info.get("uploader") or ""
+        album = info.get("album") or ""
+
+        # Heurística: si el título tiene formato "Tema - Artista"
+        if " - " in raw_title and not artist:
+            left, right = raw_title.rsplit(" - ", 1)
+            left, right = left.strip(), right.strip()
+            # Si la parte derecha no es ridículamente corta/larga, la tomamos como artista
+            if 2 <= len(right) <= 40:
+                track_title, artist = left, right
+
+        try:
+            audio = MutagenFile(path_file, easy=True)
+            if audio is not None:
+                audio["title"] = [track_title]
+                if artist:
+                    audio["artist"] = [artist]
+                if album:
+                    audio["album"] = [album]
+                audio.save()
+        except Exception:
+            # Si algo falla con los metadatos, seguimos pero al menos el MP3 existe
+            pass
     media_type = (
         "audio/mpeg"
         if ext == "mp3"
@@ -283,7 +322,7 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
             except OSError:
                 pass
 
-    filename = f"{title}.{ext}"
+    filename = f"{title_safe}.{ext}"
     return filename, stream_file(), media_type
 
 

@@ -10,6 +10,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.provider.MediaStore
 import android.util.Log
+import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
+import android.graphics.BitmapFactory
 import java.io.File
 
 data class Song(
@@ -34,6 +37,8 @@ class MainActivity : AppCompatActivity() {
 
     private var isPlaying: Boolean = false
     private var songs: List<Song> = emptyList()
+    private var mediaPlayer: MediaPlayer? = null
+    private var currentSong: Song? = null
 
     private val PERMISSION_REQUEST_CODE = 1001
     private val TAG = "SaveTune"
@@ -45,6 +50,18 @@ class MainActivity : AppCompatActivity() {
         bindViews()
         checkPermissionsAndLoad()
         setupPlayerBar()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Cada vez que volvemos al Home, reescaneamos por si hay MP3 nuevos
+        checkPermissionsAndLoad()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mediaPlayer?.release()
+        mediaPlayer = null
     }
 
     private fun bindViews() {
@@ -128,7 +145,7 @@ class MainActivity : AppCompatActivity() {
 
         setupList()
     }
-
+    
     private fun loadDownloadedSongs(): List<Song> {
         val result = mutableListOf<Song>()
 
@@ -141,8 +158,16 @@ class MainActivity : AppCompatActivity() {
             result.addAll(loadFromFileSystem())
         }
 
-        Log.d(TAG, "Total de canciones cargadas: ${result.size}")
-        return result
+        // Eliminar duplicados:
+        // - si tenemos File, usamos nombre + tamaño
+        // - si no, usamos título normalizado + duración
+        val distinct = result.distinctBy { song ->
+            song.file?.let { f -> "${f.name.lowercase()}-${f.length()}" }
+                ?: "${song.title.lowercase()}-${song.durationSeconds}"
+        }
+
+        Log.d(TAG, "Total de canciones cargadas (sin duplicados): ${distinct.size}")
+        return distinct
     }
 
     private fun loadFromFileSystem(): List<Song> {
@@ -232,9 +257,9 @@ class MainActivity : AppCompatActivity() {
                     try {
                         val id = it.getLong(idIdx)
                         val displayName = it.getString(nameIdx) ?: ""
-                        val title = it.getString(titleIdx)?.takeIf { t -> t.isNotBlank() }
+                        var title = it.getString(titleIdx)?.takeIf { t -> t.isNotBlank() }
                             ?: displayName.substringBeforeLast('.')
-                        val artist = it.getString(artistIdx)?.takeIf { a -> a.isNotBlank() && a != "<unknown>" }
+                        var artist = it.getString(artistIdx)?.takeIf { a -> a.isNotBlank() && a != "<unknown>" }
                             ?: "Unknown Artist"
                         val album = it.getString(albumIdx) ?: ""
                         val durationMs = it.getLong(durationIdx)
@@ -246,6 +271,24 @@ class MainActivity : AppCompatActivity() {
                         } catch (e: Exception) {
                             Log.w(TAG, "Error creando File para: $fullPath", e)
                             null
+                        }
+
+                        // Fallback: si seguimos con "Unknown Artist", intentar extraer de "Título - Artista"
+                        if (artist == "Unknown Artist") {
+                            val source = title.ifBlank { displayName.substringBeforeLast('.') }
+                            if (source.contains(" - ")) {
+                                val parts = source.split(" - ")
+                                if (parts.size >= 2) {
+                                    val maybeArtist = parts.last().trim()
+                                    val maybeTitle = parts.dropLast(1).joinToString(" - ").trim()
+                                    if (maybeArtist.length in 2..40) {
+                                        artist = maybeArtist
+                                        if (maybeTitle.isNotBlank()) {
+                                            title = maybeTitle
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         val song = Song(
@@ -291,8 +334,7 @@ class MainActivity : AppCompatActivity() {
 
         val adapter = object : ArrayAdapter<Song>(
             this,
-            android.R.layout.simple_list_item_2,
-            android.R.id.text1,
+            R.layout.item_song,
             songs
         ) {
             override fun getView(
@@ -300,23 +342,38 @@ class MainActivity : AppCompatActivity() {
                 convertView: android.view.View?,
                 parent: android.view.ViewGroup
             ): android.view.View {
-                val view = super.getView(position, convertView, parent)
-                val titleView = view.findViewById<TextView>(android.R.id.text1)
-                val subtitleView = view.findViewById<TextView>(android.R.id.text2)
+                val view = convertView ?: layoutInflater.inflate(R.layout.item_song, parent, false)
+
+                val titleView = view.findViewById<TextView>(R.id.txtSongTitle)
+                val artistView = view.findViewById<TextView>(R.id.txtSongArtist)
+                val artView = view.findViewById<ImageView>(R.id.imgSongArt)
 
                 val song = getItem(position)
                 if (song != null) {
                     titleView.text = song.title
-                    val subtitle = buildString {
-                        append(song.artist)
-                        if (song.album.isNotBlank()) {
-                            append(" • ${song.album}")
+                    artistView.text = song.artist
+
+                    // Intentar cargar la carátula embebida en el MP3 (si existe)
+                    val file = song.file
+                    if (file != null && file.exists()) {
+                        try {
+                            val mmr = MediaMetadataRetriever()
+                            mmr.setDataSource(file.absolutePath)
+                            val art = mmr.embeddedPicture
+                            if (art != null) {
+                                val bmp = BitmapFactory.decodeByteArray(art, 0, art.size)
+                                artView.setImageBitmap(bmp)
+                            } else {
+                                artView.setImageResource(R.mipmap.ic_launcher_round)
+                            }
+                            mmr.release()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "No se pudo leer la carátula de ${file.name}", e)
+                            artView.setImageResource(R.mipmap.ic_launcher_round)
                         }
-                        if (song.durationSeconds > 0) {
-                            append(" • ${formatDuration(song.durationSeconds)}")
-                        }
+                    } else {
+                        artView.setImageResource(R.mipmap.ic_launcher_round)
                     }
-                    subtitleView.text = subtitle
                 }
                 return view
             }
@@ -343,22 +400,75 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupPlayerBar() {
         btnPlayPause.setOnClickListener {
-            isPlaying = !isPlaying
-            btnPlayPause.setImageResource(
-                if (isPlaying) android.R.drawable.ic_media_pause
-                else android.R.drawable.ic_media_play
-            )
-            Log.d(TAG, "Play/Pause - isPlaying: $isPlaying")
+            val mp = mediaPlayer
+            if (mp == null) {
+                // Si no hay reproductor aún pero ya hay canción seleccionada, empezamos a reproducirla
+                val song = currentSong
+                if (song != null) {
+                    playSong(song)
+                } else {
+                    Toast.makeText(this, "Selecciona una canción para reproducir", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                if (mp.isPlaying) {
+                    mp.pause()
+                    isPlaying = false
+                    btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                    Log.d(TAG, "Pausa reproducción")
+                } else {
+                    mp.start()
+                    isPlaying = true
+                    btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                    Log.d(TAG, "Reanuda reproducción")
+                }
+            }
         }
     }
 
     private fun updateCurrentTrack(song: Song) {
         txtCurrentTitle.text = song.title
         txtCurrentArtist.text = song.artist
-        isPlaying = true
-        btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+        currentSong = song
+        playSong(song)
 
-        // TODO: Cargar carátula del álbum si está disponible
-        // imgCurrentArt.setImageBitmap(...)
+        // TODO: Cargar carátula del álbum si está disponible en la barra inferior también
+        // (por ahora usamos solo el icono por defecto)
+    }
+
+    private fun playSong(song: Song) {
+        val file = song.file
+        if (file == null || !file.exists()) {
+            Toast.makeText(this, "Archivo de audio no encontrado", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Liberar reproductor anterior si lo hubiera
+        mediaPlayer?.release()
+        mediaPlayer = null
+
+        val mp = MediaPlayer()
+        mediaPlayer = mp
+        try {
+            mp.setDataSource(file.absolutePath)
+            mp.setOnPreparedListener {
+                it.start()
+                isPlaying = true
+                btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                Log.d(TAG, "Reproduciendo: ${song.title}")
+            }
+            mp.setOnCompletionListener {
+                isPlaying = false
+                btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                Log.d(TAG, "Fin de pista: ${song.title}")
+            }
+            mp.prepareAsync()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al reproducir ${file.name}", e)
+            Toast.makeText(this, "No se pudo reproducir la canción", Toast.LENGTH_SHORT).show()
+            mp.release()
+            mediaPlayer = null
+            isPlaying = false
+            btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+        }
     }
 }
