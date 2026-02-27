@@ -1,6 +1,7 @@
 package com.imontalvodev.savetune
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -13,6 +14,8 @@ import android.util.Log
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.graphics.BitmapFactory
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
 import java.io.File
 
 data class Song(
@@ -34,6 +37,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtCurrentTitle: TextView
     private lateinit var txtCurrentArtist: TextView
     private lateinit var btnPlayPause: ImageButton
+    private lateinit var btnMenuMain: ImageButton
+    private lateinit var drawerLayout: DrawerLayout
+    private lateinit var navPlayerMain: TextView
+    private lateinit var navDownloadMain: TextView
 
     private var isPlaying: Boolean = false
     private var songs: List<Song> = emptyList()
@@ -65,6 +72,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
+        drawerLayout = findViewById(R.id.drawerLayoutMain)
         txtPlaylistName = findViewById(R.id.txtPlaylistName)
         txtPlaylistSubtitle = findViewById(R.id.txtPlaylistSubtitle)
         listSongs = findViewById(R.id.listSongs)
@@ -74,6 +82,27 @@ class MainActivity : AppCompatActivity() {
         txtCurrentTitle = findViewById(R.id.txtCurrentTitle)
         txtCurrentArtist = findViewById(R.id.txtCurrentArtist)
         btnPlayPause = findViewById(R.id.btnPlayPause)
+        btnMenuMain = findViewById(R.id.btnMenuMain)
+        navPlayerMain = findViewById(R.id.navPlayerMain)
+        navDownloadMain = findViewById(R.id.navDownloadMain)
+
+        setupMenu()
+    }
+
+    private fun setupMenu() {
+        btnMenuMain.setOnClickListener {
+            drawerLayout.openDrawer(GravityCompat.START)
+        }
+
+        navPlayerMain.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.START)
+            // Ya estamos en Player
+        }
+
+        navDownloadMain.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.START)
+            startActivity(Intent(this, DownloadActivity::class.java))
+        }
     }
 
     private fun checkPermissionsAndLoad() {
