@@ -180,6 +180,20 @@ class SpotifyPlaylistScraper:
             canciones = []
             track_ids_vistos = set()
 
+            # Intentar localizar el encabezado de "Recomendaciones" para saber
+            # a partir de qué punto empiezan las sugerencias (no forman parte de la playlist)
+            recomendaciones_y = None
+            try:
+                recomendaciones_header = self.driver.find_element(
+                    By.XPATH,
+                    "//*[normalize-space(text())='Recomendaciones' or normalize-space(text())='Recomendations' or normalize-space(text())='Recommendations']"
+                )
+                recomendaciones_y = recomendaciones_header.location.get("y", None)
+                print(f"📍 Encabezado 'Recomendaciones' localizado en Y={recomendaciones_y}")
+            except Exception:
+                # Si no encontramos el encabezado, simplemente no aplicamos este filtro adicional
+                print("ℹ️ No se encontró encabezado de 'Recomendaciones', se procesará todo el listado")
+
             # Encontrar todos los enlaces de tracks
             track_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
 
@@ -215,6 +229,28 @@ class SpotifyPlaylistScraper:
 
                     if not row:
                         continue
+
+                    # Si conocemos la posición Y del bloque de "Recomendaciones",
+                    # descartamos cualquier fila que esté por debajo -> es sugerencia, no parte de la playlist
+                    if recomendaciones_y is not None:
+                        try:
+                            row_y = row.location.get("y", 0)
+                            if row_y >= recomendaciones_y:
+                                # Esta fila ya pertenece a la sección de recomendaciones
+                                continue
+                        except Exception:
+                            pass
+
+                    # Filtrar recomendaciones con botón "Añadir" / "Add" por si acaso
+                    try:
+                        add_buttons = row.find_elements(
+                            By.XPATH,
+                            ".//button[normalize-space(text())='Añadir' or normalize-space(text())='Add']"
+                        )
+                        if add_buttons:
+                            continue
+                    except Exception:
+                        pass
 
                     # Título
                     titulo = "Unknown"
