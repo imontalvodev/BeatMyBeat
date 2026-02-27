@@ -2,8 +2,13 @@
 
 import os
 import tempfile
-from typing import Generator
+import time
+import re
+import spotipy
+from typing import Generator, List, Dict, Any
 
+import requests
+from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
@@ -12,6 +17,16 @@ from services.spotify import SpotifyPlaylistScraper
 import yt_dlp
 from mutagen import File as MutagenFile
 
+# Intentar importar spotipy para OAuth
+try:
+    from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
+    SPOTIPY_AVAILABLE = True
+except ImportError:
+    SPOTIPY_AVAILABLE = False
+    print("⚠️ spotipy no está instalado. Solo funcionará el scraper de Selenium.")
+
+
+load_dotenv()  # Carga variables desde .env en el directorio del backend
 
 app = FastAPI(title="SaveTune Python Backend")
 
@@ -22,6 +37,200 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- Spotify Web API ---
+
+_SPOTIFY_TOKEN: Dict[str, Any] | None = None
+_SPOTIFY_CLIENT: Any = None
+
+
+def _get_spotify_credentials() -> tuple[str, str] | None:
+    client_id = os.environ.get("SPOTIFY_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "").strip()
+    if not client_id or not client_secret:
+        return None
+    return client_id, client_secret
+
+
+def _extract_playlist_id(url: str) -> str | None:
+    if "playlist/" in url:
+        m = re.search(r"playlist/([a-zA-Z0-9]+)", url)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _get_spotify_client() -> Any:
+    """
+    Obtiene cliente de Spotify usando Client Credentials.
+    Cachea el cliente para reutilizarlo.
+    """
+    global _SPOTIFY_CLIENT
+
+    if not SPOTIPY_AVAILABLE:
+        return None
+
+    if _SPOTIFY_CLIENT:
+        return _SPOTIFY_CLIENT
+
+    creds = _get_spotify_credentials()
+    if not creds:
+        print("⚠️ Spotify API desactivada: faltan SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET")
+        return None
+
+    client_id, client_secret = creds
+
+    try:
+        auth_manager = SpotifyClientCredentials(
+            client_id=client_id,
+            client_secret=client_secret
+        )
+        _SPOTIFY_CLIENT = spotipy.Spotify(auth_manager=auth_manager)
+        print("✅ Cliente de Spotify inicializado con Client Credentials")
+        return _SPOTIFY_CLIENT
+    except Exception as e:
+        print(f"❌ Error inicializando cliente de Spotify: {e}")
+        return None
+
+
+def _fetch_playlist_via_spotipy(url: str) -> Dict[str, Any] | None:
+    """
+    Usa spotipy con Client Credentials para obtener playlist.
+    Funciona con playlists públicas sin necesidad de OAuth de usuario.
+    """
+    sp = _get_spotify_client()
+    if not sp:
+        return None
+
+    playlist_id = _extract_playlist_id(url)
+    if not playlist_id:
+        return None
+
+    try:
+        print(f"📡 Obteniendo playlist {playlist_id} via Spotify API...")
+
+        # Obtener información básica de la playlist
+        playlist = sp.playlist(playlist_id, fields='name,description,owner,external_urls,images,tracks.total,public')
+
+        playlist_name = playlist.get('name', 'Unknown Playlist')
+        total = playlist['tracks']['total']
+        is_public = playlist.get('public', False)
+
+        print(f"📀 Playlist: {playlist_name}")
+        print(f"🎵 Total canciones: {total}")
+        print(f"🔓 Pública: {is_public}")
+
+        # Obtener todas las canciones con paginación
+        canciones = []
+        offset = 0
+        limit = 100
+
+        while offset < total:
+            results = sp.playlist_items(
+                playlist_id,
+                fields='items(track(id,name,artists,album,duration_ms,external_urls,preview_url)),next,total',
+                limit=limit,
+                offset=offset
+            )
+
+            print(f"   📦 Obtenidas {min(offset + limit, total)}/{total} canciones...")
+
+            for item in results['items']:
+                if not item['track'] or item['track']['id'] is None:
+                    continue
+
+                track = item['track']
+
+                artists = ', '.join([artist['name'] for artist in track.get('artists', [])])
+                album_data = track.get('album', {})
+                images = album_data.get('images', [])
+
+                canciones.append({
+                    'id': track['id'],
+                    'title': track.get('name', 'Unknown'),
+                    'artist': artists or 'Unknown Artist',
+                    'album': album_data.get('name', 'Unknown Album'),
+                    'imageUrl': images[0]['url'] if images else '',
+                    'duration': track.get('duration_ms', 0) // 1000,
+                })
+
+            offset += limit
+
+        print(f"✅ Se obtuvieron {len(canciones)} canciones via Spotify API")
+
+        return {
+            'success': True,
+            'playlist': {
+                'name': playlist_name,
+                'totalTracks': len(canciones),
+            },
+            'songs': canciones
+        }
+
+    except spotipy.exceptions.SpotifyException as e:
+        error_msg = str(e)
+        print(f"❌ Error de Spotify API: {error_msg}")
+
+        if "403" in error_msg:
+            print("⚠️ Error 403: La playlist puede ser privada o hay problemas de configuración")
+            print("💡 Verifica tu app en https://developer.spotify.com/dashboard")
+        elif "404" in error_msg:
+            print("⚠️ Error 404: Playlist no encontrada")
+
+        return None
+    except Exception as e:
+        print(f"❌ Error inesperado obteniendo playlist: {e}")
+        return None
+
+
+def _fetch_playlist_via_scraper(url: str) -> Dict[str, Any] | None:
+    """
+    Fallback: usa Selenium para scrapear la playlist.
+    Incluye lógica para omitir la sección de "Recomendaciones".
+    """
+    print("🔄 Usando scraper de Selenium como fallback...")
+
+    scraper = SpotifyPlaylistScraper(headless=True)
+    try:
+        result = scraper.obtener_canciones_playlist(url)
+    finally:
+        scraper.cerrar_driver()
+
+    if not result.get("success"):
+        return None
+
+    playlist = result["playlist"]
+    canciones = result["canciones"]
+
+    # Filtrar canciones vacías o inválidas
+    canciones_validas = [
+        c for c in canciones
+        if c.get("id") and c.get("titulo") and c["titulo"] != "Unknown"
+    ]
+
+    print(f"✅ Scraper obtuvo {len(canciones_validas)} canciones válidas")
+
+    songs = [
+        {
+            "id": c["id"],
+            "title": c["titulo"],
+            "artist": c["artistas"],
+            "album": c["album"],
+            "imageUrl": c["imagen_url"],
+            "duration": c["duracion_segundos"],
+        }
+        for c in canciones_validas
+    ]
+
+    return {
+        "success": True,
+        "playlist": {
+            "name": playlist.get("nombre", "Unknown Playlist"),
+            "totalTracks": len(songs),
+        },
+        "songs": songs,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -123,14 +332,26 @@ def index():
   </html>
   """
 
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "backend": "python"}
+    has_spotify = _get_spotify_credentials() is not None
+    return {
+        "status": "ok",
+        "backend": "python",
+        "spotify_api": "configured" if has_spotify else "not configured",
+        "spotipy_available": SPOTIPY_AVAILABLE
+    }
 
 
 @app.get("/api/playlist")
 def api_playlist(url: str = Query(..., alias="url")):
-    """Envuelve SpotifyPlaylistScraper y adapta el JSON al formato del middleware."""
+    """Obtiene canciones de una playlist de Spotify.
+
+    Prioridad:
+    1) Spotipy con Client Credentials (más confiable)
+    2) Fallback al scraper Selenium
+    """
     if not url or "spotify.com/playlist/" not in url:
         return JSONResponse(
             status_code=400,
@@ -141,45 +362,39 @@ def api_playlist(url: str = Query(..., alias="url")):
             },
         )
 
-    scraper = SpotifyPlaylistScraper(headless=True)
-    try:
-        result = scraper.obtener_canciones_playlist(url)
-    finally:
-        scraper.cerrar_driver()
+    print(f"\n{'='*60}")
+    print(f"📝 Solicitud de playlist: {url}")
+    print(f"{'='*60}")
 
-    if not result.get("success"):
+    # 1) Intentar con spotipy (Client Credentials)
+    api_result = None
+    if SPOTIPY_AVAILABLE:
+        try:
+            api_result = _fetch_playlist_via_spotipy(url)
+        except Exception as e:
+            print(f"⚠️ Error en spotipy: {e}")
+            api_result = None
+
+    if api_result and api_result.get("success"):
+        print(f"✅ Playlist obtenida via Spotify API")
+        return api_result
+
+    # 2) Fallback al scraper Selenium
+    print("⚠️ Spotify API no disponible o falló, usando scraper...")
+    scraper_result = _fetch_playlist_via_scraper(url)
+
+    if not scraper_result or not scraper_result.get("success"):
         return JSONResponse(
             status_code=500,
             content={
                 "success": False,
-                "error": "SpotifyScrapeError",
-                "message": result.get("error", "Failed to scrape Spotify playlist"),
+                "error": "PlaylistFetchError",
+                "message": "No se pudo obtener la playlist ni con API ni con scraper",
             },
         )
 
-    playlist = result["playlist"]
-    canciones = result["canciones"]
-
-    songs = [
-        {
-            "id": c["id"],
-            "title": c["titulo"],
-            "artist": c["artistas"],
-            "album": c["album"],
-            "imageUrl": c["imagen_url"],
-            "duration": c["duracion_segundos"],
-        }
-        for c in canciones
-    ]
-
-    return {
-        "success": True,
-        "playlist": {
-            "name": playlist.get("nombre", "Unknown Playlist"),
-            "totalTracks": len(songs),
-        },
-        "songs": songs,
-    }
+    print(f"✅ Playlist obtenida via scraper")
+    return scraper_result
 
 
 @app.get("/api/search-youtube")
@@ -201,22 +416,37 @@ def api_search_youtube(query: str = Query(..., alias="query")):
         "default_search": "ytsearch1",
         "noplaylist": True,
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(query, download=False)
-    if not info or "entries" not in info or not info["entries"]:
-        return {
-            "success": True,
-            "video": {"id": "", "title": "", "url": "", "thumbnail": ""},
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+
+        if not info or "entries" not in info or not info["entries"]:
+            return {
+                "success": True,
+                "video": {"id": "", "title": "", "url": "", "thumbnail": ""},
+            }
+
+        entry = info["entries"][0]
+        video_id = entry.get("id") or ""
+        video = {
+            "id": video_id,
+            "title": entry.get("title") or "",
+            "url": f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
+            "thumbnail": entry.get("thumbnail") or "",
         }
-    entry = info["entries"][0]
-    video_id = entry.get("id") or ""
-    video = {
-        "id": video_id,
-        "title": entry.get("title") or "",
-        "url": f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
-        "thumbnail": entry.get("thumbnail") or "",
-    }
-    return {"success": True, "video": video}
+        return {"success": True, "video": video}
+
+    except Exception as e:
+        print(f"❌ Error buscando en YouTube: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": "YouTubeSearchError",
+                "message": str(e),
+            },
+        )
 
 
 def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, None], str]:
@@ -249,6 +479,7 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
             },
         ],
     }
+
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
 
@@ -259,25 +490,27 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
     raw_title = info.get("title") or "audio"
     title_safe = raw_title.replace("/", "-").replace("\\", "-")[:200]
 
-    # Buscar el archivo descargado (m4a/webm/mp3)
+    # Buscar el archivo descargado
     path_file = ""
     for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
         candidate = os.path.join(tmp_dir, f"savetune_{video_id}{ext}")
         if os.path.isfile(candidate):
             path_file = candidate
             break
+
     if not path_file:
         # fallback: primer fichero que empiece por savetune_id
         for f in os.listdir(tmp_dir):
             if f.startswith(f"savetune_{video_id}"):
                 path_file = os.path.join(tmp_dir, f)
                 break
+
     if not path_file:
         raise ValueError("No se encontró el archivo de audio descargado")
 
     ext = os.path.splitext(path_file)[1].lstrip(".")
 
-    # Enriquecer metadatos ID3 del MP3 (título, artista, álbum) usando info de YouTube
+    # Enriquecer metadatos ID3 del MP3
     if ext == "mp3":
         track_title = raw_title
         artist = info.get("artist") or info.get("uploader") or ""
@@ -285,11 +518,11 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
 
         # Heurística: si el título tiene formato "Tema - Artista"
         if " - " in raw_title and not artist:
-            left, right = raw_title.rsplit(" - ", 1)
-            left, right = left.strip(), right.strip()
-            # Si la parte derecha no es ridículamente corta/larga, la tomamos como artista
-            if 2 <= len(right) <= 40:
-                track_title, artist = left, right
+            parts = raw_title.rsplit(" - ", 1)
+            if len(parts) == 2:
+                left, right = parts[0].strip(), parts[1].strip()
+                if 2 <= len(right) <= 40:
+                    track_title, artist = left, right
 
         try:
             audio = MutagenFile(path_file, easy=True)
@@ -300,9 +533,9 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
                 if album:
                     audio["album"] = [album]
                 audio.save()
-        except Exception:
-            # Si algo falla con los metadatos, seguimos pero al menos el MP3 existe
-            pass
+        except Exception as e:
+            print(f"⚠️ Error guardando metadatos: {e}")
+
     media_type = (
         "audio/mpeg"
         if ext == "mp3"
@@ -337,10 +570,13 @@ def api_download(videoId: str = Query(..., alias="videoId")):
                 "message": "Please provide a YouTube video ID",
             },
         )
+
     video_url = f"https://www.youtube.com/watch?v={videoId.strip()}"
+
     try:
         filename, stream_gen, media_type = _download_with_yt_dlp(video_url)
     except Exception as e:
+        print(f"❌ Error descargando: {e}")
         return JSONResponse(
             status_code=503,
             content={
@@ -363,5 +599,7 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 4000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    print(f"\n🚀 Iniciando servidor en puerto {port}...")
+    print(f"📝 Panel de pruebas: http://localhost:{port}/")
 
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

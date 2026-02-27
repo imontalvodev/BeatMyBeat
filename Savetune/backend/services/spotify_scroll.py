@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Spotify Playlist Scraper - VERSIÓN CORREGIDA
-Carga TODAS las canciones con scroll hasta el final de la página
+Spotify Playlist Scraper
+Lee información de canciones de playlists de Spotify usando web scraping
 """
 
 from selenium import webdriver
@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 import time
 import re
 
@@ -19,11 +20,19 @@ class SpotifyPlaylistScraper:
     """
 
     def __init__(self, headless=True):
+        """
+        Inicializa el scraper con configuración de Chrome
+
+        Args:
+            headless (bool): Si True, ejecuta Chrome en modo headless (sin interfaz)
+        """
         self.headless = headless
         self.driver = None
 
     def iniciar_driver(self):
-        """Configura e inicia el driver de Chrome"""
+        """
+        Configura e inicia el driver de Chrome
+        """
         chrome_options = Options()
 
         if self.headless:
@@ -35,23 +44,35 @@ class SpotifyPlaylistScraper:
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument(
-            'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+            'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
         try:
             self.driver = webdriver.Chrome(options=chrome_options)
             print("✅ Chrome iniciado correctamente")
         except Exception as e:
             print(f"❌ Error al iniciar Chrome: {e}")
+            print("\n💡 Asegúrate de tener ChromeDriver instalado:")
+            print("   pip install webdriver-manager")
             raise
 
     def cerrar_driver(self):
-        """Cierra el navegador"""
+        """
+        Cierra el navegador
+        """
         if self.driver:
             self.driver.quit()
             print("✅ Navegador cerrado")
 
     def parsear_duracion(self, duracion_str):
-        """Convierte string de duración (mm:ss) a segundos"""
+        """
+        Convierte string de duración (mm:ss) a segundos
+
+        Args:
+            duracion_str (str): Duración en formato "mm:ss"
+
+        Returns:
+            int: Duración en segundos
+        """
         try:
             partes = duracion_str.strip().split(':')
             if len(partes) == 2:
@@ -63,13 +84,29 @@ class SpotifyPlaylistScraper:
         return 0
 
     def formatear_duracion(self, segundos):
-        """Convierte segundos a formato mm:ss"""
+        """
+        Convierte segundos a formato mm:ss
+
+        Args:
+            segundos (int): Duración en segundos
+
+        Returns:
+            str: Duración en formato mm:ss
+        """
         minutos = segundos // 60
         segs = segundos % 60
         return f"{minutos}:{segs:02d}"
 
     def extraer_playlist_id(self, url):
-        """Extrae el ID de la playlist desde una URL"""
+        """
+        Extrae el ID de la playlist desde una URL
+
+        Args:
+            url (str): URL de Spotify
+
+        Returns:
+            str: ID de la playlist
+        """
         if "playlist/" in url:
             match = re.search(r'playlist/([a-zA-Z0-9]+)', url)
             if match:
@@ -77,7 +114,15 @@ class SpotifyPlaylistScraper:
         return url
 
     def obtener_canciones_playlist(self, url):
-        """Extrae todas las canciones de una playlist de Spotify"""
+        """
+        Extrae todas las canciones de una playlist de Spotify
+
+        Args:
+            url (str): URL de la playlist de Spotify
+
+        Returns:
+            dict: Información de la playlist y sus canciones
+        """
         if not self.driver:
             self.iniciar_driver()
 
@@ -85,79 +130,64 @@ class SpotifyPlaylistScraper:
             print(f"\n🔍 Accediendo a la playlist...")
             self.driver.get(url)
 
+            # Esperar a que cargue el contenido
             print("⏳ Esperando que cargue la página...")
-            time.sleep(5)
+            time.sleep(3)
 
+            # Esperar a que aparezcan los tracks
             try:
                 WebDriverWait(self.driver, 15).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href*="/track/"]'))
                 )
             except:
-                print("⚠️ Tardando más de lo esperado...")
+                print("⚠️ Tardando más de lo esperado, continuando...")
 
-            # SCROLL ESTRATEGIA MEJORADA: Scroll hasta el FINAL de la página
-            print("📜 Haciendo scroll hasta el final de la página...")
+            # Hacer scroll para cargar todas las canciones (basado en filas reales)
+            print("📜 Cargando todas las canciones (scroll por filas)...")
 
-            last_height = self.driver.execute_script("return document.body.scrollHeight")
-            no_change_count = 0
-            scroll_count = 0
+            max_loops = 120  # suficiente para playlists muy largas
+            same_count_limit = 5  # si no crece el nº de filas varias veces seguidas, paramos
+            same_count_rounds = 0
+            last_count = 0
 
-            while scroll_count < 100:  # Máximo 100 scrolls
-                # Scroll al final de la página
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1.5)  # Tiempo para que cargue contenido
+            for i in range(max_loops):
+                track_links_tmp = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
+                current_count = len(track_links_tmp)
 
-                # Obtener nueva altura
-                new_height = self.driver.execute_script("return document.body.scrollHeight")
+                if current_count == 0:
+                    time.sleep(1.0)
+                    continue
 
-                # Contar ENLACES (más confiable que filas)
-                links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
+                # Hacer scroll hasta la última fila detectada
+                try:
+                    last_link = track_links_tmp[-1]
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView({behavior:'smooth', block:'end'});",
+                        last_link,
+                    )
+                except Exception:
+                    # Si falla, probamos un scroll genérico hacia abajo
+                    self.driver.execute_script("window.scrollBy(0, window.innerHeight);")
 
-                if scroll_count % 5 == 0:
-                    print(f"   Scroll {scroll_count + 1} - Altura: {new_height} - Enlaces: {len(links)}")
+                time.sleep(1.0)
 
-                if new_height == last_height:
-                    no_change_count += 1
-                    if no_change_count >= 3:
-                        print(f"✅ Llegamos al final (altura no cambia)")
+                # Volver a contar después del scroll
+                new_count = len(self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]'))
+                print(f"Iteración {i+1}/{max_loops} - pistas visibles: {new_count}")
+
+                if new_count <= last_count:
+                    same_count_rounds += 1
+                    if same_count_rounds >= same_count_limit:
+                        print(f"✅ No aparecen nuevas filas de pistas, fin del scroll")
                         break
                 else:
-                    no_change_count = 0
-                    last_height = new_height
+                    same_count_rounds = 0
+                    last_count = new_count
 
-                scroll_count += 1
+            print(f"✅ Scroll completado, enlaces de pistas visibles: {last_count}")
 
-            # Espera adicional para renderizado
-            time.sleep(3)
-
-            # Contar enlaces finales
-            final_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
-            print(f"✅ Scroll completado - Total de enlaces cargados: {len(final_links)}")
-
-            # DETECTAR POSICIÓN DE RECOMENDACIONES
+            # Extraer información de la playlist
             print("\n📊 Extrayendo información...")
-
-            recomendaciones_y = None
-            try:
-                # Buscar texto "Recomendaciones" en cualquier elemento
-                recomendaciones_elems = self.driver.find_elements(
-                    By.XPATH,
-                    "//*[contains(translate(text(), 'RECOMENDACIONES', 'recomendaciones'), 'recomendaciones') or contains(translate(text(), 'RECOMMENDED', 'recommended'), 'recommended')]"
-                )
-
-                for elem in recomendaciones_elems:
-                    try:
-                        text = elem.text.strip().lower()
-                        if 'recomenda' in text or 'recommend' in text:
-                            elem_y = elem.location.get('y', 0)
-                            if elem_y > 0:
-                                recomendaciones_y = elem_y
-                                print(f"📍 Sección 'Recomendaciones' detectada en Y={recomendaciones_y}")
-                                break
-                    except:
-                        continue
-            except Exception as e:
-                print(f"ℹ️ No se detectó sección de recomendaciones")
 
             # Nombre de la playlist
             nombre_playlist = "Unknown Playlist"
@@ -167,14 +197,28 @@ class SpotifyPlaylistScraper:
             except:
                 pass
 
-            # EXTRAER CANCIONES
+            # Extraer todas las canciones
             canciones = []
             track_ids_vistos = set()
 
-            track_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
-            print(f"🎵 Procesando {len(track_links)} enlaces de canciones...")
+            # Intentar localizar el encabezado de "Recomendaciones" para saber
+            # a partir de qué punto empiezan las sugerencias (no forman parte de la playlist)
+            recomendaciones_y = None
+            try:
+                recomendaciones_header = self.driver.find_element(
+                    By.XPATH,
+                    "//*[normalize-space(text())='Recomendaciones' or normalize-space(text())='Recomendations' or normalize-space(text())='Recommendations']"
+                )
+                recomendaciones_y = recomendaciones_header.location.get("y", None)
+                print(f"📍 Encabezado 'Recomendaciones' localizado en Y={recomendaciones_y}")
+            except Exception:
+                # Si no encontramos el encabezado, simplemente no aplicamos este filtro adicional
+                print("ℹ️ No se encontró encabezado de 'Recomendaciones', se procesará todo el listado")
 
-            canciones_omitidas_por_recomendaciones = 0
+            # Encontrar todos los enlaces de tracks
+            track_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
+
+            print(f"🎵 Procesando {len(track_links)} enlaces de canciones...")
 
             for link in track_links:
                 try:
@@ -194,87 +238,54 @@ class SpotifyPlaylistScraper:
                         continue
                     track_ids_vistos.add(track_id)
 
-                    # Encontrar la fila - MÚLTIPLES ESTRATEGIAS
+                    # Encontrar la fila/row de la canción
                     row = None
-
-                    # Estrategia 1: data-testid="tracklist-row"
                     try:
                         row = link.find_element(By.XPATH, './ancestor::div[@data-testid="tracklist-row"]')
                     except:
-                        pass
-
-                    # Estrategia 2: role="row"
-                    if not row:
                         try:
                             row = link.find_element(By.XPATH, './ancestor::div[@role="row"]')
                         except:
-                            pass
+                            row = link.find_element(By.XPATH, './ancestor::div[contains(@class, "track")]')
 
-                    # Estrategia 3: Buscar parent div que contenga el track
-                    if not row:
-                        try:
-                            # Subir 3-5 niveles para encontrar el contenedor principal
-                            current = link
-                            for _ in range(5):
-                                current = current.find_element(By.XPATH, './..')
-                                # Verificar si este div contiene info de artista o duración
-                                if 'artist' in current.get_attribute('innerHTML').lower() or ':' in current.text:
-                                    row = current
-                                    break
-                        except:
-                            pass
-
-                    # Estrategia 4: Usar el link mismo como referencia
-                    if not row:
-                        row = link
-
-                    # Si no pudimos encontrar row, skip
                     if not row:
                         continue
 
-                    # FILTRO: Verificar si está después de "Recomendaciones"
+                    # Si conocemos la posición Y del bloque de "Recomendaciones",
+                    # descartamos cualquier fila que esté por debajo -> es sugerencia, no parte de la playlist
                     if recomendaciones_y is not None:
                         try:
-                            row_y = row.location.get('y', 0)
+                            row_y = row.location.get("y", 0)
                             if row_y >= recomendaciones_y:
-                                canciones_omitidas_por_recomendaciones += 1
+                                # Esta fila ya pertenece a la sección de recomendaciones
                                 continue
-                        except:
+                        except Exception:
                             pass
 
-                    # Título - MÚLTIPLES ESTRATEGIAS
-                    titulo = "Unknown"
+                    # Filtrar recomendaciones con botón "Añadir" / "Add" por si acaso
+                    try:
+                        add_buttons = row.find_elements(
+                            By.XPATH,
+                            ".//button[normalize-space(text())='Añadir' or normalize-space(text())='Add']"
+                        )
+                        if add_buttons:
+                            continue
+                    except Exception:
+                        pass
 
-                    # Estrategia 1: data-testid="track-name"
+                    # Título
+                    titulo = "Unknown"
                     try:
                         titulo_element = row.find_element(By.CSS_SELECTOR, '[data-testid="track-name"]')
                         titulo = titulo_element.text.strip()
                     except:
-                        pass
-
-                    # Estrategia 2: Texto del enlace
-                    if titulo == "Unknown":
                         try:
                             titulo = link.text.strip()
                         except:
                             pass
 
-                    # Estrategia 3: Buscar cualquier div con el track name
-                    if titulo == "Unknown":
-                        try:
-                            # A veces el título está en un div hermano del enlace
-                            parent = link.find_element(By.XPATH, './..')
-                            titulo = parent.text.split('\n')[0].strip()
-                        except:
-                            pass
-
-                    # Si seguimos sin título, usar el href
                     if not titulo or titulo == "Unknown":
-                        try:
-                            # Último recurso: extraer del URL
-                            titulo = href.split('/')[-1].split('?')[0]
-                        except:
-                            continue
+                        continue
 
                     # Artistas
                     artistas = "Unknown Artist"
@@ -302,15 +313,7 @@ class SpotifyPlaylistScraper:
                         duracion_str = duracion_element.text.strip()
                         duracion_segundos = self.parsear_duracion(duracion_str)
                     except:
-                        try:
-                            # Intentar buscar patrón de tiempo en el HTML
-                            row_text = row.text
-                            time_match = re.search(r'(\d{1,2}:\d{2})', row_text)
-                            if time_match:
-                                duracion_str = time_match.group(1)
-                                duracion_segundos = self.parsear_duracion(duracion_str)
-                        except:
-                            pass
+                        pass
 
                     # Imagen
                     imagen_url = ""
@@ -335,12 +338,8 @@ class SpotifyPlaylistScraper:
                     canciones.append(cancion_info)
 
                 except Exception as e:
+                    # Silenciar errores individuales para continuar con otras canciones
                     continue
-
-            if canciones_omitidas_por_recomendaciones > 0:
-                print(f"ℹ️ Se omitieron {canciones_omitidas_por_recomendaciones} canciones de recomendaciones")
-
-            print(f"\n✅ Se extrajeron {len(canciones)} canciones de la playlist")
 
             resultado = {
                 'success': True,
@@ -352,19 +351,24 @@ class SpotifyPlaylistScraper:
                 'canciones': canciones
             }
 
+            print(f"\n✅ Se extrajeron {len(canciones)} canciones exitosamente")
+
             return resultado
 
         except Exception as e:
             print(f"\n❌ Error al extraer playlist: {e}")
-            import traceback
-            traceback.print_exc()
             return {
                 'success': False,
                 'error': str(e)
             }
 
     def mostrar_canciones(self, resultado):
-        """Muestra las canciones en formato de tabla"""
+        """
+        Muestra las canciones en formato de tabla
+
+        Args:
+            resultado (dict): Resultado de obtener_canciones_playlist
+        """
         if not resultado['success']:
             print(f"❌ Error: {resultado.get('error', 'Unknown error')}")
             return
@@ -393,7 +397,13 @@ class SpotifyPlaylistScraper:
             print(f"{idx:<4} {titulo:<40} {artistas:<30} {album:<30} {cancion['duracion']:<10}")
 
     def exportar_a_csv(self, resultado, nombre_archivo="playlist_spotify.csv"):
-        """Exporta las canciones a un archivo CSV"""
+        """
+        Exporta las canciones a un archivo CSV
+
+        Args:
+            resultado (dict): Resultado de obtener_canciones_playlist
+            nombre_archivo (str): Nombre del archivo CSV
+        """
         import csv
 
         if not resultado['success']:
@@ -430,7 +440,9 @@ class SpotifyPlaylistScraper:
 
 
 def main():
-    """Función principal - interfaz de usuario"""
+    """
+    Función principal - interfaz de usuario
+    """
     print("\n" + "=" * 120)
     print("🎵  SPOTIFY PLAYLIST SCRAPER  🎵")
     print("=" * 120)
@@ -449,14 +461,18 @@ def main():
                 playlist_url = input("\n🔗 Ingresa la URL de la playlist de Spotify: ").strip()
 
                 if playlist_url:
+                    # Obtener canciones
                     resultado = scraper.obtener_canciones_playlist(playlist_url)
 
                     if resultado['success']:
+                        # Mostrar canciones
                         scraper.mostrar_canciones(resultado)
 
+                        # Preguntar si quiere exportar
                         exportar = input("\n¿Exportar a CSV? (s/n): ").strip().lower()
                         if exportar == 's':
-                            nombre_csv = input("Nombre del archivo (Enter='playlist_spotify.csv'): ").strip()
+                            nombre_csv = input(
+                                "Nombre del archivo (presiona Enter para 'playlist_spotify.csv'): ").strip()
                             if not nombre_csv:
                                 nombre_csv = "playlist_spotify.csv"
                             elif not nombre_csv.endswith('.csv'):
@@ -473,7 +489,7 @@ def main():
                 print("❌ Opción no válida")
 
     except KeyboardInterrupt:
-        print("\n\n👋 Programa interrumpido")
+        print("\n\n👋 Programa interrumpido por el usuario")
     except Exception as e:
         print(f"\n❌ Error: {e}")
     finally:
