@@ -1,15 +1,6 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "SaveTune Python backend (Spotify + YouTube)"
+description = "Add your description here"
 requires-python = ">=3.13"
-dependencies = [
-    "selenium>=4.41.0",
-    "yt-dlp>=2026.2.21",
-    "fastapi>=0.115.5",
-    "uvicorn[standard]>=0.32.1",
-    "mutagen>=1.47.0",
-    "requests>=2.32.0",
-    "python-dotenv>=1.0.1",
-    "spotipy>=2.25.2",
-]
+dependencies = []
