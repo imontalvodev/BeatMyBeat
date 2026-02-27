@@ -1,14 +1,10 @@
-"""SaveTune Python backend (FastAPI)"""
+"""SaveTune Python backend (FastAPI) - Solo con Selenium Scraper"""
 
 import os
 import tempfile
-import time
 import re
-import spotipy
-from typing import Generator, List, Dict, Any
+from typing import Generator
 
-import requests
-from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
@@ -17,16 +13,6 @@ from services.spotify import SpotifyPlaylistScraper
 import yt_dlp
 from mutagen import File as MutagenFile
 
-# Intentar importar spotipy para OAuth
-try:
-    from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
-    SPOTIPY_AVAILABLE = True
-except ImportError:
-    SPOTIPY_AVAILABLE = False
-    print("⚠️ spotipy no está instalado. Solo funcionará el scraper de Selenium.")
-
-
-load_dotenv()  # Carga variables desde .env en el directorio del backend
 
 app = FastAPI(title="SaveTune Python Backend")
 
@@ -39,21 +25,8 @@ app.add_middleware(
 )
 
 
-# --- Spotify Web API ---
-
-_SPOTIFY_TOKEN: Dict[str, Any] | None = None
-_SPOTIFY_CLIENT: Any = None
-
-
-def _get_spotify_credentials() -> tuple[str, str] | None:
-    client_id = os.environ.get("SPOTIFY_CLIENT_ID", "").strip()
-    client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "").strip()
-    if not client_id or not client_secret:
-        return None
-    return client_id, client_secret
-
-
 def _extract_playlist_id(url: str) -> str | None:
+    """Extrae el ID de la playlist desde una URL"""
     if "playlist/" in url:
         m = re.search(r"playlist/([a-zA-Z0-9]+)", url)
         if m:
@@ -61,135 +34,9 @@ def _extract_playlist_id(url: str) -> str | None:
     return None
 
 
-def _get_spotify_client() -> Any:
-    """
-    Obtiene cliente de Spotify usando Client Credentials.
-    Cachea el cliente para reutilizarlo.
-    """
-    global _SPOTIFY_CLIENT
-
-    if not SPOTIPY_AVAILABLE:
-        return None
-
-    if _SPOTIFY_CLIENT:
-        return _SPOTIFY_CLIENT
-
-    creds = _get_spotify_credentials()
-    if not creds:
-        print("⚠️ Spotify API desactivada: faltan SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET")
-        return None
-
-    client_id, client_secret = creds
-
-    try:
-        auth_manager = SpotifyClientCredentials(
-            client_id=client_id,
-            client_secret=client_secret
-        )
-        _SPOTIFY_CLIENT = spotipy.Spotify(auth_manager=auth_manager)
-        print("✅ Cliente de Spotify inicializado con Client Credentials")
-        return _SPOTIFY_CLIENT
-    except Exception as e:
-        print(f"❌ Error inicializando cliente de Spotify: {e}")
-        return None
-
-
-def _fetch_playlist_via_spotipy(url: str) -> Dict[str, Any] | None:
-    """
-    Usa spotipy con Client Credentials para obtener playlist.
-    Funciona con playlists públicas sin necesidad de OAuth de usuario.
-    """
-    sp = _get_spotify_client()
-    if not sp:
-        return None
-
-    playlist_id = _extract_playlist_id(url)
-    if not playlist_id:
-        return None
-
-    try:
-        print(f"📡 Obteniendo playlist {playlist_id} via Spotify API...")
-
-        # Obtener información básica de la playlist
-        playlist = sp.playlist(playlist_id, fields='name,description,owner,external_urls,images,tracks.total,public')
-
-        playlist_name = playlist.get('name', 'Unknown Playlist')
-        total = playlist['tracks']['total']
-        is_public = playlist.get('public', False)
-
-        print(f"📀 Playlist: {playlist_name}")
-        print(f"🎵 Total canciones: {total}")
-        print(f"🔓 Pública: {is_public}")
-
-        # Obtener todas las canciones con paginación
-        canciones = []
-        offset = 0
-        limit = 100
-
-        while offset < total:
-            results = sp.playlist_items(
-                playlist_id,
-                fields='items(track(id,name,artists,album,duration_ms,external_urls,preview_url)),next,total',
-                limit=limit,
-                offset=offset
-            )
-
-            print(f"   📦 Obtenidas {min(offset + limit, total)}/{total} canciones...")
-
-            for item in results['items']:
-                if not item['track'] or item['track']['id'] is None:
-                    continue
-
-                track = item['track']
-
-                artists = ', '.join([artist['name'] for artist in track.get('artists', [])])
-                album_data = track.get('album', {})
-                images = album_data.get('images', [])
-
-                canciones.append({
-                    'id': track['id'],
-                    'title': track.get('name', 'Unknown'),
-                    'artist': artists or 'Unknown Artist',
-                    'album': album_data.get('name', 'Unknown Album'),
-                    'imageUrl': images[0]['url'] if images else '',
-                    'duration': track.get('duration_ms', 0) // 1000,
-                })
-
-            offset += limit
-
-        print(f"✅ Se obtuvieron {len(canciones)} canciones via Spotify API")
-
-        return {
-            'success': True,
-            'playlist': {
-                'name': playlist_name,
-                'totalTracks': len(canciones),
-            },
-            'songs': canciones
-        }
-
-    except spotipy.exceptions.SpotifyException as e:
-        error_msg = str(e)
-        print(f"❌ Error de Spotify API: {error_msg}")
-
-        if "403" in error_msg:
-            print("⚠️ Error 403: La playlist puede ser privada o hay problemas de configuración")
-            print("💡 Verifica tu app en https://developer.spotify.com/dashboard")
-        elif "404" in error_msg:
-            print("⚠️ Error 404: Playlist no encontrada")
-
-        return None
-    except Exception as e:
-        print(f"❌ Error inesperado obteniendo playlist: {e}")
-        return None
-
-
-def _fetch_playlist_via_scraper(url: str) -> Dict[str, Any] | None:
-    """
-    Fallback: usa Selenium para scrapear la playlist.
-    Incluye lógica para omitir la sección de "Recomendaciones".
-    """
-    print("🔄 Usando scraper de Selenium como fallback...")
+def _fetch_playlist_via_scraper(url: str) -> dict | None:
+    """Usa Selenium para scrapear la playlist"""
+    print("🔄 Usando scraper de Selenium...")
 
     scraper = SpotifyPlaylistScraper(headless=True)
     try:
@@ -235,123 +82,114 @@ def _fetch_playlist_via_scraper(url: str) -> Dict[str, Any] | None:
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-  """Pequeña interfaz gráfica para probar la API desde el navegador."""
-  return """
-  <!doctype html>
-  <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <title>SaveTune Backend (Python)</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 2rem; background:#0b1020; color:#f5f5f5; }
-      h1 { margin-bottom: 0.5rem; }
-      h2 { margin-top: 2rem; }
-      label { display:block; margin-top:0.5rem; }
-      input[type="text"] { width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #444; background:#171c2f; color:#f5f5f5; }
-      button { margin-top:0.75rem; padding:0.5rem 1rem; border-radius:6px; border:none; background:#4f46e5; color:#fff; cursor:pointer; }
-      button:hover { background:#6366f1; }
-      pre { background:#020617; padding:1rem; border-radius:8px; overflow:auto; max-height:300px; }
-      .card { border-radius:12px; padding:1.5rem; background:#111827; margin-top:1.5rem; box-shadow:0 10px 20px rgba(0,0,0,0.4); }
-      .small { font-size:0.875rem; color:#9ca3af; }
-      a { color:#38bdf8; }
-    </style>
-  </head>
-  <body>
-    <h1>SaveTune Backend (Python)</h1>
-    <p class="small">Panel rápido para probar los endpoints. Los mismos que usa el middleware JS.</p>
+    """Interfaz gráfica para probar la API desde el navegador"""
+    return """
+    <!doctype html>
+    <html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <title>SaveTune Backend (Python)</title>
+        <style>
+            body { font-family: system-ui, sans-serif; margin: 2rem; background:#0b1020; color:#f5f5f5; }
+            h1 { margin-bottom: 0.5rem; }
+            h2 { margin-top: 2rem; }
+            label { display:block; margin-top:0.5rem; }
+            input[type="text"] { width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #444; background:#171c2f; color:#f5f5f5; }
+            button { margin-top:0.75rem; padding:0.5rem 1rem; border-radius:6px; border:none; background:#4f46e5; color:#fff; cursor:pointer; }
+            button:hover { background:#6366f1; }
+            pre { background:#020617; padding:1rem; border-radius:8px; overflow:auto; max-height:300px; }
+            .card { border-radius:12px; padding:1.5rem; background:#111827; margin-top:1.5rem; box-shadow:0 10px 20px rgba(0,0,0,0.4); }
+            .small { font-size:0.875rem; color:#9ca3af; }
+            a { color:#38bdf8; }
+        </style>
+    </head>
+    <body>
+        <h1>SaveTune Backend (Python)</h1>
+        <p class="small">Panel para probar los endpoints del backend</p>
 
-    <div class="card">
-      <h2>/health</h2>
-      <button onclick="callHealth()">Probar /health</button>
-      <pre id="health-output"></pre>
-    </div>
+        <div class="card">
+            <h2>/health</h2>
+            <button onclick="callHealth()">Probar /health</button>
+            <pre id="health-output"></pre>
+        </div>
 
-    <div class="card">
-      <h2>/api/playlist</h2>
-      <label>Spotify playlist URL</label>
-      <input id="playlist-url" type="text" placeholder="https://open.spotify.com/playlist/..." />
-      <button onclick="callPlaylist()">Probar /api/playlist</button>
-      <pre id="playlist-output"></pre>
-    </div>
+        <div class="card">
+            <h2>/api/playlist</h2>
+            <label>Spotify playlist URL</label>
+            <input id="playlist-url" type="text" placeholder="https://open.spotify.com/playlist/..." />
+            <button onclick="callPlaylist()">Obtener Playlist</button>
+            <pre id="playlist-output"></pre>
+        </div>
 
-    <div class="card">
-      <h2>/api/search-youtube</h2>
-      <label>Consulta</label>
-      <input id="yt-query" type="text" placeholder="SexyBack Timbaland" />
-      <button onclick="callSearch()">Probar /api/search-youtube</button>
-      <pre id="search-output"></pre>
-    </div>
+        <div class="card">
+            <h2>/api/search-youtube</h2>
+            <label>Consulta de búsqueda</label>
+            <input id="yt-query" type="text" placeholder="SexyBack Timbaland" />
+            <button onclick="callSearch()">Buscar en YouTube</button>
+            <pre id="search-output"></pre>
+        </div>
 
-    <div class="card">
-      <h2>/api/download</h2>
-      <p class="small">
-        Introduce un <code>videoId</code> de YouTube y se descargará el audio.
-        (Ejemplo: <code>3gOHvDP_vCs</code>).
-      </p>
-      <label>videoId</label>
-      <input id="yt-id" type="text" placeholder="3gOHvDP_vCs" />
-      <button onclick="callDownload()">Descargar audio</button>
-    </div>
+        <div class="card">
+            <h2>/api/download</h2>
+            <p class="small">Introduce un videoId de YouTube (ej: 3gOHvDP_vCs)</p>
+            <label>Video ID</label>
+            <input id="yt-id" type="text" placeholder="3gOHvDP_vCs" />
+            <button onclick="callDownload()">Descargar Audio</button>
+        </div>
 
-    <script>
-      async function callHealth() {
-        const res = await fetch('/health');
-        const json = await res.json();
-        document.getElementById('health-output').textContent = JSON.stringify(json, null, 2);
-      }
-      async function callPlaylist() {
-        const url = document.getElementById('playlist-url').value.trim();
-        if (!url) return;
-        const res = await fetch('/api/playlist?url=' + encodeURIComponent(url));
-        const text = await res.text();
-        try {
-          document.getElementById('playlist-output').textContent = JSON.stringify(JSON.parse(text), null, 2);
-        } catch {
-          document.getElementById('playlist-output').textContent = text;
-        }
-      }
-      async function callSearch() {
-        const q = document.getElementById('yt-query').value.trim();
-        if (!q) return;
-        const res = await fetch('/api/search-youtube?query=' + encodeURIComponent(q));
-        const json = await res.json();
-        document.getElementById('search-output').textContent = JSON.stringify(json, null, 2);
-      }
-      async function callDownload() {
-        const id = document.getElementById('yt-id').value.trim();
-        if (!id) return;
-        const a = document.createElement('a');
-        a.href = '/api/download?videoId=' + encodeURIComponent(id);
-        a.download = '';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-    </script>
-  </body>
-  </html>
-  """
+        <script>
+            async function callHealth() {
+                const res = await fetch('/health');
+                const json = await res.json();
+                document.getElementById('health-output').textContent = JSON.stringify(json, null, 2);
+            }
+            async function callPlaylist() {
+                const url = document.getElementById('playlist-url').value.trim();
+                if (!url) return;
+                const res = await fetch('/api/playlist?url=' + encodeURIComponent(url));
+                const text = await res.text();
+                try {
+                    document.getElementById('playlist-output').textContent = JSON.stringify(JSON.parse(text), null, 2);
+                } catch {
+                    document.getElementById('playlist-output').textContent = text;
+                }
+            }
+            async function callSearch() {
+                const q = document.getElementById('yt-query').value.trim();
+                if (!q) return;
+                const res = await fetch('/api/search-youtube?query=' + encodeURIComponent(q));
+                const json = await res.json();
+                document.getElementById('search-output').textContent = JSON.stringify(json, null, 2);
+            }
+            async function callDownload() {
+                const id = document.getElementById('yt-id').value.trim();
+                if (!id) return;
+                const a = document.createElement('a');
+                a.href = '/api/download?videoId=' + encodeURIComponent(id);
+                a.download = '';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+        </script>
+    </body>
+    </html>
+    """
 
 
 @app.get("/health")
 def health():
-    has_spotify = _get_spotify_credentials() is not None
+    """Health check endpoint"""
     return {
         "status": "ok",
         "backend": "python",
-        "spotify_api": "configured" if has_spotify else "not configured",
-        "spotipy_available": SPOTIPY_AVAILABLE
+        "scraper": "selenium"
     }
 
 
 @app.get("/api/playlist")
 def api_playlist(url: str = Query(..., alias="url")):
-    """Obtiene canciones de una playlist de Spotify.
-
-    Prioridad:
-    1) Spotipy con Client Credentials (más confiable)
-    2) Fallback al scraper Selenium
-    """
+    """Obtiene canciones de una playlist de Spotify usando Selenium"""
     if not url or "spotify.com/playlist/" not in url:
         return JSONResponse(
             status_code=400,
@@ -366,21 +204,7 @@ def api_playlist(url: str = Query(..., alias="url")):
     print(f"📝 Solicitud de playlist: {url}")
     print(f"{'='*60}")
 
-    # 1) Intentar con spotipy (Client Credentials)
-    api_result = None
-    if SPOTIPY_AVAILABLE:
-        try:
-            api_result = _fetch_playlist_via_spotipy(url)
-        except Exception as e:
-            print(f"⚠️ Error en spotipy: {e}")
-            api_result = None
-
-    if api_result and api_result.get("success"):
-        print(f"✅ Playlist obtenida via Spotify API")
-        return api_result
-
-    # 2) Fallback al scraper Selenium
-    print("⚠️ Spotify API no disponible o falló, usando scraper...")
+    # Obtener playlist con scraper
     scraper_result = _fetch_playlist_via_scraper(url)
 
     if not scraper_result or not scraper_result.get("success"):
@@ -389,16 +213,17 @@ def api_playlist(url: str = Query(..., alias="url")):
             content={
                 "success": False,
                 "error": "PlaylistFetchError",
-                "message": "No se pudo obtener la playlist ni con API ni con scraper",
+                "message": "No se pudo obtener la playlist con el scraper",
             },
         )
 
-    print(f"✅ Playlist obtenida via scraper")
+    print(f"✅ Playlist obtenida exitosamente")
     return scraper_result
 
 
 @app.get("/api/search-youtube")
 def api_search_youtube(query: str = Query(..., alias="query")):
+    """Busca un video en YouTube"""
     if not query or not query.strip():
         return JSONResponse(
             status_code=400,
@@ -450,7 +275,7 @@ def api_search_youtube(query: str = Query(..., alias="query")):
 
 
 def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, None], str]:
-    """Devuelve (filename, stream, media_type)."""
+    """Descarga audio de YouTube y devuelve (filename, stream, media_type)"""
     tmp_dir = tempfile.gettempdir()
     out_tmpl = os.path.join(tmp_dir, "savetune_%(id)s.%(ext)s")
     opts = {
@@ -458,10 +283,8 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         "outtmpl": out_tmpl,
         "quiet": True,
         "no_warnings": True,
-        # Usar ffmpeg para extraer siempre audio en MP3
         "prefer_ffmpeg": True,
         "keepvideo": False,
-        # Escribir metadatos + portada en el MP3
         "writethumbnail": True,
         "postprocessors": [
             {
@@ -470,11 +293,9 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
                 "preferredquality": "192",
             },
             {
-                # Copia título / artista / álbum al ID3
                 "key": "FFmpegMetadata",
             },
             {
-                # Inserta la miniatura de YouTube como carátula del MP3
                 "key": "EmbedThumbnail",
             },
         ],
@@ -499,7 +320,6 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
             break
 
     if not path_file:
-        # fallback: primer fichero que empiece por savetune_id
         for f in os.listdir(tmp_dir):
             if f.startswith(f"savetune_{video_id}"):
                 path_file = os.path.join(tmp_dir, f)
@@ -510,13 +330,12 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
 
     ext = os.path.splitext(path_file)[1].lstrip(".")
 
-    # Enriquecer metadatos ID3 del MP3
+    # Enriquecer metadatos ID3
     if ext == "mp3":
         track_title = raw_title
         artist = info.get("artist") or info.get("uploader") or ""
         album = info.get("album") or ""
 
-        # Heurística: si el título tiene formato "Tema - Artista"
         if " - " in raw_title and not artist:
             parts = raw_title.rsplit(" - ", 1)
             if len(parts) == 2:
@@ -561,6 +380,7 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
 
 @app.get("/api/download")
 def api_download(videoId: str = Query(..., alias="videoId")):
+    """Descarga audio de un video de YouTube"""
     if not videoId or not videoId.strip():
         return JSONResponse(
             status_code=400,
@@ -599,7 +419,8 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 4000))
-    print(f"\n🚀 Iniciando servidor en puerto {port}...")
+    print(f"\n🚀 Iniciando SaveTune Backend en puerto {port}...")
     print(f"📝 Panel de pruebas: http://localhost:{port}/")
+    print(f"🔧 Scraper: Selenium (sin necesidad de Spotify API)")
 
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

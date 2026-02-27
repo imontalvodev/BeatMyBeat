@@ -175,9 +175,14 @@ class SpotifyPlaylistScraper:
             print(f"🎵 Procesando {len(track_links)} enlaces de canciones...")
 
             canciones_omitidas_por_recomendaciones = 0
+            canciones_procesadas = 0
 
-            for link in track_links:
+            for idx, link in enumerate(track_links):
                 try:
+                    # Mostrar progreso cada 10 canciones
+                    if idx % 10 == 0 and idx > 0:
+                        print(f"   Procesadas {idx}/{len(track_links)} canciones...")
+
                     href = link.get_attribute('href')
                     if not href:
                         continue
@@ -194,10 +199,10 @@ class SpotifyPlaylistScraper:
                         continue
                     track_ids_vistos.add(track_id)
 
-                    # Encontrar la fila - MÚLTIPLES ESTRATEGIAS
+                    # Encontrar la fila - ESTRATEGIAS SIMPLIFICADAS Y RÁPIDAS
                     row = None
 
-                    # Estrategia 1: data-testid="tracklist-row"
+                    # Estrategia 1: data-testid="tracklist-row" (más rápida)
                     try:
                         row = link.find_element(By.XPATH, './ancestor::div[@data-testid="tracklist-row"]')
                     except:
@@ -210,27 +215,9 @@ class SpotifyPlaylistScraper:
                         except:
                             pass
 
-                    # Estrategia 3: Buscar parent div que contenga el track
-                    if not row:
-                        try:
-                            # Subir 3-5 niveles para encontrar el contenedor principal
-                            current = link
-                            for _ in range(5):
-                                current = current.find_element(By.XPATH, './..')
-                                # Verificar si este div contiene info de artista o duración
-                                if 'artist' in current.get_attribute('innerHTML').lower() or ':' in current.text:
-                                    row = current
-                                    break
-                        except:
-                            pass
-
-                    # Estrategia 4: Usar el link mismo como referencia
+                    # Estrategia 3: Usar el enlace mismo
                     if not row:
                         row = link
-
-                    # Si no pudimos encontrar row, skip
-                    if not row:
-                        continue
 
                     # FILTRO: Verificar si está después de "Recomendaciones"
                     if recomendaciones_y is not None:
@@ -242,83 +229,189 @@ class SpotifyPlaylistScraper:
                         except:
                             pass
 
-                    # Título - MÚLTIPLES ESTRATEGIAS
-                    titulo = "Unknown"
+                    # Título - ESTRATEGIAS RÁPIDAS
+                    titulo = None
 
-                    # Estrategia 1: data-testid="track-name"
+                    # Estrategia 1: Texto del enlace (más rápido)
                     try:
-                        titulo_element = row.find_element(By.CSS_SELECTOR, '[data-testid="track-name"]')
-                        titulo = titulo_element.text.strip()
+                        titulo = link.text.strip()
+                        if titulo and len(titulo) > 0:
+                            pass  # Título válido
+                        else:
+                            titulo = None
                     except:
-                        pass
+                        titulo = None
 
-                    # Estrategia 2: Texto del enlace
-                    if titulo == "Unknown":
+                    # Estrategia 2: data-testid="track-name"
+                    if not titulo and row != link:
                         try:
-                            titulo = link.text.strip()
+                            titulo_element = row.find_element(By.CSS_SELECTOR, '[data-testid="track-name"]')
+                            titulo = titulo_element.text.strip()
                         except:
                             pass
 
-                    # Estrategia 3: Buscar cualquier div con el track name
-                    if titulo == "Unknown":
-                        try:
-                            # A veces el título está en un div hermano del enlace
-                            parent = link.find_element(By.XPATH, './..')
-                            titulo = parent.text.split('\n')[0].strip()
-                        except:
-                            pass
+                    # Si no tenemos título, skip
+                    if not titulo:
+                        continue
 
-                    # Si seguimos sin título, usar el href
-                    if not titulo or titulo == "Unknown":
-                        try:
-                            # Último recurso: extraer del URL
-                            titulo = href.split('/')[-1].split('?')[0]
-                        except:
-                            continue
-
-                    # Artistas
+                    # Artistas - MEJORADO para buscar en todo el documento si es necesario
                     artistas = "Unknown Artist"
-                    try:
-                        artist_links = row.find_elements(By.CSS_SELECTOR, 'a[href*="/artist/"]')
-                        if artist_links:
-                            artistas = ', '.join([a.text.strip() for a in artist_links if a.text.strip()])
-                    except:
-                        pass
+                    if row != link:
+                        try:
+                            artist_links = row.find_elements(By.CSS_SELECTOR, 'a[href*="/artist/"]')
+                            if artist_links:
+                                nombres = [a.text.strip() for a in artist_links[:3] if a.text.strip()]
+                                if nombres:
+                                    artistas = ', '.join(nombres)
+                        except:
+                            pass
 
-                    # Álbum
+                    # Si no se encontró, buscar usando JavaScript en el contenedor del track
+                    if artistas == "Unknown Artist":
+                        try:
+                            # Buscar div padre que contenga el track
+                            parent_script = """
+                            var link = arguments[0];
+                            var parent = link.closest('[data-testid="tracklist-row"]') || link.closest('[role="row"]');
+                            if (!parent) {
+                                for (var i = 0; i < 5; i++) {
+                                    if (link.parentElement) {
+                                        link = link.parentElement;
+                                        if (link.querySelector('a[href*="/artist/"]')) {
+                                            parent = link;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (parent) {
+                                var artists = parent.querySelectorAll('a[href*="/artist/"]');
+                                return Array.from(artists).map(a => a.textContent.trim()).filter(t => t).slice(0, 3).join(', ');
+                            }
+                            return '';
+                            """
+                            result = self.driver.execute_script(parent_script, link)
+                            if result:
+                                artistas = result
+                        except:
+                            pass
+
+                    # Álbum - MEJORADO
                     album = "Unknown Album"
-                    try:
-                        album_link = row.find_element(By.CSS_SELECTOR, 'a[href*="/album/"]')
-                        if album_link and album_link.text.strip():
-                            album = album_link.text.strip()
-                    except:
-                        pass
+                    if row != link:
+                        try:
+                            album_link = row.find_element(By.CSS_SELECTOR, 'a[href*="/album/"]')
+                            album_text = album_link.text.strip()
+                            if album_text:
+                                album = album_text
+                        except:
+                            pass
 
-                    # Duración
+                    # Si no se encontró, buscar con JavaScript
+                    if album == "Unknown Album":
+                        try:
+                            album_script = """
+                            var link = arguments[0];
+                            var parent = link.closest('[data-testid="tracklist-row"]') || link.closest('[role="row"]');
+                            if (!parent) {
+                                for (var i = 0; i < 5; i++) {
+                                    if (link.parentElement) {
+                                        link = link.parentElement;
+                                        var albumLink = link.querySelector('a[href*="/album/"]');
+                                        if (albumLink) {
+                                            return albumLink.textContent.trim();
+                                        }
+                                    }
+                                }
+                            }
+                            if (parent) {
+                                var albumLink = parent.querySelector('a[href*="/album/"]');
+                                return albumLink ? albumLink.textContent.trim() : '';
+                            }
+                            return '';
+                            """
+                            result = self.driver.execute_script(album_script, link)
+                            if result:
+                                album = result
+                        except:
+                            pass
+
+                    # Duración - MEJORADO
                     duracion_segundos = 0
                     duracion_str = ""
-                    try:
-                        duracion_element = row.find_element(By.CSS_SELECTOR, '[data-testid="duration"]')
-                        duracion_str = duracion_element.text.strip()
-                        duracion_segundos = self.parsear_duracion(duracion_str)
-                    except:
+                    if row != link:
                         try:
-                            # Intentar buscar patrón de tiempo en el HTML
-                            row_text = row.text
-                            time_match = re.search(r'(\d{1,2}:\d{2})', row_text)
-                            if time_match:
-                                duracion_str = time_match.group(1)
+                            duracion_element = row.find_element(By.CSS_SELECTOR, '[data-testid="duration"]')
+                            duracion_str = duracion_element.text.strip()
+                            if duracion_str:
                                 duracion_segundos = self.parsear_duracion(duracion_str)
                         except:
                             pass
 
-                    # Imagen
+                    # Si no se encontró, buscar con JavaScript
+                    if not duracion_str:
+                        try:
+                            duration_script = """
+                            var link = arguments[0];
+                            var parent = link.closest('[data-testid="tracklist-row"]') || link.closest('[role="row"]');
+                            if (!parent) {
+                                for (var i = 0; i < 5; i++) {
+                                    if (link.parentElement) {
+                                        link = link.parentElement;
+                                        var text = link.textContent;
+                                        var match = text.match(/(\d{1,2}:\d{2})/);
+                                        if (match) return match[1];
+                                    }
+                                }
+                            }
+                            if (parent) {
+                                var dur = parent.querySelector('[data-testid="duration"]');
+                                return dur ? dur.textContent.trim() : '';
+                            }
+                            return '';
+                            """
+                            result = self.driver.execute_script(duration_script, link)
+                            if result:
+                                duracion_str = result
+                                duracion_segundos = self.parsear_duracion(duracion_str)
+                        except:
+                            pass
+
+                    # Imagen - MEJORADO
                     imagen_url = ""
-                    try:
-                        img_element = row.find_element(By.TAG_NAME, 'img')
-                        imagen_url = img_element.get_attribute('src')
-                    except:
-                        pass
+                    if row != link:
+                        try:
+                            img_element = row.find_element(By.TAG_NAME, 'img')
+                            imagen_url = img_element.get_attribute('src') or ""
+                        except:
+                            pass
+
+                    # Si no se encontró, buscar con JavaScript
+                    if not imagen_url:
+                        try:
+                            image_script = """
+                            var link = arguments[0];
+                            var parent = link.closest('[data-testid="tracklist-row"]') || link.closest('[role="row"]');
+                            if (!parent) {
+                                for (var i = 0; i < 5; i++) {
+                                    if (link.parentElement) {
+                                        link = link.parentElement;
+                                        var img = link.querySelector('img');
+                                        if (img) return img.src;
+                                    }
+                                }
+                            }
+                            if (parent) {
+                                var img = parent.querySelector('img');
+                                return img ? img.src : '';
+                            }
+                            return '';
+                            """
+                            result = self.driver.execute_script(image_script, link)
+                            if result:
+                                imagen_url = result
+                        except:
+                            pass
 
                     cancion_info = {
                         'id': track_id,
@@ -333,8 +426,12 @@ class SpotifyPlaylistScraper:
                     }
 
                     canciones.append(cancion_info)
+                    canciones_procesadas += 1
 
                 except Exception as e:
+                    # Log error pero continuar
+                    if idx % 20 == 0:  # Solo log cada 20 para no saturar
+                        print(f"   ⚠️ Error en enlace {idx}: {str(e)[:50]}")
                     continue
 
             if canciones_omitidas_por_recomendaciones > 0:
