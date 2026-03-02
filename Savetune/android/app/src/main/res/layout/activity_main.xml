@@ -140,11 +140,27 @@
             </LinearLayout>
 
             <ImageButton
+                android:id="@+id/btnPrevMain"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:src="@android:drawable/ic_media_previous"
+                android:tint="@android:color/white" />
+
+            <ImageButton
                 android:id="@+id/btnPlayPause"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:background="@android:color/transparent"
                 android:src="@android:drawable/ic_media_play"
+                android:tint="@android:color/white" />
+
+            <ImageButton
+                android:id="@+id/btnNextMain"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:src="@android:drawable/ic_media_next"
                 android:tint="@android:color/white" />
 
         </LinearLayout>

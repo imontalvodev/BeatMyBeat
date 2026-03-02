@@ -11,6 +11,13 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Para reproducción de audio en segundo plano en APIs recientes -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Android 13+ requiere POST_NOTIFICATIONS para mostrar notificaciones -->
+    <uses-permission
+        android:name="android.permission.POST_NOTIFICATIONS"
+        android:maxSdkVersion="33" />
 
     <application
         android:allowBackup="true"
@@ -23,6 +30,10 @@
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Savetune">
         <activity
+            android:name=".NowPlayingActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".DownloadActivity"
             android:exported="false" />
 
@@ -34,6 +45,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".MusicService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
 </manifest>

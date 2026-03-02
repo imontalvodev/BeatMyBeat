@@ -38,6 +38,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtCurrentTitle: TextView
     private lateinit var txtCurrentArtist: TextView
     private lateinit var btnPlayPause: ImageButton
+    private lateinit var btnPrevMain: ImageButton
+    private lateinit var btnNextMain: ImageButton
+    private lateinit var playerBar: LinearLayout
     private lateinit var btnMenuMain: ImageButton
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var navPlayerMain: TextView
@@ -79,10 +82,13 @@ class MainActivity : AppCompatActivity() {
         listSongs = findViewById(R.id.listSongs)
         btnPlayAll = findViewById(R.id.btnPlayAll)
 
+        playerBar = findViewById(R.id.playerBar)
         imgCurrentArt = findViewById(R.id.imgCurrentArt)
         txtCurrentTitle = findViewById(R.id.txtCurrentTitle)
         txtCurrentArtist = findViewById(R.id.txtCurrentArtist)
         btnPlayPause = findViewById(R.id.btnPlayPause)
+        btnPrevMain = findViewById(R.id.btnPrevMain)
+        btnNextMain = findViewById(R.id.btnNextMain)
         btnMenuMain = findViewById(R.id.btnMenuMain)
         navPlayerMain = findViewById(R.id.navPlayerMain)
         navDownloadMain = findViewById(R.id.navDownloadMain)
@@ -413,13 +419,16 @@ class MainActivity : AppCompatActivity() {
 
         listSongs.setOnItemClickListener { _, _, position, _ ->
             val song = songs[position]
-            Toast.makeText(this, "Reproduciendo '${song.title}'", Toast.LENGTH_SHORT).show()
+            NowPlayingState.songs = songs
+            NowPlayingState.playSong(this, position)
             updateCurrentTrack(song)
             Log.d(TAG, "Canción seleccionada: ${song.title}")
         }
 
         btnPlayAll.setOnClickListener {
             if (songs.isNotEmpty()) {
+                NowPlayingState.songs = songs
+                NowPlayingState.playSong(this, 0)
                 updateCurrentTrack(songs.first())
                 Log.d(TAG, "Play All presionado")
             } else {
@@ -429,28 +438,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupPlayerBar() {
-        btnPlayPause.setOnClickListener {
-            val mp = mediaPlayer
-            if (mp == null) {
-                // Si no hay reproductor aún pero ya hay canción seleccionada, empezamos a reproducirla
-                val song = currentSong
-                if (song != null) {
-                    playSong(song)
-                } else {
-                    Toast.makeText(this, "Selecciona una canción para reproducir", Toast.LENGTH_SHORT).show()
-                }
+        playerBar.setOnClickListener {
+            if (NowPlayingState.currentSong != null) {
+                startActivity(Intent(this, NowPlayingActivity::class.java))
             } else {
-                if (mp.isPlaying) {
-                    mp.pause()
-                    isPlaying = false
-                    btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-                    Log.d(TAG, "Pausa reproducción")
-                } else {
-                    mp.start()
-                    isPlaying = true
-                    btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                    Log.d(TAG, "Reanuda reproducción")
-                }
+                Toast.makeText(this, "No hay ninguna canción reproduciéndose", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnPlayPause.setOnClickListener {
+            NowPlayingState.togglePlayPause(this)
+            val mp = NowPlayingState.mediaPlayer
+            val isPlayingNow = mp?.isPlaying == true
+            isPlaying = isPlayingNow
+            btnPlayPause.setImageResource(
+                if (isPlayingNow) android.R.drawable.ic_media_pause
+                else android.R.drawable.ic_media_play
+            )
+        }
+
+        btnPrevMain.setOnClickListener {
+            if (NowPlayingState.playPrevious(this)) {
+                NowPlayingState.currentSong?.let { updateCurrentTrack(it) }
+            } else {
+                Toast.makeText(this, "No hay pista anterior", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnNextMain.setOnClickListener {
+            if (NowPlayingState.playNext(this)) {
+                NowPlayingState.currentSong?.let { updateCurrentTrack(it) }
+            } else {
+                Toast.makeText(this, "No hay pista siguiente", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -459,46 +478,5 @@ class MainActivity : AppCompatActivity() {
         txtCurrentTitle.text = song.title
         txtCurrentArtist.text = song.artist
         currentSong = song
-        playSong(song)
-
-        // TODO: Cargar carátula del álbum si está disponible en la barra inferior también
-        // (por ahora usamos solo el icono por defecto)
-    }
-
-    private fun playSong(song: Song) {
-        val file = song.file
-        if (file == null || !file.exists()) {
-            Toast.makeText(this, "Archivo de audio no encontrado", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // Liberar reproductor anterior si lo hubiera
-        mediaPlayer?.release()
-        mediaPlayer = null
-
-        val mp = MediaPlayer()
-        mediaPlayer = mp
-        try {
-            mp.setDataSource(file.absolutePath)
-            mp.setOnPreparedListener {
-                it.start()
-                isPlaying = true
-                btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                Log.d(TAG, "Reproduciendo: ${song.title}")
-            }
-            mp.setOnCompletionListener {
-                isPlaying = false
-                btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-                Log.d(TAG, "Fin de pista: ${song.title}")
-            }
-            mp.prepareAsync()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al reproducir ${file.name}", e)
-            Toast.makeText(this, "No se pudo reproducir la canción", Toast.LENGTH_SHORT).show()
-            mp.release()
-            mediaPlayer = null
-            isPlaying = false
-            btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-        }
     }
 }
