@@ -23,7 +23,8 @@ data class Song(
     val artist: String,
     val album: String = "",
     val durationSeconds: Int = 0,
-    val file: File? = null
+    val file: File? = null,
+    val mediaStoreId: Long? = null
 )
 
 class MainActivity : AppCompatActivity() {
@@ -187,11 +188,10 @@ class MainActivity : AppCompatActivity() {
             result.addAll(loadFromFileSystem())
         }
 
-        // Eliminar duplicados:
-        // - si tenemos File, usamos nombre + tamaño
-        // - si no, usamos título normalizado + duración
+        // Eliminar duplicados usando primero el ID de MediaStore
         val distinct = result.distinctBy { song ->
-            song.file?.let { f -> "${f.name.lowercase()}-${f.length()}" }
+            song.mediaStoreId
+                ?: song.file?.let { f -> "${f.name.lowercase()}-${f.length()}" }
                 ?: "${song.title.lowercase()}-${song.durationSeconds}"
         }
 
@@ -325,7 +325,8 @@ class MainActivity : AppCompatActivity() {
                             artist = artist,
                             album = album,
                             durationSeconds = durationSec,
-                            file = file
+                            file = file,
+                            mediaStoreId = id
                         )
 
                         result.add(song)
@@ -412,9 +413,9 @@ class MainActivity : AppCompatActivity() {
 
         listSongs.setOnItemClickListener { _, _, position, _ ->
             val song = songs[position]
+            Toast.makeText(this, "Reproduciendo '${song.title}'", Toast.LENGTH_SHORT).show()
             updateCurrentTrack(song)
             Log.d(TAG, "Canción seleccionada: ${song.title}")
-            // TODO: Aquí implementar reproducción real
         }
 
         btnPlayAll.setOnClickListener {

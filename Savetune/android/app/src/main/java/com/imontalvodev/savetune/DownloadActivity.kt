@@ -2,6 +2,8 @@ package com.imontalvodev.savetune
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -115,7 +117,7 @@ class DownloadActivity : AppCompatActivity() {
     private fun updateDownloadList() {
         val adapter = object : ArrayAdapter<DownloadSong>(
             this,
-            R.layout.item_song,
+            R.layout.item_song_download,
             songs
         ) {
             override fun getView(
@@ -123,7 +125,7 @@ class DownloadActivity : AppCompatActivity() {
                 convertView: View?,
                 parent: ViewGroup
             ): View {
-                val view = convertView ?: layoutInflater.inflate(R.layout.item_song, parent, false)
+                val view = convertView ?: layoutInflater.inflate(R.layout.item_song_download, parent, false)
 
                 val titleView = view.findViewById<TextView>(R.id.txtSongTitle)
                 val artistView = view.findViewById<TextView>(R.id.txtSongArtist)
@@ -137,11 +139,43 @@ class DownloadActivity : AppCompatActivity() {
                     artView.setImageResource(R.mipmap.ic_launcher_round)
 
                     btnDownload.setOnClickListener {
+                        // Buscar el mejor vídeo en YouTube y luego disparar la descarga
                         Toast.makeText(
                             this@DownloadActivity,
-                            "Descargar '${song.title}' (pendiente de implementación real)",
+                            "Buscando '${song.title}' en YouTube...",
                             Toast.LENGTH_SHORT
                         ).show()
+
+                        Thread {
+                            try {
+                                val query = "${song.title} ${song.artist}"
+                                val video = ApiClient.searchYoutube(query)
+
+                                if (video == null || video.id.isBlank()) {
+                                    runOnUiThread {
+                                        Toast.makeText(
+                                            this@DownloadActivity,
+                                            "No se encontró vídeo para '${song.title}'",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                    return@Thread
+                                }
+
+                                runOnUiThread {
+                                    startDownloadTrack(video.id, song)
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                runOnUiThread {
+                                    Toast.makeText(
+                                        this@DownloadActivity,
+                                        "Error buscando en YouTube: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                        }.start()
                     }
                 }
                 return view
@@ -153,6 +187,106 @@ class DownloadActivity : AppCompatActivity() {
         btnDownloadAll.setOnClickListener {
             Toast.makeText(this, "Descargar todos los temas (pendiente de implementación real)", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun startDownloadTrack(videoId: String, song: DownloadSong) {
+        Toast.makeText(
+            this,
+            "Descargando '${song.title}'…",
+            Toast.LENGTH_SHORT
+        ).show()
+
+        Thread {
+            try {
+                val url =
+                    "${ApiConfig.BASE_URL}/download?videoId=${java.net.URLEncoder.encode(videoId, "UTF-8")}"
+
+                val client = okhttp3.OkHttpClient.Builder()
+                    .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+
+                val request = okhttp3.Request.Builder()
+                    .url(url)
+                    .get()
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw IllegalStateException("Error ${response.code}: ${response.message}")
+                    }
+
+                    val body = response.body ?: throw IllegalStateException("Respuesta vacía")
+
+                    val fileName = "${song.title.replace("/", "-")}.mp3"
+
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        val values = android.content.ContentValues().apply {
+                            put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+                            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
+                            put(
+                                MediaStore.Audio.Media.RELATIVE_PATH,
+                                Environment.DIRECTORY_MUSIC + "/SaveTune"
+                            )
+                            put(MediaStore.Audio.Media.IS_PENDING, 1)
+                        }
+
+                        val resolver = contentResolver
+                        val uri = resolver.insert(
+                            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                            values
+                        ) ?: throw IllegalStateException("No se pudo crear el archivo en MediaStore")
+
+                        resolver.openOutputStream(uri)?.use { out ->
+                            body.byteStream().use { input ->
+                                val buffer = ByteArray(8 * 1024)
+                                var read: Int
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    out.write(buffer, 0, read)
+                                }
+                            }
+                        } ?: throw IllegalStateException("No se pudo abrir OutputStream")
+
+                        values.clear()
+                        values.put(MediaStore.Audio.Media.IS_PENDING, 0)
+                        resolver.update(uri, values, null, null)
+                    } else {
+                        val musicDir = Environment.getExternalStoragePublicDirectory(
+                            Environment.DIRECTORY_MUSIC + "/SaveTune"
+                        )
+                        if (!musicDir.exists()) {
+                            musicDir.mkdirs()
+                        }
+                        val outFile = java.io.File(musicDir, fileName)
+                        java.io.FileOutputStream(outFile).use { out ->
+                            body.byteStream().use { input ->
+                                val buffer = ByteArray(8 * 1024)
+                                var read: Int
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    out.write(buffer, 0, read)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Descarga completada",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Error descargando: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
     }
 
     private fun setLoading(isLoading: Boolean) {
