@@ -41,5 +41,14 @@
             android:ellipsize="end" />
     </LinearLayout>
 
+    <ImageButton
+        android:id="@+id/btnDownloadSong"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@android:color/transparent"
+        android:src="@android:drawable/stat_sys_download"
+        android:tint="@android:color/white"
+        android:contentDescription="Download this track" />
+
 </LinearLayout>
 

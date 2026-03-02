@@ -128,12 +128,21 @@ class DownloadActivity : AppCompatActivity() {
                 val titleView = view.findViewById<TextView>(R.id.txtSongTitle)
                 val artistView = view.findViewById<TextView>(R.id.txtSongArtist)
                 val artView = view.findViewById<ImageView>(R.id.imgSongArt)
+                val btnDownload = view.findViewById<ImageButton>(R.id.btnDownloadSong)
 
                 val song = getItem(position)
                 if (song != null) {
                     titleView.text = song.title
                     artistView.text = song.artist
                     artView.setImageResource(R.mipmap.ic_launcher_round)
+
+                    btnDownload.setOnClickListener {
+                        Toast.makeText(
+                            this@DownloadActivity,
+                            "Descargar '${song.title}' (pendiente de implementación real)",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
                 return view
             }
@@ -143,11 +152,6 @@ class DownloadActivity : AppCompatActivity() {
 
         btnDownloadAll.setOnClickListener {
             Toast.makeText(this, "Descargar todos los temas (pendiente de implementación real)", Toast.LENGTH_SHORT).show()
-        }
-
-        listDownloadSongs.setOnItemClickListener { _, _, position, _ ->
-            val song = songs[position]
-            Toast.makeText(this, "Descargar '${song.title}' (pendiente de implementación real)", Toast.LENGTH_SHORT).show()
         }
     }
 
