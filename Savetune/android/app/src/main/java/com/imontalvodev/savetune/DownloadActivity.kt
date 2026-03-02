@@ -25,6 +25,7 @@ class DownloadActivity : AppCompatActivity() {
     private lateinit var btnDownloadAll: Button
     private lateinit var listDownloadSongs: ListView
     private lateinit var btnMenu: ImageButton
+    private lateinit var progressLoading: ProgressBar
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var navPlayerDownload: TextView
     private lateinit var navDownloadDownload: TextView
@@ -52,6 +53,7 @@ class DownloadActivity : AppCompatActivity() {
         btnMenu = findViewById(R.id.btnMenuDownload)
         navPlayerDownload = findViewById(R.id.navPlayerDownload)
         navDownloadDownload = findViewById(R.id.navDownloadDownload)
+        progressLoading = findViewById(R.id.progressLoading)
     }
 
     private fun setupMenu() {
@@ -72,18 +74,44 @@ class DownloadActivity : AppCompatActivity() {
     }
 
     private fun setupDummyState() {
-        // Estado inicial de ejemplo similar al mockup
-        txtPlaylistTitle.text = "Late Night Lo-Fi Playlist"
-        txtPlaylistSubtitle.text = "42 Tracks Found"
+        // Estado inicial vacío; se rellenará al analizar una playlist real
+        txtPlaylistTitle.text = getString(R.string.app_name)
+        txtPlaylistSubtitle.text = ""
+    }
 
-        songs = listOf(
-            DownloadSong("City Lights Chill", "Beatmaker X"),
-            DownloadSong("Demo Light Chill", "Beatmaker X"),
-            DownloadSong("Mornow Chill", "Beatmaker X"),
-            DownloadSong("Interstellar", "Hans Zimmer"),
-            DownloadSong("Never Gonna Give You Up", "Rick Astley")
-        )
+    private fun setupAnalyze() {
+        btnAnalyze.setOnClickListener {
+            val text = edtSource.text.toString().trim()
+            if (text.isEmpty()) {
+                Toast.makeText(this, "Pega una URL de Spotify o escribe un título", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
 
+            setLoading(true)
+
+            Thread {
+                try {
+                    val playlist = ApiClient.fetchPlaylist(text)
+
+                    runOnUiThread {
+                        setLoading(false)
+                        txtPlaylistTitle.text = playlist.name
+                        txtPlaylistSubtitle.text = "${playlist.totalTracks} Tracks Found"
+                        songs = playlist.songs
+                        updateDownloadList()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    runOnUiThread {
+                        setLoading(false)
+                        Toast.makeText(this, "Error al contactar con el backend: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }.start()
+        }
+    }
+
+    private fun updateDownloadList() {
         val adapter = object : ArrayAdapter<DownloadSong>(
             this,
             android.R.layout.simple_list_item_2,
@@ -111,26 +139,19 @@ class DownloadActivity : AppCompatActivity() {
         listDownloadSongs.adapter = adapter
 
         btnDownloadAll.setOnClickListener {
-            Toast.makeText(this, "Descarga de todos los temas (demo)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Descargar todos los temas (pendiente de implementación real)", Toast.LENGTH_SHORT).show()
         }
 
         listDownloadSongs.setOnItemClickListener { _, _, position, _ ->
             val song = songs[position]
-            Toast.makeText(this, "Descargar '${song.title}' (demo)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Descargar '${song.title}' (pendiente de implementación real)", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun setupAnalyze() {
-        btnAnalyze.setOnClickListener {
-            val text = edtSource.text.toString().trim()
-            if (text.isEmpty()) {
-                Toast.makeText(this, "Pega una URL de Spotify o escribe un título", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            // Próximo paso: aquí haremos la llamada real al backend.
-            Toast.makeText(this, "Analizando fuente (demo)", Toast.LENGTH_SHORT).show()
-        }
+    private fun setLoading(isLoading: Boolean) {
+        progressLoading.visibility = if (isLoading) View.VISIBLE else View.GONE
+        btnAnalyze.isEnabled = !isLoading
+        btnAnalyze.text = if (isLoading) "LOADING..." else "ANALYZE SOURCE"
     }
 }
 
