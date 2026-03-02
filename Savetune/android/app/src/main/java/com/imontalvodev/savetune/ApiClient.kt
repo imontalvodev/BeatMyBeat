@@ -52,6 +52,7 @@ object ApiClient {
                 val s = songsJson.getJSONObject(i)
                 songs.add(
                     DownloadSong(
+                        id = s.optString("id", null),
                         title = s.optString("title"),
                         artist = s.optString("artist"),
                         thumbnailUrl = s.optString("imageUrl", null)

@@ -11,6 +11,7 @@ import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 
 data class DownloadSong(
+    val id: String? = null,
     val title: String,
     val artist: String,
     val thumbnailUrl: String? = null
@@ -114,8 +115,7 @@ class DownloadActivity : AppCompatActivity() {
     private fun updateDownloadList() {
         val adapter = object : ArrayAdapter<DownloadSong>(
             this,
-            android.R.layout.simple_list_item_2,
-            android.R.id.text1,
+            R.layout.item_song,
             songs
         ) {
             override fun getView(
@@ -123,14 +123,17 @@ class DownloadActivity : AppCompatActivity() {
                 convertView: View?,
                 parent: ViewGroup
             ): View {
-                val view = super.getView(position, convertView, parent)
-                val titleView = view.findViewById<TextView>(android.R.id.text1)
-                val subtitleView = view.findViewById<TextView>(android.R.id.text2)
+                val view = convertView ?: layoutInflater.inflate(R.layout.item_song, parent, false)
+
+                val titleView = view.findViewById<TextView>(R.id.txtSongTitle)
+                val artistView = view.findViewById<TextView>(R.id.txtSongArtist)
+                val artView = view.findViewById<ImageView>(R.id.imgSongArt)
 
                 val song = getItem(position)
                 if (song != null) {
                     titleView.text = song.title
-                    subtitleView.text = song.artist
+                    artistView.text = song.artist
+                    artView.setImageResource(R.mipmap.ic_launcher_round)
                 }
                 return view
             }
