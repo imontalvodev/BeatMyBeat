@@ -1,7 +1,8 @@
 package com.imontalvodev.savetune
 
 object ApiConfig {
-    // Emulador Android hablando con el middleware en tu máquina
-    const val BASE_URL = "http://10.0.2.2:3000/api"
+    // Emulador Android hablando directamente con el backend Python en tu máquina
+    // Puerto 4000 = FastAPI (main.py)
+    const val BASE_URL = "http://10.0.2.2:4000/api"
 }
 
