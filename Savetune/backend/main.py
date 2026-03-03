@@ -350,15 +350,39 @@ def api_playlist(url: str = Query(..., alias="url")):
 
 
 @app.get("/api/search-youtube")
-def api_search_youtube(query: str = Query(..., alias="query")):
-    """Busca un video en YouTube"""
-    if not query or not query.strip():
+def api_search_youtube(
+    query: str | None = Query(None, alias="query"),
+    title: str | None = Query(None, alias="title"),
+    artist: str | None = Query(None, alias="artist"),
+    album: str | None = Query(None, alias="album"),
+):
+    """
+    Busca un video en YouTube.
+    - Si se recibe title/artist/album, se construye una query más precisa del tipo:
+      "title artist album official audio".
+    - Si no, se usa el parámetro query tal cual (modo legacy).
+    """
+    parts: list[str] = []
+    if title and title.strip():
+        parts.append(title.strip())
+    if artist and artist.strip() and artist.lower() != "unknown artist":
+        parts.append(artist.strip())
+    if album and album.strip() and album.lower() != "unknown album":
+        parts.append(album.strip())
+
+    if parts:
+        parts.append("official audio")
+        final_query = " ".join(parts)
+    else:
+        final_query = (query or "").strip()
+
+    if not final_query:
         return JSONResponse(
             status_code=400,
             content={
                 "success": False,
                 "error": "Missing query",
-                "message": "Please provide a search query",
+                "message": "Please provide a search query or song metadata",
             },
         )
 
@@ -371,8 +395,9 @@ def api_search_youtube(query: str = Query(..., alias="query")):
     }
 
     try:
+        print(f"🔍 Buscando en YouTube: {final_query}")
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(query, download=False)
+            info = ydl.extract_info(final_query, download=False)
 
         if not info or "entries" not in info or not info["entries"]:
             return {

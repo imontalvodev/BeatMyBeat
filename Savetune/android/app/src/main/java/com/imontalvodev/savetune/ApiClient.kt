@@ -77,6 +77,7 @@ object ApiClient {
         }
     }
 
+    // Búsqueda genérica (modo legacy, usando sólo un string)
     fun searchYoutube(query: String): YoutubeVideo? {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val url = "${ApiConfig.BASE_URL}/search-youtube?query=$encodedQuery"
@@ -95,6 +96,55 @@ object ApiClient {
                 ?: throw IllegalStateException("Respuesta vacía del servidor")
 
             Log.d("ApiClient", "Respuesta search-youtube: $bodyString")
+            val json = JSONObject(bodyString)
+
+            val success = json.optBoolean("success", false)
+            val videoObj = json.optJSONObject("video") ?: return null
+            val id = videoObj.optString("id", "")
+            if (!success || id.isBlank()) {
+                return null
+            }
+
+            return YoutubeVideo(
+                id = id,
+                title = videoObj.optString("title", ""),
+                url = videoObj.optString("url", ""),
+                thumbnail = videoObj.optString("thumbnail", null)
+            )
+        }
+    }
+
+    // Búsqueda recomendada: usa título, artista y álbum por separado.
+    fun searchYoutubeForSong(title: String, artist: String?, album: String?): YoutubeVideo? {
+        val params = mutableListOf<Pair<String, String>>()
+        params += "title" to title
+        if (!artist.isNullOrBlank()) {
+            params += "artist" to artist
+        }
+        if (!album.isNullOrBlank() && album != "Unknown Album") {
+            params += "album" to album
+        }
+
+        val queryString = params.joinToString("&") { (k, v) ->
+            "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}"
+        }
+
+        val url = "${ApiConfig.BASE_URL}/search-youtube?$queryString"
+
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IllegalStateException("Error ${response.code}: ${response.message}")
+            }
+
+            val bodyString = response.body?.string()
+                ?: throw IllegalStateException("Respuesta vacía del servidor")
+
+            Log.d("ApiClient", "Respuesta search-youtube (song): $bodyString")
             val json = JSONObject(bodyString)
 
             val success = json.optBoolean("success", false)

@@ -12,6 +12,7 @@ from selenium.webdriver.chrome.options import Options
 import time
 import re
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote as urlquote
 from urllib.request import urlopen, Request
 
@@ -256,12 +257,13 @@ class SpotifyPlaylistScraper:
             except:
                 pass
 
-            # EXTRAER CANCIONES
+            # EXTRAER CANCIONES (primer pasada: sólo DOM de Spotify, sin HTTP extra)
             canciones = []
             track_ids_vistos = set()
 
             track_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
-            print(f"🎵 Procesando {len(track_links)} enlaces de canciones...")
+            total_links = len(track_links)
+            print(f"🎵 Procesando {total_links} enlaces de canciones (fase 1: DOM)...")
 
             canciones_omitidas_por_recomendaciones = 0
 
@@ -329,7 +331,7 @@ class SpotifyPlaylistScraper:
                     if not titulo:
                         continue
 
-                    # ARTISTA Y ÁLBUM - localizar fila por track_id y leer hrefs directamente
+                    # ARTISTA Y ÁLBUM - localizar fila por track_id y leer hrefs directamente (sólo DOM)
                     artistas = "Unknown Artist"
                     album = "Unknown Album"
 
@@ -342,7 +344,7 @@ class SpotifyPlaylistScraper:
                     except Exception:
                         row_element = row if row is not None else link
 
-                    # ARTISTAS
+                    # ARTISTAS (DOM)
                     try:
                         artist_links = row_element.find_elements(By.XPATH, './/a[contains(@href, "/artist/")]')
                         artist_names = [
@@ -355,16 +357,7 @@ class SpotifyPlaylistScraper:
                     except Exception:
                         pass
 
-                    # Fallback: si seguimos sin artista, usar oEmbed de Spotify para el track
-                    if artistas == "Unknown Artist":
-                        try:
-                            artista_oembed = self._obtener_artista_desde_oembed(track_id)
-                            if artista_oembed:
-                                artistas = artista_oembed
-                        except Exception:
-                            pass
-
-                    # ÁLBUM
+                    # ÁLBUM (DOM)
                     try:
                         album_link_el = row_element.find_element(By.XPATH, './/a[contains(@href, "/album/")]')
                         album_text = album_link_el.text.strip()
@@ -373,44 +366,8 @@ class SpotifyPlaylistScraper:
                     except Exception:
                         pass
 
-                    # Fallback JS: intentar localizar el enlace de álbum vía querySelector
-                    if album == "Unknown Album":
-                        try:
-                            album_text_js = self.driver.execute_script(
-                                """
-                                var trackId = arguments[0];
-                                var link = document.querySelector('a[href*="/track/' + trackId + '"]');
-                                if (!link) return '';
-                                var row = link.closest('[data-testid="tracklist-row"]') ||
-                                          link.closest('[role="row"]') ||
-                                          link.closest('div[class*="e-91000"]');
-                                if (!row) return '';
-                                var albumLink = row.querySelector('a[href*="/album/"]');
-                                if (!albumLink) return '';
-                                return (albumLink.textContent || '').trim();
-                                """,
-                                track_id,
-                            )
-                            if album_text_js:
-                                album = album_text_js
-                        except Exception:
-                            pass
 
-                    # Fallback HTTP final: si sigue sin álbum, resolverlo vía meta tags + oEmbed
-                    if album == "Unknown Album":
-                        album_http = self._obtener_album_desde_http(track_id)
-                        if album_http:
-                            album = album_http
-
-                    # Fallback externo final: usar iTunes Search API para intentar rellenar artista/álbum
-                    if artistas == "Unknown Artist" or album == "Unknown Album":
-                        itunes_artist, itunes_album = self._buscar_en_itunes(titulo, artistas)
-                        if artistas == "Unknown Artist" and itunes_artist:
-                            artistas = itunes_artist
-                        if album == "Unknown Album" and itunes_album:
-                            album = itunes_album
-
-                    # Duración
+                    # Duración (DOM + pequeño fallback regex local)
                     duracion_segundos = 0
                     duracion_str = ""
 
@@ -486,7 +443,53 @@ class SpotifyPlaylistScraper:
             if canciones_omitidas_por_recomendaciones > 0:
                 print(f"ℹ️ Se omitieron {canciones_omitidas_por_recomendaciones} canciones de recomendaciones")
 
-            print(f"\n✅ Se extrajeron {len(canciones)} canciones de la playlist")
+            print(f"\n✅ Se extrajeron {len(canciones)} canciones de la playlist (fase 1 DOM)")
+
+            # FASE 2: ENRIQUECIMIENTO EXTERNO (oEmbed + HTML track + iTunes), en paralelo por canción
+            if canciones:
+                print("🔁 Enriqueciendo artista/álbum con fuentes externas (fase 2)...")
+
+                def enriquecer(cancion: dict) -> None:
+                    try:
+                        track_id = cancion.get("id") or ""
+                        titulo = cancion.get("titulo") or cancion.get("title") or ""
+                        artistas = cancion.get("artistas") or "Unknown Artist"
+                        album = cancion.get("album") or "Unknown Album"
+
+                        # Artista: si sigue Unknown, probar oEmbed y luego iTunes
+                        if artistas == "Unknown Artist":
+                            artista_oembed = self._obtener_artista_desde_oembed(track_id)
+                            if artista_oembed:
+                                artistas = artista_oembed
+                            else:
+                                it_artist, _ = self._buscar_en_itunes(titulo, None)
+                                if it_artist:
+                                    artistas = it_artist
+
+                        # Álbum: si sigue Unknown, probar HTML del track + oEmbed álbum y luego iTunes
+                        if album == "Unknown Album":
+                            album_http = self._obtener_album_desde_http(track_id)
+                            if album_http:
+                                album = album_http
+                            else:
+                                _, it_album = self._buscar_en_itunes(titulo, artistas)
+                                if it_album:
+                                    album = it_album
+
+                        cancion["artistas"] = artistas
+                        cancion["album"] = album
+                    except Exception:
+                        # Silenciar errores individuales para no romper toda la playlist
+                        pass
+
+                # Ejecutar con un pool de threads para acelerar playlists largas
+                max_workers = min(8, len(canciones))
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = [executor.submit(enriquecer, c) for c in canciones]
+                    for f in as_completed(futures):
+                        _ = f.result()
+
+            print(f"✅ Enriquecimiento externo completado")
 
             resultado = {
                 'success': True,

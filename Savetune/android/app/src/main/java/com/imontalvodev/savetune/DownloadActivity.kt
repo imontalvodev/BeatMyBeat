@@ -150,19 +150,11 @@ class DownloadActivity : AppCompatActivity() {
 
                         Thread {
                             try {
-                                val query = buildString {
-                                    append(song.title)
-                                    if (song.artist.isNotBlank()) {
-                                        append(" ")
-                                        append(song.artist)
-                                    }
-                                    if (song.album.isNotBlank() && song.album != "Unknown Album") {
-                                        append(" ")
-                                        append(song.album)
-                                    }
-                                    append(" official audio")
-                                }
-                                val video = ApiClient.searchYoutube(query)
+                                val video = ApiClient.searchYoutubeForSong(
+                                    title = song.title,
+                                    artist = song.artist,
+                                    album = song.album
+                                )
 
                                 if (video == null || video.id.isBlank()) {
                                     runOnUiThread {
