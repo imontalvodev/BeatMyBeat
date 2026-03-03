@@ -62,6 +62,8 @@ object ApiClient {
                         id = s.optString("id", null),
                         title = s.optString("title"),
                         artist = s.optString("artist"),
+                        album = s.optString("album", ""),
+                        durationSeconds = s.optInt("duration", 0),
                         thumbnailUrl = s.optString("imageUrl", null)
                     )
                 )

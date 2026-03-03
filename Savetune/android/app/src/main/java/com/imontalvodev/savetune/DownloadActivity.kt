@@ -16,6 +16,8 @@ data class DownloadSong(
     val id: String? = null,
     val title: String,
     val artist: String,
+    val album: String = "",
+    val durationSeconds: Int = 0,
     val thumbnailUrl: String? = null
 )
 
@@ -148,7 +150,18 @@ class DownloadActivity : AppCompatActivity() {
 
                         Thread {
                             try {
-                                val query = "${song.title} ${song.artist}"
+                                val query = buildString {
+                                    append(song.title)
+                                    if (song.artist.isNotBlank()) {
+                                        append(" ")
+                                        append(song.artist)
+                                    }
+                                    if (song.album.isNotBlank() && song.album != "Unknown Album") {
+                                        append(" ")
+                                        append(song.album)
+                                    }
+                                    append(" official audio")
+                                }
                                 val video = ApiClient.searchYoutube(query)
 
                                 if (video == null || video.id.isBlank()) {

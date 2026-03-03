@@ -7,9 +7,10 @@ from typing import Generator
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
+from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, RedirectResponse
 
 from services.spotify import SpotifyPlaylistScraper
+from services.spotify_api import get_track_metadata, get_authorize_url, handle_authorization_callback
 import yt_dlp
 from mutagen import File as MutagenFile
 
@@ -58,8 +59,10 @@ def _fetch_playlist_via_scraper(url: str) -> dict | None:
 
     print(f"✅ Scraper obtuvo {len(canciones_validas)} canciones válidas")
 
-    songs = [
-        {
+    # Convertir canciones básicas
+    songs = []
+    for c in canciones_validas:
+        song = {
             "id": c["id"],
             "title": c["titulo"],
             "artist": c["artistas"],
@@ -67,8 +70,24 @@ def _fetch_playlist_via_scraper(url: str) -> dict | None:
             "imageUrl": c["imagen_url"],
             "duration": c["duracion_segundos"],
         }
-        for c in canciones_validas
-    ]
+
+        # Enriquecer metadatos con la API oficial de Spotify cuando falten
+        needs_artist = not song["artist"] or song["artist"] == "Unknown Artist"
+        needs_album = not song["album"] or song["album"] == "Unknown Album"
+
+        if (needs_artist or needs_album) and song["id"]:
+            try:
+                meta = get_track_metadata(song["id"])
+                if meta:
+                    if needs_artist:
+                        # Priorizar lista completa de artistas si está disponible
+                        song["artist"] = meta.get("artists") or meta.get("artist") or song["artist"]
+                    if needs_album:
+                        song["album"] = meta.get("album") or song["album"]
+            except Exception as e:
+                print(f"⚠️ Error enriqueciendo metadatos para track {song['id']}: {e}")
+
+        songs.append(song)
 
     return {
         "success": True,
@@ -106,6 +125,12 @@ def index():
     <body>
         <h1>SaveTune Backend (Python)</h1>
         <p class="small">Panel para probar los endpoints del backend</p>
+
+        <div class="card">
+            <h2>Spotify Login</h2>
+            <p class="small">Para mejorar la precisión de artista/álbum, inicia sesión con tu cuenta de Spotify.</p>
+            <button onclick="window.location.href='/spotify/login'">Conectar con Spotify</button>
+        </div>
 
         <div class="card">
             <h2>/health</h2>
@@ -185,6 +210,38 @@ def health():
         "backend": "python",
         "scraper": "selenium"
     }
+
+
+@app.get("/spotify/login")
+def spotify_login():
+    """
+    Redirige al usuario a la pantalla de autorización de Spotify.
+    Usa Authorization Code Flow para obtener un token de usuario.
+    """
+    url = get_authorize_url()
+    return RedirectResponse(url)
+
+
+@app.get("/spotify/callback", response_class=HTMLResponse)
+def spotify_callback(code: str | None = None, error: str | None = None):
+    """
+    Endpoint de callback para Spotify.
+    Una vez autorizado, guarda el token de usuario en memoria.
+    """
+    if error:
+        return f"<h1>Error de Spotify</h1><p>{error}</p>"
+
+    if not code:
+        return "<h1>Falta 'code' en el callback de Spotify</h1>"
+
+    ok = handle_authorization_callback(code)
+    if not ok:
+        return "<h1>No se pudo completar la autorización con Spotify.</h1>"
+
+    return """
+    <h1>Spotify conectado correctamente ✅</h1>
+    <p>Ya puedes cerrar esta pestaña y volver a SaveTune.</p>
+    """
 
 
 @app.get("/api/playlist")

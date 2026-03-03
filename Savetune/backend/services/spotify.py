@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Spotify Playlist Scraper - VERSIÓN CORREGIDA
-Carga TODAS las canciones con scroll hasta el final de la página
+Spotify Playlist Scraper - Optimizado para extraer artista y álbum
+Usa selectores específicos basados en inspección del DOM de Spotify
 """
 
 from selenium import webdriver
@@ -11,6 +11,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 import time
 import re
+import json
+from urllib.parse import quote as urlquote
+from urllib.request import urlopen, Request
 
 
 class SpotifyPlaylistScraper:
@@ -68,6 +71,59 @@ class SpotifyPlaylistScraper:
         segs = segundos % 60
         return f"{minutos}:{segs:02d}"
 
+    def _obtener_artista_desde_oembed(self, track_id: str) -> str:
+        """
+        Usa el oEmbed público de Spotify para obtener el artista de un track.
+        No requiere autenticación.
+        """
+        try:
+            track_url = f"https://open.spotify.com/track/{track_id}"
+            oembed_url = f"https://open.spotify.com/oembed?url={urlquote(track_url, safe=':/?=&')}"
+            with urlopen(oembed_url, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8") or "{}")
+            artist = data.get("author_name", "") or ""
+            return artist.strip()
+        except Exception:
+            return ""
+
+    def _obtener_album_desde_http(self, track_id: str) -> str:
+        """
+        Fallback sin Selenium: descarga la página del track, extrae el album_id
+        desde las meta tags y luego consulta el oEmbed del álbum para obtener
+        el nombre del álbum.
+        """
+        try:
+            # 1) Descargar HTML del track
+            track_url = f"https://open.spotify.com/track/{track_id}"
+            req = Request(
+                track_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+                },
+            )
+            with urlopen(req, timeout=7) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+
+            # 2) Buscar meta music:album -> spotify:album:<ID>
+            m = re.search(
+                r'property="music:album"\s+content="spotify:album:([a-zA-Z0-9]+)"',
+                html,
+            )
+            if not m:
+                return ""
+            album_id = m.group(1)
+
+            # 3) Consultar oEmbed del álbum para obtener el nombre
+            album_url = f"https://open.spotify.com/album/{album_id}"
+            oembed_url = f"https://open.spotify.com/oembed?url={urlquote(album_url, safe=':/?=&')}"
+            with urlopen(oembed_url, timeout=7) as resp:
+                data = json.loads(resp.read().decode("utf-8") or "{}")
+            album_title = data.get("title", "") or ""
+            return album_title.strip()
+        except Exception:
+            return ""
+
     def extraer_playlist_id(self, url):
         """Extrae el ID de la playlist desde una URL"""
         if "playlist/" in url:
@@ -95,22 +151,18 @@ class SpotifyPlaylistScraper:
             except:
                 print("⚠️ Tardando más de lo esperado...")
 
-            # SCROLL ESTRATEGIA MEJORADA: Scroll hasta el FINAL de la página
+            # SCROLL hasta el final
             print("📜 Haciendo scroll hasta el final de la página...")
 
             last_height = self.driver.execute_script("return document.body.scrollHeight")
             no_change_count = 0
             scroll_count = 0
 
-            while scroll_count < 100:  # Máximo 100 scrolls
-                # Scroll al final de la página
+            while scroll_count < 100:
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1.5)  # Tiempo para que cargue contenido
+                time.sleep(1.5)
 
-                # Obtener nueva altura
                 new_height = self.driver.execute_script("return document.body.scrollHeight")
-
-                # Contar ENLACES (más confiable que filas)
                 links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
 
                 if scroll_count % 5 == 0:
@@ -127,19 +179,16 @@ class SpotifyPlaylistScraper:
 
                 scroll_count += 1
 
-            # Espera adicional para renderizado
             time.sleep(3)
 
-            # Contar enlaces finales
             final_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
             print(f"✅ Scroll completado - Total de enlaces cargados: {len(final_links)}")
 
-            # DETECTAR POSICIÓN DE RECOMENDACIONES
+            # Detectar recomendaciones
             print("\n📊 Extrayendo información...")
 
             recomendaciones_y = None
             try:
-                # Buscar texto "Recomendaciones" en cualquier elemento
                 recomendaciones_elems = self.driver.find_elements(
                     By.XPATH,
                     "//*[contains(translate(text(), 'RECOMENDACIONES', 'recomendaciones'), 'recomendaciones') or contains(translate(text(), 'RECOMMENDED', 'recommended'), 'recommended')]"
@@ -156,7 +205,7 @@ class SpotifyPlaylistScraper:
                                 break
                     except:
                         continue
-            except Exception as e:
+            except:
                 print(f"ℹ️ No se detectó sección de recomendaciones")
 
             # Nombre de la playlist
@@ -175,11 +224,9 @@ class SpotifyPlaylistScraper:
             print(f"🎵 Procesando {len(track_links)} enlaces de canciones...")
 
             canciones_omitidas_por_recomendaciones = 0
-            canciones_procesadas = 0
 
             for idx, link in enumerate(track_links):
                 try:
-                    # Mostrar progreso cada 10 canciones
                     if idx % 10 == 0 and idx > 0:
                         print(f"   Procesadas {idx}/{len(track_links)} canciones...")
 
@@ -187,39 +234,33 @@ class SpotifyPlaylistScraper:
                     if not href:
                         continue
 
-                    # Extraer track ID
                     track_id_match = re.search(r'/track/([a-zA-Z0-9]+)', href)
                     if not track_id_match:
                         continue
 
                     track_id = track_id_match.group(1)
 
-                    # Evitar duplicados
                     if track_id in track_ids_vistos:
                         continue
                     track_ids_vistos.add(track_id)
 
-                    # Encontrar la fila - ESTRATEGIAS SIMPLIFICADAS Y RÁPIDAS
+                    # Encontrar la fila
                     row = None
-
-                    # Estrategia 1: data-testid="tracklist-row" (más rápida)
                     try:
                         row = link.find_element(By.XPATH, './ancestor::div[@data-testid="tracklist-row"]')
                     except:
                         pass
 
-                    # Estrategia 2: role="row"
                     if not row:
                         try:
                             row = link.find_element(By.XPATH, './ancestor::div[@role="row"]')
                         except:
                             pass
 
-                    # Estrategia 3: Usar el enlace mismo
                     if not row:
                         row = link
 
-                    # FILTRO: Verificar si está después de "Recomendaciones"
+                    # Filtro de recomendaciones
                     if recomendaciones_y is not None:
                         try:
                             row_y = row.location.get('y', 0)
@@ -229,20 +270,15 @@ class SpotifyPlaylistScraper:
                         except:
                             pass
 
-                    # Título - ESTRATEGIAS RÁPIDAS
+                    # Título
                     titulo = None
-
-                    # Estrategia 1: Texto del enlace (más rápido)
                     try:
                         titulo = link.text.strip()
-                        if titulo and len(titulo) > 0:
-                            pass  # Título válido
-                        else:
+                        if not titulo:
                             titulo = None
                     except:
                         titulo = None
 
-                    # Estrategia 2: data-testid="track-name"
                     if not titulo and row != link:
                         try:
                             titulo_element = row.find_element(By.CSS_SELECTOR, '[data-testid="track-name"]')
@@ -250,95 +286,86 @@ class SpotifyPlaylistScraper:
                         except:
                             pass
 
-                    # Si no tenemos título, skip
                     if not titulo:
                         continue
 
-                    # Artistas - MEJORADO para buscar en todo el documento si es necesario
+                    # ARTISTA Y ÁLBUM - localizar fila por track_id y leer hrefs directamente
                     artistas = "Unknown Artist"
-                    if row != link:
-                        try:
-                            artist_links = row.find_elements(By.CSS_SELECTOR, 'a[href*="/artist/"]')
-                            if artist_links:
-                                nombres = [a.text.strip() for a in artist_links[:3] if a.text.strip()]
-                                if nombres:
-                                    artistas = ', '.join(nombres)
-                        except:
-                            pass
+                    album = "Unknown Album"
 
-                    # Si no se encontró, buscar usando JavaScript en el contenedor del track
+                    try:
+                        # Ubicar la fila que contiene este track_id
+                        row_element = self.driver.find_element(
+                            By.XPATH,
+                            f'//a[contains(@href, "/track/{track_id}")]/ancestor::div[@role="row" or @data-testid="tracklist-row"]'
+                        )
+                    except Exception:
+                        row_element = row if row is not None else link
+
+                    # ARTISTAS
+                    try:
+                        artist_links = row_element.find_elements(By.XPATH, './/a[contains(@href, "/artist/")]')
+                        artist_names = [
+                            a.text.strip()
+                            for a in artist_links[:3]
+                            if a.text and a.text.strip()
+                        ]
+                        if artist_names:
+                            artistas = ", ".join(artist_names)
+                    except Exception:
+                        pass
+
+                    # Fallback: si seguimos sin artista, usar oEmbed de Spotify para el track
                     if artistas == "Unknown Artist":
                         try:
-                            # Buscar div padre que contenga el track
-                            parent_script = """
-                            var link = arguments[0];
-                            var parent = link.closest('[data-testid="tracklist-row"]') || link.closest('[role="row"]');
-                            if (!parent) {
-                                for (var i = 0; i < 5; i++) {
-                                    if (link.parentElement) {
-                                        link = link.parentElement;
-                                        if (link.querySelector('a[href*="/artist/"]')) {
-                                            parent = link;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            if (parent) {
-                                var artists = parent.querySelectorAll('a[href*="/artist/"]');
-                                return Array.from(artists).map(a => a.textContent.trim()).filter(t => t).slice(0, 3).join(', ');
-                            }
-                            return '';
-                            """
-                            result = self.driver.execute_script(parent_script, link)
-                            if result:
-                                artistas = result
-                        except:
+                            artista_oembed = self._obtener_artista_desde_oembed(track_id)
+                            if artista_oembed:
+                                artistas = artista_oembed
+                        except Exception:
                             pass
 
-                    # Álbum - MEJORADO
-                    album = "Unknown Album"
-                    if row != link:
-                        try:
-                            album_link = row.find_element(By.CSS_SELECTOR, 'a[href*="/album/"]')
-                            album_text = album_link.text.strip()
-                            if album_text:
-                                album = album_text
-                        except:
-                            pass
+                    # ÁLBUM
+                    try:
+                        album_link_el = row_element.find_element(By.XPATH, './/a[contains(@href, "/album/")]')
+                        album_text = album_link_el.text.strip()
+                        if album_text:
+                            album = album_text
+                    except Exception:
+                        pass
 
-                    # Si no se encontró, buscar con JavaScript
+                    # Fallback JS: intentar localizar el enlace de álbum vía querySelector
                     if album == "Unknown Album":
                         try:
-                            album_script = """
-                            var link = arguments[0];
-                            var parent = link.closest('[data-testid="tracklist-row"]') || link.closest('[role="row"]');
-                            if (!parent) {
-                                for (var i = 0; i < 5; i++) {
-                                    if (link.parentElement) {
-                                        link = link.parentElement;
-                                        var albumLink = link.querySelector('a[href*="/album/"]');
-                                        if (albumLink) {
-                                            return albumLink.textContent.trim();
-                                        }
-                                    }
-                                }
-                            }
-                            if (parent) {
-                                var albumLink = parent.querySelector('a[href*="/album/"]');
-                                return albumLink ? albumLink.textContent.trim() : '';
-                            }
-                            return '';
-                            """
-                            result = self.driver.execute_script(album_script, link)
-                            if result:
-                                album = result
-                        except:
+                            album_text_js = self.driver.execute_script(
+                                """
+                                var trackId = arguments[0];
+                                var link = document.querySelector('a[href*="/track/' + trackId + '"]');
+                                if (!link) return '';
+                                var row = link.closest('[data-testid="tracklist-row"]') ||
+                                          link.closest('[role="row"]') ||
+                                          link.closest('div[class*="e-91000"]');
+                                if (!row) return '';
+                                var albumLink = row.querySelector('a[href*="/album/"]');
+                                if (!albumLink) return '';
+                                return (albumLink.textContent || '').trim();
+                                """,
+                                track_id,
+                            )
+                            if album_text_js:
+                                album = album_text_js
+                        except Exception:
                             pass
 
-                    # Duración - MEJORADO
+                    # Fallback HTTP final: si sigue sin álbum, resolverlo vía meta tags + oEmbed
+                    if album == "Unknown Album":
+                        album_http = self._obtener_album_desde_http(track_id)
+                        if album_http:
+                            album = album_http
+
+                    # Duración
                     duracion_segundos = 0
                     duracion_str = ""
+
                     if row != link:
                         try:
                             duracion_element = row.find_element(By.CSS_SELECTOR, '[data-testid="duration"]')
@@ -348,36 +375,26 @@ class SpotifyPlaylistScraper:
                         except:
                             pass
 
-                    # Si no se encontró, buscar con JavaScript
                     if not duracion_str:
                         try:
                             duration_script = """
-                            var link = arguments[0];
-                            var parent = link.closest('[data-testid="tracklist-row"]') || link.closest('[role="row"]');
-                            if (!parent) {
-                                for (var i = 0; i < 5; i++) {
-                                    if (link.parentElement) {
-                                        link = link.parentElement;
-                                        var text = link.textContent;
-                                        var match = text.match(/(\d{1,2}:\d{2})/);
-                                        if (match) return match[1];
-                                    }
-                                }
-                            }
-                            if (parent) {
-                                var dur = parent.querySelector('[data-testid="duration"]');
-                                return dur ? dur.textContent.trim() : '';
-                            }
-                            return '';
+                            var row = arguments[0];
+                            var dur = row.querySelector('[data-testid="duration"]');
+                            if (dur) return dur.textContent.trim();
+
+                            // Buscar patrón mm:ss en el texto
+                            var text = row.textContent || '';
+                            var match = text.match(/(\d{1,2}:\d{2})/);
+                            return match ? match[1] : '';
                             """
-                            result = self.driver.execute_script(duration_script, link)
+                            result = self.driver.execute_script(duration_script, row)
                             if result:
                                 duracion_str = result
                                 duracion_segundos = self.parsear_duracion(duracion_str)
                         except:
                             pass
 
-                    # Imagen - MEJORADO
+                    # Imagen
                     imagen_url = ""
                     if row != link:
                         try:
@@ -386,28 +403,14 @@ class SpotifyPlaylistScraper:
                         except:
                             pass
 
-                    # Si no se encontró, buscar con JavaScript
                     if not imagen_url:
                         try:
                             image_script = """
-                            var link = arguments[0];
-                            var parent = link.closest('[data-testid="tracklist-row"]') || link.closest('[role="row"]');
-                            if (!parent) {
-                                for (var i = 0; i < 5; i++) {
-                                    if (link.parentElement) {
-                                        link = link.parentElement;
-                                        var img = link.querySelector('img');
-                                        if (img) return img.src;
-                                    }
-                                }
-                            }
-                            if (parent) {
-                                var img = parent.querySelector('img');
-                                return img ? img.src : '';
-                            }
-                            return '';
+                            var row = arguments[0];
+                            var img = row.querySelector('img');
+                            return img ? img.src : '';
                             """
-                            result = self.driver.execute_script(image_script, link)
+                            result = self.driver.execute_script(image_script, row)
                             if result:
                                 imagen_url = result
                         except:
@@ -426,11 +429,9 @@ class SpotifyPlaylistScraper:
                     }
 
                     canciones.append(cancion_info)
-                    canciones_procesadas += 1
 
                 except Exception as e:
-                    # Log error pero continuar
-                    if idx % 20 == 0:  # Solo log cada 20 para no saturar
+                    if idx % 20 == 0:
                         print(f"   ⚠️ Error en enlace {idx}: {str(e)[:50]}")
                     continue
 
