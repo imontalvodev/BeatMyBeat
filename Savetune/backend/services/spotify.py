@@ -124,6 +124,46 @@ class SpotifyPlaylistScraper:
         except Exception:
             return ""
 
+    def _buscar_en_itunes(self, titulo: str, artista: str | None = None) -> tuple[str, str]:
+        """
+        Usa la iTunes Search API (pública) para intentar obtener artista y álbum
+        basados en el título (y opcionalmente artista).
+        Devuelve (artist, album), pudiendo ser cadenas vacías si no se encuentra nada.
+        """
+        try:
+            query = titulo
+            if artista and artista.lower() != "unknown artist":
+                query = f"{titulo} {artista}"
+
+            params = {
+                "term": query,
+                "media": "music",
+                "limit": 1,
+            }
+            url = "https://itunes.apple.com/search?" + "&".join(
+                f"{urlquote(str(k))}={urlquote(str(v))}" for k, v in params.items()
+            )
+            req = Request(
+                url,
+                headers={
+                    "User-Agent": "SaveTune/1.0 (https://github.com/)",
+                    "Accept": "application/json",
+                },
+            )
+            with urlopen(req, timeout=7) as resp:
+                data = json.loads(resp.read().decode("utf-8") or "{}")
+
+            results = data.get("results") or []
+            if not results:
+                return "", ""
+
+            r = results[0]
+            artist_name = (r.get("artistName") or "").strip()
+            album_name = (r.get("collectionName") or "").strip()
+            return artist_name, album_name
+        except Exception:
+            return "", ""
+
     def extraer_playlist_id(self, url):
         """Extrae el ID de la playlist desde una URL"""
         if "playlist/" in url:
@@ -361,6 +401,14 @@ class SpotifyPlaylistScraper:
                         album_http = self._obtener_album_desde_http(track_id)
                         if album_http:
                             album = album_http
+
+                    # Fallback externo final: usar iTunes Search API para intentar rellenar artista/álbum
+                    if artistas == "Unknown Artist" or album == "Unknown Album":
+                        itunes_artist, itunes_album = self._buscar_en_itunes(titulo, artistas)
+                        if artistas == "Unknown Artist" and itunes_artist:
+                            artistas = itunes_artist
+                        if album == "Unknown Album" and itunes_album:
+                            album = itunes_album
 
                     # Duración
                     duracion_segundos = 0
