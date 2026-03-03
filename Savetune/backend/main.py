@@ -1,4 +1,4 @@
-"""SaveTune Python backend (FastAPI) - Solo con Selenium Scraper"""
+"""SaveTune Python backend (FastAPI) - Solo con Selenium Scraper (+ opcional Spotify API BYO)"""
 
 import os
 import tempfile
@@ -10,9 +10,62 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, RedirectResponse
 
 from services.spotify import SpotifyPlaylistScraper
-from services.spotify_api import get_track_metadata, get_authorize_url, handle_authorization_callback
 import yt_dlp
 from mutagen import File as MutagenFile
+
+
+def _load_env_file_once() -> None:
+    """
+    Carga un archivo .env de forma muy simple si existe.
+    Se usa para habilitar fácilmente el modo BYO Spotify API en entornos locales.
+    """
+    flag = "_SAVETUNE_ENV_LOADED"
+    if os.environ.get(flag) == "1":
+        return
+
+    base_dir = os.path.dirname(os.path.dirname(__file__))  # .../Savetune
+    candidates = [
+        os.path.join(base_dir, ".env"),
+        os.path.join(os.path.dirname(__file__), ".env"),  # backend/.env
+    ]
+
+    for path in candidates:
+        path = os.path.abspath(path)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = value
+        except Exception as e:
+            print(f"⚠️ No se pudo leer .env en {path}: {e}")
+
+    os.environ[flag] = "1"
+
+
+# Asegurarnos de que .env se carga antes de leer USE_SPOTIFY_API
+_load_env_file_once()
+
+# Modo BYO Spotify API: solo se usa si el usuario aporta sus propias credenciales
+USE_SPOTIFY_API = os.getenv("USE_SPOTIFY_API", "false").lower() == "true"
+
+if USE_SPOTIFY_API:
+    try:
+        from services.spotify_api import (
+            get_track_metadata,
+            get_authorize_url,
+            handle_authorization_callback,
+        )
+    except Exception as e:  # pragma: no cover - solo para entornos sin módulo/config
+        print(f"⚠️ No se pudo inicializar Spotify API opcional: {e}")
+        USE_SPOTIFY_API = False
 
 
 app = FastAPI(title="SaveTune Python Backend")
@@ -71,21 +124,22 @@ def _fetch_playlist_via_scraper(url: str) -> dict | None:
             "duration": c["duracion_segundos"],
         }
 
-        # Enriquecer metadatos con la API oficial de Spotify cuando falten
-        needs_artist = not song["artist"] or song["artist"] == "Unknown Artist"
-        needs_album = not song["album"] or song["album"] == "Unknown Album"
+        # Enriquecer metadatos con la API oficial de Spotify cuando falten (modo BYO)
+        if USE_SPOTIFY_API:
+            needs_artist = not song["artist"] or song["artist"] == "Unknown Artist"
+            needs_album = not song["album"] or song["album"] == "Unknown Album"
 
-        if (needs_artist or needs_album) and song["id"]:
-            try:
-                meta = get_track_metadata(song["id"])
-                if meta:
-                    if needs_artist:
-                        # Priorizar lista completa de artistas si está disponible
-                        song["artist"] = meta.get("artists") or meta.get("artist") or song["artist"]
-                    if needs_album:
-                        song["album"] = meta.get("album") or song["album"]
-            except Exception as e:
-                print(f"⚠️ Error enriqueciendo metadatos para track {song['id']}: {e}")
+            if (needs_artist or needs_album) and song["id"]:
+                try:
+                    meta = get_track_metadata(song["id"])
+                    if meta:
+                        if needs_artist:
+                            # Priorizar lista completa de artistas si está disponible
+                            song["artist"] = meta.get("artists") or meta.get("artist") or song["artist"]
+                        if needs_album:
+                            song["album"] = meta.get("album") or song["album"]
+                except Exception as e:
+                    print(f"⚠️ Error enriqueciendo metadatos para track {song['id']}: {e}")
 
         songs.append(song)
 
@@ -126,9 +180,13 @@ def index():
         <h1>SaveTune Backend (Python)</h1>
         <p class="small">Panel para probar los endpoints del backend</p>
 
+        <!-- Bloque de login de Spotify solo visible si el backend tiene activada la API opcional -->
         <div class="card">
-            <h2>Spotify Login</h2>
-            <p class="small">Para mejorar la precisión de artista/álbum, inicia sesión con tu cuenta de Spotify.</p>
+            <h2>Spotify Login (opcional)</h2>
+            <p class="small">
+                Este backend puede usar tu propia cuenta de desarrollador de Spotify para mejorar la precisión
+                de artista/álbum. Solo está activo si el servidor se ha configurado con USE_SPOTIFY_API=true.
+            </p>
             <button onclick="window.location.href='/spotify/login'">Conectar con Spotify</button>
         </div>
 
@@ -218,6 +276,16 @@ def spotify_login():
     Redirige al usuario a la pantalla de autorización de Spotify.
     Usa Authorization Code Flow para obtener un token de usuario.
     """
+    if not USE_SPOTIFY_API:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "SpotifyAPIDisabled",
+                "message": "Spotify API login is disabled. Set USE_SPOTIFY_API=true and configure credentials to enable it.",
+            },
+        )
+
     url = get_authorize_url()
     return RedirectResponse(url)
 
@@ -233,6 +301,9 @@ def spotify_callback(code: str | None = None, error: str | None = None):
 
     if not code:
         return "<h1>Falta 'code' en el callback de Spotify</h1>"
+
+    if not USE_SPOTIFY_API:
+        return "<h1>Spotify API BYO está desactivada en este servidor.</h1>"
 
     ok = handle_authorization_callback(code)
     if not ok:
