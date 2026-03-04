@@ -197,6 +197,24 @@
             android:textColor="@android:color/white"
             android:textSize="16sp" />
 
+        <TextView
+            android:id="@+id/navPlaylists"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingVertical="12dp"
+            android:text="Playlists"
+            android:textColor="@android:color/white"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/navFavorites"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingVertical="12dp"
+            android:text="Favorites"
+            android:textColor="@android:color/white"
+            android:textSize="16sp" />
+
     </LinearLayout>
 
 </androidx.drawerlayout.widget.DrawerLayout>

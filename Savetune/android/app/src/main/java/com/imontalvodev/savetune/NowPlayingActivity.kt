@@ -1,5 +1,7 @@
 package com.imontalvodev.savetune
 
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -50,8 +52,7 @@ class NowPlayingActivity : AppCompatActivity() {
             return
         }
 
-        txtTitleLarge.text = song.title
-        txtArtistLarge.text = song.artist
+        applySongInfo(song)
 
         setupControls()
         startProgressUpdates()
@@ -142,8 +143,33 @@ class NowPlayingActivity : AppCompatActivity() {
 
     private fun refreshSongInfo() {
         val song = NowPlayingState.currentSong ?: return
+        applySongInfo(song)
+    }
+
+    private fun applySongInfo(song: Song) {
         txtTitleLarge.text = song.title
         txtArtistLarge.text = song.artist
+
+        // Intentar mostrar siempre la carátula de la canción
+        val file = song.file
+        if (file != null && file.exists()) {
+            try {
+                val mmr = MediaMetadataRetriever()
+                mmr.setDataSource(file.absolutePath)
+                val art = mmr.embeddedPicture
+                if (art != null) {
+                    val bmp = BitmapFactory.decodeByteArray(art, 0, art.size)
+                    imgArtLarge.setImageBitmap(bmp)
+                } else {
+                    imgArtLarge.setImageResource(R.mipmap.ic_launcher_round)
+                }
+                mmr.release()
+            } catch (e: Exception) {
+                imgArtLarge.setImageResource(R.mipmap.ic_launcher_round)
+            }
+        } else {
+            imgArtLarge.setImageResource(R.mipmap.ic_launcher_round)
+        }
     }
 }
 

@@ -92,18 +92,54 @@ class DownloadActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            // Si es URL de playlist de Spotify -> flujo de playlist
+            val isSpotifyPlaylist = text.contains("spotify.com/playlist/")
+
             setLoading(true)
 
             Thread {
                 try {
-                    val playlist = ApiClient.fetchPlaylist(text)
+                    if (isSpotifyPlaylist) {
+                        val playlist = ApiClient.fetchPlaylist(text)
 
-                    runOnUiThread {
-                        setLoading(false)
-                        txtPlaylistTitle.text = playlist.name
-                        txtPlaylistSubtitle.text = "${playlist.totalTracks} Tracks Found"
-                        songs = playlist.songs
-                        updateDownloadList()
+                        runOnUiThread {
+                            setLoading(false)
+                            txtPlaylistTitle.text = playlist.name
+                            txtPlaylistSubtitle.text = "${playlist.totalTracks} Tracks Found"
+                            songs = playlist.songs
+                            updateDownloadList()
+                        }
+                    } else {
+                        // Búsqueda libre de canción (por título / artista / álbum)
+                        val video = ApiClient.searchYoutube(text)
+
+                        runOnUiThread {
+                            setLoading(false)
+                            if (video == null || video.id.isBlank()) {
+                                Toast.makeText(
+                                    this,
+                                    "No se encontró ningún resultado para '$text'",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                // Mostrar un pequeño resumen y ofrecer descarga
+                                androidx.appcompat.app.AlertDialog.Builder(this)
+                                    .setTitle("Resultado encontrado")
+                                    .setMessage(video.title)
+                                    .setPositiveButton("Descargar") { _, _ ->
+                                        val song = DownloadSong(
+                                            id = video.id,
+                                            title = video.title,
+                                            artist = "",
+                                            album = "",
+                                            durationSeconds = 0
+                                        )
+                                        startDownloadTrack(video.id, song)
+                                    }
+                                    .setNegativeButton("Cancelar", null)
+                                    .show()
+                            }
+                        }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()

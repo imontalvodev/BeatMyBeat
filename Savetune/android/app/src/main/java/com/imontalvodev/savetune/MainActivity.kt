@@ -11,9 +11,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.provider.MediaStore
 import android.util.Log
-import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import java.io.File
@@ -45,6 +45,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var navPlayerMain: TextView
     private lateinit var navDownloadMain: TextView
+    private lateinit var navPlaylists: TextView
+    private lateinit var navFavorites: TextView
 
     private var isPlaying: Boolean = false
     private var songs: List<Song> = emptyList()
@@ -92,6 +94,8 @@ class MainActivity : AppCompatActivity() {
         btnMenuMain = findViewById(R.id.btnMenuMain)
         navPlayerMain = findViewById(R.id.navPlayerMain)
         navDownloadMain = findViewById(R.id.navDownloadMain)
+        navPlaylists = findViewById(R.id.navPlaylists)
+        navFavorites = findViewById(R.id.navFavorites)
 
         setupMenu()
     }
@@ -109,6 +113,16 @@ class MainActivity : AppCompatActivity() {
         navDownloadMain.setOnClickListener {
             drawerLayout.closeDrawer(GravityCompat.START)
             startActivity(Intent(this, DownloadActivity::class.java))
+        }
+
+        navPlaylists.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.START)
+            startActivity(Intent(this, PlaylistsActivity::class.java))
+        }
+
+        navFavorites.setOnClickListener {
+            drawerLayout.closeDrawer(GravityCompat.START)
+            startActivity(Intent(this, FavoritesActivity::class.java))
         }
     }
 
@@ -383,6 +397,7 @@ class MainActivity : AppCompatActivity() {
                 val titleView = view.findViewById<TextView>(R.id.txtSongTitle)
                 val artistView = view.findViewById<TextView>(R.id.txtSongArtist)
                 val artView = view.findViewById<ImageView>(R.id.imgSongArt)
+                val btnMenu = view.findViewById<ImageButton>(R.id.btnSongMenu)
 
                 val song = getItem(position)
                 if (song != null) {
@@ -409,6 +424,10 @@ class MainActivity : AppCompatActivity() {
                         }
                     } else {
                         artView.setImageResource(R.mipmap.ic_launcher_round)
+                    }
+
+                    btnMenu.setOnClickListener {
+                        showSongMenu(song, it)
                     }
                 }
                 return view
@@ -478,5 +497,127 @@ class MainActivity : AppCompatActivity() {
         txtCurrentTitle.text = song.title
         txtCurrentArtist.text = song.artist
         currentSong = song
+    }
+
+    private fun showSongMenu(song: Song, anchor: android.view.View) {
+        val popup = androidx.appcompat.widget.PopupMenu(this, anchor)
+        popup.menuInflater.inflate(R.menu.menu_song_actions, popup.menu)
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_favorite -> {
+                    val isFav = LibraryStore.toggleFavorite(this, song)
+                    Toast.makeText(
+                        this,
+                        if (isFav) "Añadido a favoritos" else "Eliminado de favoritos",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    true
+                }
+                R.id.action_add_to_playlist -> {
+                    showAddToPlaylistDialog(song)
+                    true
+                }
+                R.id.action_add_to_queue -> {
+                    addToQueue(song)
+                    true
+                }
+                R.id.action_delete -> {
+                    deleteSong(song)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        popup.show()
+    }
+
+    private fun showAddToPlaylistDialog(song: Song) {
+        val existing = LibraryStore.getPlaylists(this)
+
+        // Si no hay playlists, vamos directamente al flujo de crear nueva
+        if (existing.isEmpty()) {
+            showCreatePlaylistDialog(song)
+            return
+        }
+
+        val items = existing + "➕ Nueva playlist..."
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Añadir a playlist")
+            .setItems(items.toTypedArray()) { dialog, which ->
+                if (which == existing.size) {
+                    // Opción "Nueva playlist..."
+                    dialog.dismiss()
+                    showCreatePlaylistDialog(song)
+                } else {
+                    val name = existing[which]
+                    LibraryStore.addSongToPlaylist(this, name, song)
+                    Toast.makeText(this, "Añadido a '$name'", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun showCreatePlaylistDialog(song: Song) {
+        val editText = EditText(this)
+        editText.hint = "Nombre de la playlist"
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Nueva playlist")
+            .setView(editText)
+            .setPositiveButton("Crear") { _, _ ->
+                val name = editText.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    LibraryStore.addSongToPlaylist(this, name, song)
+                    Toast.makeText(this, "Añadido a '$name'", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun addToQueue(song: Song) {
+        if (NowPlayingState.songs.isEmpty()) {
+            NowPlayingState.songs = listOf(song)
+            NowPlayingState.playSong(this, 0)
+            updateCurrentTrack(song)
+        } else {
+            val list = NowPlayingState.songs.toMutableList()
+            list.add(song)
+            NowPlayingState.songs = list
+            Toast.makeText(this, "Añadido a la cola", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun deleteSong(song: Song) {
+        // Borrar de MediaStore si tenemos ID
+        try {
+            song.mediaStoreId?.let { id ->
+                val uri = android.content.ContentUris.withAppendedId(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    id
+                )
+                contentResolver.delete(uri, null, null)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error borrando de MediaStore", e)
+        }
+
+        // Borrar archivo físico si existe
+        try {
+            song.file?.let { file ->
+                if (file.exists()) {
+                    file.delete()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error borrando archivo físico", e)
+        }
+
+        Toast.makeText(this, "Canción eliminada", Toast.LENGTH_SHORT).show()
+        loadSongsAndSetupList()
     }
 }

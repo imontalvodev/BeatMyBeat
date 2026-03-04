@@ -38,6 +38,18 @@
             android:exported="false" />
 
         <activity
+            android:name=".PlaylistsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".PlaylistSongsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".FavoritesActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
