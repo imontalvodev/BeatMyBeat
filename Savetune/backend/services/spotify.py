@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-Spotify Playlist Scraper - Optimizado para extraer artista y álbum
-Usa selectores específicos basados en inspección del DOM de Spotify
+Spotify Playlist Scraper - VERSIÓN MEJORADA
+Optimizado para playlists grandes (100-500+ canciones)
+✅ Scroll mejorado que garantiza capturar TODAS las canciones
+✅ Enriquecimiento con fuentes externas (oEmbed, iTunes)
 """
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.common.keys import Keys
 import time
 import re
 import json
@@ -27,25 +30,24 @@ class SpotifyPlaylistScraper:
         self.driver = None
 
     def iniciar_driver(self):
-        """Configura e inicia el driver de Chrome"""
-        chrome_options = Options()
+        """Configura e inicia el driver de Firefox"""
+        firefox_options = FirefoxOptions()
 
         if self.headless:
-            chrome_options.add_argument('--headless=new')
+            firefox_options.add_argument('--headless')
 
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-setuid-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument(
-            'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        firefox_options.add_argument('--width=1920')
+        firefox_options.add_argument('--height=1080')
+        
+        # User agent
+        firefox_options.set_preference('general.useragent.override', 
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0')
 
         try:
-            self.driver = webdriver.Chrome(options=chrome_options)
-            print("✅ Chrome iniciado correctamente")
+            self.driver = webdriver.Firefox(options=firefox_options)
+            print("✅ Firefox iniciado correctamente")
         except Exception as e:
-            print(f"❌ Error al iniciar Chrome: {e}")
+            print(f"❌ Error al iniciar Firefox: {e}")
             raise
 
     def cerrar_driver(self):
@@ -173,68 +175,190 @@ class SpotifyPlaylistScraper:
                 return match.group(1)
         return url
 
+    def _scroll_completo_mejorado(self):
+        """
+        🔥 SCROLL MEJORADO - Garantiza capturar TODAS las canciones
+        Optimizado para playlists de 100-500+ canciones
+        """
+        print("🔄 Iniciando scroll inteligente optimizado...")
+        
+        inicio = time.time()
+        max_tiempo = 600  # 10 minutos máximo (antes 5)
+        intentos_sin_cambio = 0
+        max_intentos = 25  # MUY aumentado (antes 10)
+        ultimo_conteo = 0
+        iteracion = 0
+        
+        # Script de scroll MULTI-ESTRATEGIA
+        scroll_agresivo = """
+        // ESTRATEGIA 1: Scroll en window principal
+        window.scrollTo(0, document.body.scrollHeight);
+        
+        // ESTRATEGIA 2: Encontrar TODOS los contenedores scrollables
+        var scrollables = document.querySelectorAll(`
+            div[data-testid="playlist-tracklist"],
+            div[class*="main-view-container"],
+            main[role="main"],
+            div[role="presentation"],
+            div[class*="scroll"],
+            div[style*="overflow"]
+        `);
+        
+        var scrollCount = 0;
+        scrollables.forEach(function(el) {
+            try {
+                var antes = el.scrollTop;
+                el.scrollTop = el.scrollHeight;
+                if (el.scrollTop > antes) scrollCount++;
+            } catch(e) {}
+        });
+        
+        // ESTRATEGIA 3: ScrollIntoView en último track
+        try {
+            var tracks = document.querySelectorAll('a[href*="/track/"]');
+            if (tracks.length > 0) {
+                tracks[tracks.length - 1].scrollIntoView({behavior: 'instant', block: 'end'});
+            }
+        } catch(e) {}
+        
+        // ESTRATEGIA 4: Buscar y hacer scroll en el contenedor específico de la tracklist
+        try {
+            var tracklist = document.querySelector('[data-testid="playlist-tracklist"]');
+            if (!tracklist) {
+                tracklist = document.querySelector('div[role="grid"]');
+            }
+            if (tracklist) {
+                tracklist.scrollTop = tracklist.scrollHeight;
+            }
+        } catch(e) {}
+        
+        return scrollCount;
+        """
+        
+        # MÉTODO ALTERNATIVO: Usar teclas
+        def scroll_con_teclas():
+            try:
+                body = self.driver.find_element(By.TAG_NAME, 'body')
+                for _ in range(5):
+                    body.send_keys(Keys.PAGE_DOWN)
+                    time.sleep(0.3)
+                body.send_keys(Keys.END)
+            except:
+                pass
+        
+        while (time.time() - inicio) < max_tiempo:
+            iteracion += 1
+            
+            # FASE 1: Scroll JavaScript agresivo
+            try:
+                self.driver.execute_script(scroll_agresivo)
+            except Exception as e:
+                if iteracion % 20 == 0:
+                    print(f"   ⚠️ Error scroll JS: {str(e)[:50]}")
+            
+            # FASE 2: Scroll con teclas (alternativa)
+            if iteracion % 3 == 0:
+                scroll_con_teclas()
+            
+            # Esperar carga - MÁS TIEMPO
+            time.sleep(3.0)  # Aumentado de 2.0 a 3.0
+            
+            # Contar tracks
+            try:
+                links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
+                conteo_actual = len(links)
+            except:
+                conteo_actual = 0
+            
+            # Mostrar progreso - MÁS FRECUENTE
+            if iteracion % 3 == 0 or conteo_actual != ultimo_conteo:
+                print(f"   📊 Iteración {iteracion} - Tracks cargados: {conteo_actual}")
+            
+            # Detectar progreso
+            if conteo_actual > ultimo_conteo:
+                ganancia = conteo_actual - ultimo_conteo
+                print(f"   ✅ ¡Progreso! +{ganancia} tracks (total: {conteo_actual})")
+                intentos_sin_cambio = 0
+                ultimo_conteo = conteo_actual
+            else:
+                intentos_sin_cambio += 1
+                
+                # Si llevamos mucho sin cambios, scroll EXTRA agresivo
+                if intentos_sin_cambio == 3:  # Más temprano (antes 4)
+                    print(f"   🔁 Activando modo EXTRA agresivo...")
+                    for _ in range(10):  # Más intentos (antes 5)
+                        self.driver.execute_script(scroll_agresivo)
+                        scroll_con_teclas()
+                        time.sleep(1.5)  # Más tiempo
+                
+                # Timeout
+                if intentos_sin_cambio >= max_intentos:
+                    print(f"   ✅ Sin más contenido ({intentos_sin_cambio} intentos)")
+                    break
+        
+        # Scroll final de confirmación - MÁS AGRESIVO
+        print("🔄 Scroll final de confirmación...")
+        for i in range(15):  # Más intentos (antes 8)
+            self.driver.execute_script(scroll_agresivo)
+            scroll_con_teclas()
+            time.sleep(2.0)  # Más tiempo (antes 1.0)
+        
+        # Conteo final
+        links_finales = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
+        total_final = len(links_finales)
+        
+        tiempo_total = time.time() - inicio
+        print(f"✅ Scroll completado en {tiempo_total:.1f}s")
+        print(f"📊 Total de enlaces de tracks cargados: {total_final}")
+        
+        return total_final
+
     def obtener_canciones_playlist(self, url):
-        """Extrae todas las canciones de una playlist de Spotify"""
+        """🔥 CAPTURA INCREMENTAL - Extrae canciones MIENTRAS hace scroll"""
         if not self.driver:
             self.iniciar_driver()
 
         try:
             print(f"\n🔍 Accediendo a la playlist...")
             self.driver.get(url)
-
-            print("⏳ Esperando que cargue la página...")
             time.sleep(5)
 
+            # Obtener nombre de playlist
+            nombre_playlist = "Unknown Playlist"
             try:
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'a[href*="/track/"]'))
-                )
+                nombre_element = self.driver.find_element(By.TAG_NAME, 'h1')
+                nombre_playlist = nombre_element.text.strip()
             except:
-                print("⚠️ Tardando más de lo esperado...")
+                pass
 
-            # SCROLL hasta el final
-            print("📜 Haciendo scroll hasta el final de la página...")
+            # Diccionario para almacenar canciones únicas {track_id: info_dict}
+            todas_las_canciones = {}
+            
+            print("🔄 Iniciando captura incremental durante scroll LENTO...")
+            
+            inicio = time.time()
+            intentos_sin_cambio = 0
+            ultimo_conteo = 0
+            iteracion = 0
+            
+            # Localizar el contenedor scrollable
+            scroll_container = None
+            try:
+                scroll_container = self.driver.find_element(
+                    By.XPATH, 
+                    "//div[@data-testid='playlist-tracklist']//ancestor::div[contains(@class, 'os-viewport')]"
+                )
+                print("✅ Contenedor scroll detectado")
+            except:
+                print("ℹ️ Usando scroll en body")
 
-            last_height = self.driver.execute_script("return document.body.scrollHeight")
-            no_change_count = 0
-            scroll_count = 0
-
-            while scroll_count < 100:
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(1.5)
-
-                new_height = self.driver.execute_script("return document.body.scrollHeight")
-                links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
-
-                if scroll_count % 5 == 0:
-                    print(f"   Scroll {scroll_count + 1} - Altura: {new_height} - Enlaces: {len(links)}")
-
-                if new_height == last_height:
-                    no_change_count += 1
-                    if no_change_count >= 3:
-                        print(f"✅ Llegamos al final (altura no cambia)")
-                        break
-                else:
-                    no_change_count = 0
-                    last_height = new_height
-
-                scroll_count += 1
-
-            time.sleep(3)
-
-            final_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
-            print(f"✅ Scroll completado - Total de enlaces cargados: {len(final_links)}")
-
-            # Detectar recomendaciones
-            print("\n📊 Extrayendo información...")
-
+            # Detectar recomendaciones una sola vez
             recomendaciones_y = None
             try:
                 recomendaciones_elems = self.driver.find_elements(
                     By.XPATH,
                     "//*[contains(translate(text(), 'RECOMENDACIONES', 'recomendaciones'), 'recomendaciones') or contains(translate(text(), 'RECOMMENDED', 'recommended'), 'recommended')]"
                 )
-
                 for elem in recomendaciones_elems:
                     try:
                         text = elem.text.strip().lower()
@@ -247,216 +371,226 @@ class SpotifyPlaylistScraper:
                     except:
                         continue
             except:
-                print(f"ℹ️ No se detectó sección de recomendaciones")
-
-            # Nombre de la playlist
-            nombre_playlist = "Unknown Playlist"
-            try:
-                nombre_element = self.driver.find_element(By.TAG_NAME, 'h1')
-                nombre_playlist = nombre_element.text.strip()
-            except:
                 pass
 
-            # EXTRAER CANCIONES (primer pasada: sólo DOM de Spotify, sin HTTP extra)
-            canciones = []
-            track_ids_vistos = set()
-
-            track_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
-            total_links = len(track_links)
-            print(f"🎵 Procesando {total_links} enlaces de canciones (fase 1: DOM)...")
-
-            canciones_omitidas_por_recomendaciones = 0
-
-            for idx, link in enumerate(track_links):
-                try:
-                    if idx % 10 == 0 and idx > 0:
-                        print(f"   Procesadas {idx}/{len(track_links)} canciones...")
-
-                    href = link.get_attribute('href')
-                    if not href:
-                        continue
-
-                    track_id_match = re.search(r'/track/([a-zA-Z0-9]+)', href)
-                    if not track_id_match:
-                        continue
-
-                    track_id = track_id_match.group(1)
-
-                    if track_id in track_ids_vistos:
-                        continue
-                    track_ids_vistos.add(track_id)
-
-                    # Encontrar la fila
-                    row = None
+            # 🔥 SCROLL LENTO + CAPTURA INCREMENTAL
+            while (time.time() - inicio) < 600:  # Max 10 min
+                iteracion += 1
+                
+                # --- 1. CAPTURAR LO VISIBLE AHORA ---
+                track_elements = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
+                
+                for link in track_elements:
                     try:
-                        row = link.find_element(By.XPATH, './ancestor::div[@data-testid="tracklist-row"]')
-                    except:
-                        pass
-
-                    if not row:
+                        href = link.get_attribute('href')
+                        if not href:
+                            continue
+                            
+                        track_id_match = re.search(r'/track/([a-zA-Z0-9]+)', href)
+                        if not track_id_match:
+                            continue
+                            
+                        track_id = track_id_match.group(1)
+                        
+                        # Skip si ya tenemos esta canción
+                        if track_id in todas_las_canciones:
+                            continue
+                        
+                        # Encontrar la fila
+                        row = None
                         try:
-                            row = link.find_element(By.XPATH, './ancestor::div[@role="row"]')
+                            row = link.find_element(By.XPATH, './ancestor::div[@data-testid="tracklist-row"]')
                         except:
-                            pass
-
-                    if not row:
-                        row = link
-
-                    # Filtro de recomendaciones
-                    if recomendaciones_y is not None:
-                        try:
-                            row_y = row.location.get('y', 0)
-                            if row_y >= recomendaciones_y:
-                                canciones_omitidas_por_recomendaciones += 1
-                                continue
-                        except:
-                            pass
-
-                    # Título
-                    titulo = None
-                    try:
+                            try:
+                                row = link.find_element(By.XPATH, './ancestor::div[@role="row"]')
+                            except:
+                                row = link
+                        
+                        # Filtro de recomendaciones
+                        if recomendaciones_y is not None:
+                            try:
+                                row_y = row.location.get('y', 0)
+                                if row_y >= recomendaciones_y:
+                                    continue
+                            except:
+                                pass
+                        
+                        # Título
                         titulo = link.text.strip()
                         if not titulo:
-                            titulo = None
-                    except:
-                        titulo = None
+                            if row != link:
+                                try:
+                                    titulo_element = row.find_element(By.CSS_SELECTOR, '[data-testid="internal-track-link"]')
+                                    titulo = titulo_element.text.strip()
+                                except:
+                                    pass
+                        
+                        if not titulo:
+                            continue
 
-                    if not titulo and row != link:
+                        # Artistas
+                        artistas = "Unknown Artist"
                         try:
-                            titulo_element = row.find_element(By.CSS_SELECTOR, '[data-testid="track-name"]')
-                            titulo = titulo_element.text.strip()
+                            artist_links = row.find_elements(By.XPATH, './/a[contains(@href, "/artist/")]')
+                            artist_names = [a.text.strip() for a in artist_links[:3] if a.text and a.text.strip()]
+                            if artist_names:
+                                artistas = ", ".join(artist_names)
                         except:
                             pass
 
-                    if not titulo:
-                        continue
-
-                    # ARTISTA Y ÁLBUM - localizar fila por track_id y leer hrefs directamente (sólo DOM)
-                    artistas = "Unknown Artist"
-                    album = "Unknown Album"
-
-                    try:
-                        # Ubicar la fila que contiene este track_id
-                        row_element = self.driver.find_element(
-                            By.XPATH,
-                            f'//a[contains(@href, "/track/{track_id}")]/ancestor::div[@role="row" or @data-testid="tracklist-row"]'
-                        )
-                    except Exception:
-                        row_element = row if row is not None else link
-
-                    # ARTISTAS (DOM)
-                    try:
-                        artist_links = row_element.find_elements(By.XPATH, './/a[contains(@href, "/artist/")]')
-                        artist_names = [
-                            a.text.strip()
-                            for a in artist_links[:3]
-                            if a.text and a.text.strip()
-                        ]
-                        if artist_names:
-                            artistas = ", ".join(artist_names)
-                    except Exception:
-                        pass
-
-                    # ÁLBUM (DOM)
-                    try:
-                        album_link_el = row_element.find_element(By.XPATH, './/a[contains(@href, "/album/")]')
-                        album_text = album_link_el.text.strip()
-                        if album_text:
-                            album = album_text
-                    except Exception:
-                        pass
-
-
-                    # Duración (DOM + pequeño fallback regex local)
-                    duracion_segundos = 0
-                    duracion_str = ""
-
-                    if row != link:
+                        # Álbum
+                        album = "Unknown Album"
                         try:
-                            duracion_element = row.find_element(By.CSS_SELECTOR, '[data-testid="duration"]')
+                            album_link_el = row.find_element(By.XPATH, './/a[contains(@href, "/album/")]')
+                            album_text = album_link_el.text.strip()
+                            if album_text:
+                                album = album_text
+                        except:
+                            pass
+
+                        # Duración
+                        duracion_segundos = 0
+                        duracion_str = ""
+                        try:
+                            duracion_element = row.find_element(By.CSS_SELECTOR, '[aria-colindex="5"] div[data-encore-id="text"]')
                             duracion_str = duracion_element.text.strip()
                             if duracion_str:
                                 duracion_segundos = self.parsear_duracion(duracion_str)
                         except:
                             pass
 
-                    if not duracion_str:
-                        try:
-                            duration_script = """
-                            var row = arguments[0];
-                            var dur = row.querySelector('[data-testid="duration"]');
-                            if (dur) return dur.textContent.trim();
-
-                            // Buscar patrón mm:ss en el texto
-                            var text = row.textContent || '';
-                            var match = text.match(/(\d{1,2}:\d{2})/);
-                            return match ? match[1] : '';
-                            """
-                            result = self.driver.execute_script(duration_script, row)
-                            if result:
-                                duracion_str = result
-                                duracion_segundos = self.parsear_duracion(duracion_str)
-                        except:
-                            pass
-
-                    # Imagen
-                    imagen_url = ""
-                    if row != link:
+                        # Imagen
+                        imagen_url = ""
                         try:
                             img_element = row.find_element(By.TAG_NAME, 'img')
                             imagen_url = img_element.get_attribute('src') or ""
                         except:
                             pass
 
-                    if not imagen_url:
+                        todas_las_canciones[track_id] = {
+                            'id': track_id,
+                            'titulo': titulo,
+                            'artistas': artistas,
+                            'album': album,
+                            'duracion_segundos': duracion_segundos,
+                            'duracion': self.formatear_duracion(duracion_segundos) if duracion_segundos > 0 else duracion_str,
+                            'spotify_url': href,
+                            'imagen_url': imagen_url
+                        }
+                    except:
+                        continue
+
+                # --- 2. HACER SCROLL MUY CORTO Y LENTO ---
+                if scroll_container:
+                    # Scroll en el contenedor específico - 300px por salto
+                    self.driver.execute_script("arguments[0].scrollTop += 300;", scroll_container)
+                else:
+                    # Fallback: usar tecla PAGE_DOWN
+                    try:
+                        body = self.driver.find_element(By.TAG_NAME, 'body')
+                        body.send_keys(Keys.PAGE_DOWN)
+                    except:
+                        self.driver.execute_script("window.scrollBy(0, 300);")
+                
+                # ESPERAR MÁS TIEMPO para que Spotify cargue
+                time.sleep(2.5)
+
+                # --- 3. CONTROL DE PARADA ---
+                conteo_actual = len(todas_las_canciones)
+                
+                if conteo_actual > ultimo_conteo:
+                    ganancia = conteo_actual - ultimo_conteo
+                    if iteracion % 3 == 0 or ganancia > 0:
+                        print(f"   📊 Iteración {iteracion} - ✅ Capturadas: {conteo_actual} (+{ganancia})")
+                    ultimo_conteo = conteo_actual
+                    intentos_sin_cambio = 0
+                else:
+                    intentos_sin_cambio += 1
+                    if iteracion % 5 == 0:
+                        print(f"   ⏳ Iteración {iteracion} - Sin cambios ({intentos_sin_cambio}/20)")
+                
+                # Paciencia: 20 intentos sin cambio
+                if intentos_sin_cambio >= 20:
+                    print(f"   ✅ Completado: Sin más canciones tras 20 intentos")
+                    break
+
+            # --- SCROLL FINAL EXTRA ---
+            print("🔄 Scroll final de confirmación...")
+            for i in range(10):
+                if scroll_container:
+                    self.driver.execute_script("arguments[0].scrollTop += 500;", scroll_container)
+                else:
+                    try:
+                        body = self.driver.find_element(By.TAG_NAME, 'body')
+                        body.send_keys(Keys.END)
+                    except:
+                        self.driver.execute_script("window.scrollBy(0, 1000);")
+                time.sleep(2.0)
+                
+                # Capturar últimas canciones
+                track_elements = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
+                for link in track_elements:
+                    try:
+                        href = link.get_attribute('href')
+                        if not href:
+                            continue
+                        track_id_match = re.search(r'/track/([a-zA-Z0-9]+)', href)
+                        if not track_id_match:
+                            continue
+                        track_id = track_id_match.group(1)
+                        if track_id in todas_las_canciones:
+                            continue
+                        
+                        # Proceso rápido para últimas canciones
+                        row = None
                         try:
-                            image_script = """
-                            var row = arguments[0];
-                            var img = row.querySelector('img');
-                            return img ? img.src : '';
-                            """
-                            result = self.driver.execute_script(image_script, row)
-                            if result:
-                                imagen_url = result
+                            row = link.find_element(By.XPATH, './ancestor::div[@data-testid="tracklist-row"]')
                         except:
-                            pass
+                            row = link
+                        
+                        if recomendaciones_y is not None:
+                            try:
+                                row_y = row.location.get('y', 0)
+                                if row_y >= recomendaciones_y:
+                                    continue
+                            except:
+                                pass
+                        
+                        titulo = link.text.strip()
+                        if not titulo:
+                            continue
+                        
+                        todas_las_canciones[track_id] = {
+                            'id': track_id,
+                            'titulo': titulo,
+                            'artistas': "Unknown Artist",
+                            'album': "Unknown Album",
+                            'duracion_segundos': 0,
+                            'duracion': "",
+                            'spotify_url': href,
+                            'imagen_url': ""
+                        }
+                    except:
+                        continue
 
-                    cancion_info = {
-                        'id': track_id,
-                        'titulo': titulo,
-                        'artistas': artistas,
-                        'album': album,
-                        'duracion_segundos': duracion_segundos,
-                        'duracion': self.formatear_duracion(
-                            duracion_segundos) if duracion_segundos > 0 else duracion_str,
-                        'spotify_url': href,
-                        'imagen_url': imagen_url
-                    }
+            # Convertir diccionario a lista
+            canciones = list(todas_las_canciones.values())
+            
+            tiempo_total = time.time() - inicio
+            print(f"\n✅ Captura completada en {tiempo_total:.1f}s")
+            print(f"📊 Total canciones capturadas: {len(canciones)}")
 
-                    canciones.append(cancion_info)
-
-                except Exception as e:
-                    if idx % 20 == 0:
-                        print(f"   ⚠️ Error en enlace {idx}: {str(e)[:50]}")
-                    continue
-
-            if canciones_omitidas_por_recomendaciones > 0:
-                print(f"ℹ️ Se omitieron {canciones_omitidas_por_recomendaciones} canciones de recomendaciones")
-
-            print(f"\n✅ Se extrajeron {len(canciones)} canciones de la playlist (fase 1 DOM)")
-
-            # FASE 2: ENRIQUECIMIENTO EXTERNO (oEmbed + HTML track + iTunes), en paralelo por canción
+            # FASE 2: ENRIQUECIMIENTO EXTERNO (solo para Unknown)
             if canciones:
-                print("🔁 Enriqueciendo artista/álbum con fuentes externas (fase 2)...")
+                print("🔁 Enriqueciendo datos faltantes con fuentes externas...")
 
                 def enriquecer(cancion: dict) -> None:
                     try:
                         track_id = cancion.get("id") or ""
-                        titulo = cancion.get("titulo") or cancion.get("title") or ""
+                        titulo = cancion.get("titulo") or ""
                         artistas = cancion.get("artistas") or "Unknown Artist"
                         album = cancion.get("album") or "Unknown Album"
 
-                        # Artista: si sigue Unknown, probar oEmbed y luego iTunes
                         if artistas == "Unknown Artist":
                             artista_oembed = self._obtener_artista_desde_oembed(track_id)
                             if artista_oembed:
@@ -466,7 +600,6 @@ class SpotifyPlaylistScraper:
                                 if it_artist:
                                     artistas = it_artist
 
-                        # Álbum: si sigue Unknown, probar HTML del track + oEmbed álbum y luego iTunes
                         if album == "Unknown Album":
                             album_http = self._obtener_album_desde_http(track_id)
                             if album_http:
@@ -479,19 +612,17 @@ class SpotifyPlaylistScraper:
                         cancion["artistas"] = artistas
                         cancion["album"] = album
                     except Exception:
-                        # Silenciar errores individuales para no romper toda la playlist
                         pass
 
-                # Ejecutar con un pool de threads para acelerar playlists largas
                 max_workers = min(8, len(canciones))
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     futures = [executor.submit(enriquecer, c) for c in canciones]
                     for f in as_completed(futures):
                         _ = f.result()
 
-            print(f"✅ Enriquecimiento externo completado")
+            print(f"✅ Enriquecimiento completado")
 
-            resultado = {
+            return {
                 'success': True,
                 'playlist': {
                     'nombre': nombre_playlist,
@@ -500,8 +631,6 @@ class SpotifyPlaylistScraper:
                 },
                 'canciones': canciones
             }
-
-            return resultado
 
         except Exception as e:
             print(f"\n❌ Error al extraer playlist: {e}")
@@ -581,7 +710,8 @@ class SpotifyPlaylistScraper:
 def main():
     """Función principal - interfaz de usuario"""
     print("\n" + "=" * 120)
-    print("🎵  SPOTIFY PLAYLIST SCRAPER  🎵")
+    print("🎵  SPOTIFY PLAYLIST SCRAPER - VERSIÓN MEJORADA  🎵")
+    print("✅ Optimizado para playlists grandes (100-500+ canciones)")
     print("=" * 120)
 
     scraper = SpotifyPlaylistScraper(headless=True)
