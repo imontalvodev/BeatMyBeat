@@ -30,27 +30,27 @@
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Savetune">
         <activity
-            android:name=".NowPlayingActivity"
+            android:name=".ui.nowplaying.NowPlayingActivity"
             android:exported="false" />
 
         <activity
-            android:name=".DownloadActivity"
+            android:name=".ui.download.DownloadActivity"
             android:exported="false" />
 
         <activity
-            android:name=".PlaylistsActivity"
+            android:name=".ui.playlists.PlaylistsActivity"
             android:exported="false" />
 
         <activity
-            android:name=".PlaylistSongsActivity"
+            android:name=".ui.playlists.PlaylistSongsActivity"
             android:exported="false" />
 
         <activity
-            android:name=".FavoritesActivity"
+            android:name=".ui.favorites.FavoritesActivity"
             android:exported="false" />
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.main.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -59,7 +59,7 @@
         </activity>
 
         <service
-            android:name=".MusicService"
+            android:name=".player.MusicService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
     </application>

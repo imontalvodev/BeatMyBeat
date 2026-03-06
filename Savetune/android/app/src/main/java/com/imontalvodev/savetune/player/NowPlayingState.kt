@@ -1,4 +1,4 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.player
 
 import android.content.Context
 import android.content.Intent
@@ -6,6 +6,7 @@ import android.media.MediaPlayer
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import com.imontalvodev.savetune.model.Song
 
 object NowPlayingState {
     var songs: List<Song> = emptyList()
@@ -44,16 +45,13 @@ object NowPlayingState {
 
             mp.setOnPreparedListener {
                 it.start()
-                // Asegurar que el servicio en foreground está activo para reproducción en segundo plano
                 val startIntent = Intent(context, MusicService::class.java).apply {
                     action = MusicService.ACTION_START
                 }
                 androidx.core.content.ContextCompat.startForegroundService(context, startIntent)
             }
             mp.setOnCompletionListener {
-                // Avanzar automáticamente a la siguiente pista si existe
                 if (!playNext(context)) {
-                    // Si no hay siguiente, simplemente paramos
                     Log.d(TAG, "Fin de la cola de reproducción")
                 }
             }

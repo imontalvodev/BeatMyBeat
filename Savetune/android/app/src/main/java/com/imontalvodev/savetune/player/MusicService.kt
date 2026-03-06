@@ -1,4 +1,4 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.player
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -10,6 +10,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.imontalvodev.savetune.R
+import com.imontalvodev.savetune.ui.main.MainActivity
 
 class MusicService : Service() {
 

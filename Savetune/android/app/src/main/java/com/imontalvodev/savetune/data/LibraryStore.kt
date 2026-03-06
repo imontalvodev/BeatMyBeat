@@ -1,6 +1,7 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.data
 
 import android.content.Context
+import com.imontalvodev.savetune.model.Song
 import org.json.JSONObject
 
 object LibraryStore {
@@ -48,7 +49,6 @@ object LibraryStore {
         } else {
             org.json.JSONArray().also { json.put(playlistName, it) }
         }
-        // evitar duplicados
         var exists = false
         for (i in 0 until arr.length()) {
             if (arr.getString(i) == key) {

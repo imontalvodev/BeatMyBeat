@@ -1,9 +1,10 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.ui.main
 
 import android.content.Context
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import com.imontalvodev.savetune.model.Song
 import java.io.File
 
 object MainActivityHelper {
@@ -13,10 +14,8 @@ object MainActivityHelper {
     fun loadDownloadedSongs(context: Context): List<Song> {
         val result = mutableListOf<Song>()
 
-        // Primero intentar con MediaStore
         result.addAll(loadFromMediaStore(context))
 
-        // Si no encontramos nada, buscar directamente en carpetas conocidas
         if (result.isEmpty()) {
             Log.w(TAG, "MediaStore vacío, buscando directamente en sistema de archivos...")
             result.addAll(loadFromFileSystem())
@@ -36,10 +35,15 @@ object MainActivityHelper {
         val result = mutableListOf<Song>()
 
         val musicFolders = listOf(
+            // Carpeta de música por defecto
             "/storage/emulated/0/Music",
+            "/sdcard/Music",
+            // Carpeta histórica de SaveTune dentro de Music (para compatibilidad hacia atrás)
+            "/storage/emulated/0/Music/SaveTune",
+            "/sdcard/Music/SaveTune",
+            // Descargas generales donde a veces acaban audios
             "/storage/emulated/0/Download",
             "/storage/emulated/0/Downloads",
-            "/sdcard/Music",
             "/sdcard/Download"
         )
 

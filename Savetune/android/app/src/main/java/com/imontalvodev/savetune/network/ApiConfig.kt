@@ -1,4 +1,4 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.network
 
 object ApiConfig {
     // Emulador Android hablando directamente con el backend Python en tu máquina

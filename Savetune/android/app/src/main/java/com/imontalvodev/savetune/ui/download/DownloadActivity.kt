@@ -1,25 +1,37 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.ui.download
 
+import android.content.ContentValues
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.*
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.ListView
+import android.widget.ProgressBar
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
-
-data class DownloadSong(
-    val id: String? = null,
-    val title: String,
-    val artist: String,
-    val album: String = "",
-    val durationSeconds: Int = 0,
-    val thumbnailUrl: String? = null
-)
+import com.imontalvodev.savetune.R
+import com.imontalvodev.savetune.model.DownloadSong
+import com.imontalvodev.savetune.network.ApiClient
+import com.imontalvodev.savetune.network.ApiConfig
+import com.imontalvodev.savetune.ui.main.MainActivity
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+import java.io.FileOutputStream
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 class DownloadActivity : AppCompatActivity() {
 
@@ -123,7 +135,7 @@ class DownloadActivity : AppCompatActivity() {
                                 ).show()
                             } else {
                                 // Mostrar un pequeño resumen y ofrecer descarga
-                                androidx.appcompat.app.AlertDialog.Builder(this)
+                                AlertDialog.Builder(this)
                                     .setTitle("Resultado encontrado")
                                     .setMessage(video.title)
                                     .setPositiveButton("Descargar") { _, _ ->
@@ -240,13 +252,13 @@ class DownloadActivity : AppCompatActivity() {
         Thread {
             try {
                 val url =
-                    "${ApiConfig.BASE_URL}/download?videoId=${java.net.URLEncoder.encode(videoId, "UTF-8")}"
+                    "${ApiConfig.BASE_URL}/download?videoId=${URLEncoder.encode(videoId, "UTF-8")}"
 
-                val client = okhttp3.OkHttpClient.Builder()
-                    .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
+                val client = OkHttpClient.Builder()
+                    .readTimeout(300, TimeUnit.SECONDS)
                     .build()
 
-                val request = okhttp3.Request.Builder()
+                val request = Request.Builder()
                     .url(url)
                     .get()
                     .build()
@@ -260,13 +272,13 @@ class DownloadActivity : AppCompatActivity() {
 
                     val fileName = "${song.title.replace("/", "-")}.mp3"
 
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                        val values = android.content.ContentValues().apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val values = ContentValues().apply {
                             put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
                             put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
                             put(
                                 MediaStore.Audio.Media.RELATIVE_PATH,
-                                Environment.DIRECTORY_MUSIC + "/SaveTune"
+                                Environment.DIRECTORY_MUSIC
                             )
                             put(MediaStore.Audio.Media.IS_PENDING, 1)
                         }
@@ -292,13 +304,13 @@ class DownloadActivity : AppCompatActivity() {
                         resolver.update(uri, values, null, null)
                     } else {
                         val musicDir = Environment.getExternalStoragePublicDirectory(
-                            Environment.DIRECTORY_MUSIC + "/SaveTune"
+                            Environment.DIRECTORY_MUSIC
                         )
                         if (!musicDir.exists()) {
                             musicDir.mkdirs()
                         }
-                        val outFile = java.io.File(musicDir, fileName)
-                        java.io.FileOutputStream(outFile).use { out ->
+                        val outFile = File(musicDir, fileName)
+                        FileOutputStream(outFile).use { out ->
                             body.byteStream().use { input ->
                                 val buffer = ByteArray(8 * 1024)
                                 var read: Int
@@ -336,4 +348,3 @@ class DownloadActivity : AppCompatActivity() {
         btnAnalyze.text = if (isLoading) "LOADING..." else "ANALYZE SOURCE"
     }
 }
-

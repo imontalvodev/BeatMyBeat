@@ -1,17 +1,19 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.ui.nowplaying
 
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.View
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.imontalvodev.savetune.R
+import com.imontalvodev.savetune.model.Song
+import com.imontalvodev.savetune.player.NowPlayingState
 
 class NowPlayingActivity : AppCompatActivity() {
 
@@ -172,4 +174,3 @@ class NowPlayingActivity : AppCompatActivity() {
         }
     }
 }
-

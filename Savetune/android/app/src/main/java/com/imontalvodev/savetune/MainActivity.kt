@@ -1,31 +1,30 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.ui.main
 
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
+import android.util.Log
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import android.provider.MediaStore
-import android.util.Log
-import android.media.MediaPlayer
-import android.graphics.BitmapFactory
-import android.media.MediaMetadataRetriever
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
+import android.graphics.BitmapFactory
+import android.media.MediaPlayer
+import com.imontalvodev.savetune.R
+import com.imontalvodev.savetune.data.LibraryStore
+import com.imontalvodev.savetune.model.Song
+import com.imontalvodev.savetune.player.NowPlayingState
+import com.imontalvodev.savetune.ui.download.DownloadActivity
+import com.imontalvodev.savetune.ui.favorites.FavoritesActivity
+import com.imontalvodev.savetune.ui.nowplaying.NowPlayingActivity
+import com.imontalvodev.savetune.ui.playlists.PlaylistsActivity
 import java.io.File
-
-data class Song(
-    val title: String,
-    val artist: String,
-    val album: String = "",
-    val durationSeconds: Int = 0,
-    val file: File? = null,
-    val mediaStoreId: Long? = null
-)
 
 class MainActivity : AppCompatActivity() {
 
@@ -83,7 +82,6 @@ class MainActivity : AppCompatActivity() {
         txtPlaylistSubtitle = findViewById(R.id.txtPlaylistSubtitle)
         listSongs = findViewById(R.id.listSongs)
         btnPlayAll = findViewById(R.id.btnPlayAll)
-
         playerBar = findViewById(R.id.playerBar)
         imgCurrentArt = findViewById(R.id.imgCurrentArt)
         txtCurrentTitle = findViewById(R.id.txtCurrentTitle)

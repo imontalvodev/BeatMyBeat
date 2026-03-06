@@ -1,12 +1,23 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.ui.playlists
 
 import android.content.Intent
 import android.os.Bundle
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import com.imontalvodev.savetune.R
+import com.imontalvodev.savetune.data.LibraryStore
+import com.imontalvodev.savetune.model.Song
+import com.imontalvodev.savetune.player.NowPlayingState
+import com.imontalvodev.savetune.ui.main.MainActivityHelper
+import com.imontalvodev.savetune.ui.nowplaying.NowPlayingActivity
 
-class FavoritesActivity : AppCompatActivity() {
+class PlaylistSongsActivity : AppCompatActivity() {
 
+    companion object {
+        const val EXTRA_PLAYLIST_NAME = "playlist_name"
+    }
+
+    private lateinit var txtPlaylistTitle: TextView
     private lateinit var btnPlayAll: Button
     private lateinit var listView: ListView
     private lateinit var playerBar: LinearLayout
@@ -21,10 +32,11 @@ class FavoritesActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_favorites)
+        setContentView(R.layout.activity_playlist_songs)
 
-        btnPlayAll = findViewById(R.id.btnPlayAllFavorites)
-        listView = findViewById(R.id.listFavorites)
+        txtPlaylistTitle = findViewById(R.id.txtPlaylistTitle)
+        btnPlayAll = findViewById(R.id.btnPlayAllPlaylist)
+        listView = findViewById(R.id.listPlaylistSongs)
         playerBar = findViewById(R.id.playerBar)
         imgCurrentArt = findViewById(R.id.imgCurrentArt)
         txtCurrentTitle = findViewById(R.id.txtCurrentTitle)
@@ -33,14 +45,17 @@ class FavoritesActivity : AppCompatActivity() {
         btnPrevMain = findViewById(R.id.btnPrevMain)
         btnNextMain = findViewById(R.id.btnNextMain)
 
-        loadSongs()
+        val playlistName = intent.getStringExtra(EXTRA_PLAYLIST_NAME) ?: ""
+        txtPlaylistTitle.text = playlistName
+
+        loadSongs(playlistName)
         setupList()
         setupPlayerBar()
     }
 
-    private fun loadSongs() {
+    private fun loadSongs(playlistName: String) {
         val allSongs = MainActivityHelper.loadDownloadedSongs(this)
-        songs = LibraryStore.getFavoriteSongs(this, allSongs)
+        songs = LibraryStore.getPlaylistSongs(this, playlistName, allSongs)
     }
 
     private fun setupList() {
@@ -64,10 +79,9 @@ class FavoritesActivity : AppCompatActivity() {
                 if (song != null) {
                     titleView.text = song.title
                     artistView.text = song.artist
-
                     val file = song.file
                     if (file != null && file.exists()) {
-                        com.bumptech.glide.Glide.with(this@FavoritesActivity)
+                        com.bumptech.glide.Glide.with(this@PlaylistSongsActivity)
                             .load(file)
                             .placeholder(R.mipmap.ic_launcher_round)
                             .error(R.mipmap.ic_launcher_round)
@@ -93,9 +107,9 @@ class FavoritesActivity : AppCompatActivity() {
             if (songs.isNotEmpty()) {
                 NowPlayingState.songs = songs
                 NowPlayingState.playSong(this, 0)
-                Toast.makeText(this, "Reproduciendo favoritos", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Reproduciendo playlist completa", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "No hay canciones favoritas", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "No hay canciones en esta playlist", Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -1,24 +1,14 @@
-package com.imontalvodev.savetune
+package com.imontalvodev.savetune.network
 
 import android.util.Log
+import com.imontalvodev.savetune.model.DownloadSong
+import com.imontalvodev.savetune.model.PlaylistInfo
+import com.imontalvodev.savetune.model.YoutubeVideo
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
-
-data class PlaylistInfo(
-    val name: String,
-    val totalTracks: Int,
-    val songs: List<DownloadSong>
-)
-
-data class YoutubeVideo(
-    val id: String,
-    val title: String,
-    val url: String,
-    val thumbnail: String?
-)
 
 object ApiClient {
     // El scraper con Selenium tarda bastante; ampliamos timeouts
