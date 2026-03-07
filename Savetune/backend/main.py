@@ -1,15 +1,19 @@
-"""SaveTune Python backend (FastAPI) - Selenium Scraper + fuentes públicas (oEmbed/iTunes)."""
+"""SaveTune Python backend (FastAPI) - Spotify Web API + Selenium fallback."""
 
 import os
 import tempfile
 import re
 from typing import Generator
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 
 from services.spotify import SpotifyPlaylistScraper
+from services.spotify_api import SpotifyWebAPI
 import yt_dlp
 from mutagen import File as MutagenFile
 
@@ -32,6 +36,44 @@ def _extract_playlist_id(url: str) -> str | None:
         if m:
             return m.group(1)
     return None
+
+
+def _fetch_playlist_via_api(url: str) -> dict | None:
+    """Obtiene la playlist vía Spotify Web API. Mismo formato que el scraper."""
+    api = SpotifyWebAPI()
+    if not api.is_configured():
+        return None
+    try:
+        result = api.obtener_canciones_playlist(url)
+    except Exception as e:
+        print("Spotify API error:", e)
+        return None
+    if not result.get("success"):
+        print("Spotify API:", result.get("error", "unknown"))
+        return None
+    playlist = result["playlist"]
+    canciones = result["canciones"]
+    canciones_validas = [
+        c for c in canciones
+        if c.get("id") and c.get("titulo") and c["titulo"] != "Unknown"
+    ]
+    print("API obtuvo", len(canciones_validas), "canciones")
+    songs = [
+        {
+            "id": c["id"],
+            "title": c["titulo"],
+            "artist": c["artistas"],
+            "album": c["album"],
+            "imageUrl": c.get("imagen_url", ""),
+            "duration": c["duracion_segundos"],
+        }
+        for c in canciones_validas
+    ]
+    return {
+        "success": True,
+        "playlist": {"name": playlist.get("nombre", "Unknown Playlist"), "totalTracks": len(songs)},
+        "songs": songs,
+    }
 
 
 def _fetch_playlist_via_scraper(url: str) -> dict | None:
@@ -181,10 +223,12 @@ def index():
 @app.get("/health")
 def health():
     """Health check endpoint"""
+    api = SpotifyWebAPI()
     return {
         "status": "ok",
         "backend": "python",
-        "scraper": "selenium"
+        "scraper": "selenium",
+        "spotify_api_configured": api.is_configured(),
     }
 
 
@@ -202,10 +246,13 @@ def api_playlist(url: str = Query(..., alias="url")):
         )
 
     print(f"\n{'='*60}")
-    print(f"📝 Solicitud de playlist: {url}")
+    print(f"Solicitud de playlist: {url}")
     print(f"{'='*60}")
 
-    # Obtener playlist con scraper
+    api_result = _fetch_playlist_via_api(url)
+    if api_result and api_result.get("success"):
+        return api_result
+
     scraper_result = _fetch_playlist_via_scraper(url)
 
     if not scraper_result or not scraper_result.get("success"):
@@ -214,11 +261,10 @@ def api_playlist(url: str = Query(..., alias="url")):
             content={
                 "success": False,
                 "error": "PlaylistFetchError",
-                "message": "No se pudo obtener la playlist con el scraper",
+                "message": "No se pudo obtener la playlist (API y scraper fallaron)",
             },
         )
 
-    print(f"✅ Playlist obtenida exitosamente")
     return scraper_result
 
 
