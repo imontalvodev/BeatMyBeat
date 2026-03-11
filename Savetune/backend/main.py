@@ -144,6 +144,7 @@ def index():
             .card { border-radius:12px; padding:1.5rem; background:#111827; margin-top:1.5rem; box-shadow:0 10px 20px rgba(0,0,0,0.4); }
             .small { font-size:0.875rem; color:#9ca3af; }
             a { color:#38bdf8; }
+            .highlight { background:#1e293b; padding:0.25rem 0.5rem; border-radius:4px; color:#22d3ee; }
         </style>
     </head>
     <body>
@@ -170,6 +171,25 @@ def index():
             <input id="yt-query" type="text" placeholder="SexyBack Timbaland" />
             <button onclick="callSearch()">Buscar en YouTube</button>
             <pre id="search-output"></pre>
+        </div>
+
+        <div class="card" style="border: 2px solid #22d3ee;">
+            <h2>🆕 /api/download-auto <span class="highlight">NUEVO</span></h2>
+            <p class="small">Busca y descarga automáticamente sin necesidad de videoId</p>
+            
+            <label>Título de la canción</label>
+            <input id="auto-title" type="text" placeholder="SexyBack" />
+            
+            <label>Artista</label>
+            <input id="auto-artist" type="text" placeholder="Justin Timberlake" />
+            
+            <label>Álbum (opcional)</label>
+            <input id="auto-album" type="text" placeholder="FutureSex/LoveSounds" />
+            
+            <button onclick="callDownloadAuto()">🎵 Buscar y Descargar</button>
+            <p class="small" style="margin-top:0.5rem;">También puedes usar solo una query general</p>
+            <input id="auto-query" type="text" placeholder="SexyBack Justin Timberlake official audio" />
+            <button onclick="callDownloadAutoQuery()">🔍 Descargar por Query</button>
         </div>
 
         <div class="card">
@@ -209,6 +229,42 @@ def index():
                 if (!id) return;
                 const a = document.createElement('a');
                 a.href = '/api/download?videoId=' + encodeURIComponent(id);
+                a.download = '';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+            async function callDownloadAuto() {
+                const title = document.getElementById('auto-title').value.trim();
+                const artist = document.getElementById('auto-artist').value.trim();
+                const album = document.getElementById('auto-album').value.trim();
+                
+                if (!title && !artist) {
+                    alert('Ingresa al menos el título o artista');
+                    return;
+                }
+                
+                let url = '/api/download-auto?';
+                if (title) url += 'title=' + encodeURIComponent(title) + '&';
+                if (artist) url += 'artist=' + encodeURIComponent(artist) + '&';
+                if (album) url += 'album=' + encodeURIComponent(album);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = '';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+            async function callDownloadAutoQuery() {
+                const query = document.getElementById('auto-query').value.trim();
+                if (!query) {
+                    alert('Ingresa una consulta de búsqueda');
+                    return;
+                }
+                
+                const a = document.createElement('a');
+                a.href = '/api/download-auto?query=' + encodeURIComponent(query);
                 a.download = '';
                 document.body.appendChild(a);
                 a.click();
@@ -487,6 +543,182 @@ def api_download(videoId: str = Query(..., alias="videoId")):
     )
 
 
+@app.get("/api/download-auto")
+def api_download_auto(
+    query: str | None = Query(None, alias="query"),
+    title: str | None = Query(None, alias="title"),
+    artist: str | None = Query(None, alias="artist"),
+    album: str | None = Query(None, alias="album"),
+):
+    """
+    🆕 Busca automáticamente en YouTube y descarga el audio.
+    No necesitas el videoId, solo los datos de la canción.
+
+    Ejemplos:
+    - /api/download-auto?query=SexyBack Timbaland
+    - /api/download-auto?title=SexyBack&artist=Justin Timberlake&album=FutureSex/LoveSounds
+    """
+    # Construir la query de búsqueda
+    parts: list[str] = []
+    if title and title.strip():
+        parts.append(title.strip())
+    if artist and artist.strip() and artist.lower() != "unknown artist":
+        parts.append(artist.strip())
+    if album and album.strip() and album.lower() != "unknown album":
+        parts.append(album.strip())
+
+    if parts:
+        parts.append("official audio")
+        final_query = " ".join(parts)
+    else:
+        final_query = (query or "").strip()
+
+    if not final_query:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "Missing query",
+                "message": "Please provide a search query or song metadata (title, artist, album)",
+            },
+        )
+
+    print(f"\n🎵 Búsqueda y descarga automática: {final_query}")
+
+    # Usar yt-dlp con búsqueda automática (ytsearch1)
+    tmp_dir = tempfile.gettempdir()
+    out_tmpl = os.path.join(tmp_dir, "savetune_%(id)s.%(ext)s")
+
+    opts = {
+        "format": "bestaudio/best",
+        "outtmpl": out_tmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "keepvideo": False,
+        "writethumbnail": True,
+        "default_search": "ytsearch1",  # 🔍 Busca automáticamente en YouTube
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            },
+            {
+                "key": "FFmpegMetadata",
+            },
+            {
+                "key": "EmbedThumbnail",
+            },
+        ],
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(final_query, download=True)
+
+        if not info:
+            raise ValueError("No se pudo obtener información del vídeo")
+
+        # Obtener info del video descargado
+        if "entries" in info:
+            video_info = info["entries"][0]
+        else:
+            video_info = info
+
+        video_id = video_info.get("id") or "unknown"
+        raw_title = video_info.get("title") or "audio"
+        title_safe = raw_title.replace("/", "-").replace("\\", "-")[:200]
+
+        # Buscar el archivo descargado
+        path_file = ""
+        for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
+            candidate = os.path.join(tmp_dir, f"savetune_{video_id}{ext}")
+            if os.path.isfile(candidate):
+                path_file = candidate
+                break
+
+        if not path_file:
+            for f in os.listdir(tmp_dir):
+                if f.startswith(f"savetune_{video_id}"):
+                    path_file = os.path.join(tmp_dir, f)
+                    break
+
+        if not path_file:
+            raise ValueError("No se encontró el archivo de audio descargado")
+
+        ext = os.path.splitext(path_file)[1].lstrip(".")
+
+        # Enriquecer metadatos ID3 con los datos originales de Spotify
+        if ext == "mp3":
+            track_title = title or raw_title
+            track_artist = artist or video_info.get("artist") or video_info.get("uploader") or ""
+            track_album = album or video_info.get("album") or ""
+
+            # Si no hay artista y el título tiene formato "Artista - Canción"
+            if " - " in raw_title and not track_artist:
+                parts_split = raw_title.rsplit(" - ", 1)
+                if len(parts_split) == 2:
+                    left, right = parts_split[0].strip(), parts_split[1].strip()
+                    if 2 <= len(right) <= 40:
+                        track_title, track_artist = left, right
+
+            try:
+                audio = MutagenFile(path_file, easy=True)
+                if audio is not None:
+                    audio["title"] = [track_title]
+                    if track_artist:
+                        audio["artist"] = [track_artist]
+                    if track_album:
+                        audio["album"] = [track_album]
+                    audio.save()
+                    print(f"✅ Metadatos guardados: {track_title} - {track_artist}")
+            except Exception as e:
+                print(f"⚠️ Error guardando metadatos: {e}")
+
+        media_type = (
+            "audio/mpeg"
+            if ext == "mp3"
+            else "audio/mp4"
+            if ext in ("m4a", "mp4")
+            else "audio/webm"
+        )
+
+        def stream_file() -> Generator[bytes, None, None]:
+            try:
+                with open(path_file, "rb") as f:
+                    while chunk := f.read(8192):
+                        yield chunk
+            finally:
+                try:
+                    os.remove(path_file)
+                except OSError:
+                    pass
+
+        filename = f"{title_safe}.{ext}"
+
+        print(f"✅ Descarga completada: {filename}")
+
+        return StreamingResponse(
+            stream_file(),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    except Exception as e:
+        print(f"❌ Error en descarga automática: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": "AutoDownloadError",
+                "message": str(e),
+            },
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
 
@@ -494,5 +726,6 @@ if __name__ == "__main__":
     print(f"\n🚀 Iniciando SaveTune Backend en puerto {port}...")
     print(f"📝 Panel de pruebas: http://localhost:{port}/")
     print(f"🔧 Scraper: Selenium (sin necesidad de Spotify API)")
+    print(f"🆕 Nuevo endpoint: /api/download-auto (descarga automática)")
 
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
