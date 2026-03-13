@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var listSongs: ListView
     private lateinit var btnPlayAll: Button
 
+    private lateinit var imgPlaylistArt: ImageView
     private lateinit var imgCurrentArt: ImageView
     private lateinit var txtCurrentTitle: TextView
     private lateinit var txtCurrentArtist: TextView
@@ -83,6 +84,7 @@ class MainActivity : AppCompatActivity() {
         listSongs = findViewById(R.id.listSongs)
         btnPlayAll = findViewById(R.id.btnPlayAll)
         playerBar = findViewById(R.id.playerBar)
+        imgPlaylistArt = findViewById(R.id.imgPlaylistArt)
         imgCurrentArt = findViewById(R.id.imgCurrentArt)
         txtCurrentTitle = findViewById(R.id.txtCurrentTitle)
         txtCurrentArtist = findViewById(R.id.txtCurrentArtist)
@@ -184,14 +186,46 @@ class MainActivity : AppCompatActivity() {
         songs = loadDownloadedSongs()
         Log.d(TAG, "Canciones encontradas: ${songs.size}")
 
-        txtPlaylistName.text = "My Music"
-        txtPlaylistSubtitle.text = "${songs.size} Track${if (songs.size != 1) "s" else ""}"
+        txtPlaylistName.text = "Late Night Lo-Fi Playlist"
+        txtPlaylistSubtitle.text = "${songs.size} Track${if (songs.size != 1) "s" else ""} Found"
+
+        // Actualizar carátula de la cabecera usando la primera canción disponible
+        updateHeaderArt()
 
         if (songs.isEmpty()) {
             Toast.makeText(this, "No se encontraron canciones en el dispositivo", Toast.LENGTH_LONG).show()
         }
 
         setupList()
+    }
+
+    private fun updateHeaderArt() {
+        val first = songs.firstOrNull()
+        if (first == null) {
+            imgPlaylistArt.setImageResource(R.mipmap.ic_launcher_round)
+            return
+        }
+
+        val file = first.file
+        if (file != null && file.exists()) {
+            try {
+                val mmr = MediaMetadataRetriever()
+                mmr.setDataSource(file.absolutePath)
+                val art = mmr.embeddedPicture
+                if (art != null) {
+                    val bmp = BitmapFactory.decodeByteArray(art, 0, art.size)
+                    imgPlaylistArt.setImageBitmap(bmp)
+                } else {
+                    imgPlaylistArt.setImageResource(R.mipmap.ic_launcher_round)
+                }
+                mmr.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "No se pudo leer la carátula de cabecera", e)
+                imgPlaylistArt.setImageResource(R.mipmap.ic_launcher_round)
+            }
+        } else {
+            imgPlaylistArt.setImageResource(R.mipmap.ic_launcher_round)
+        }
     }
     
     private fun loadDownloadedSongs(): List<Song> {
