@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF020617</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Verde neón principal para botones como en el diseño -->
+    <color name="teal_200">#18FF68</color>
+</resources>
