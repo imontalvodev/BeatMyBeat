@@ -21,7 +21,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -68,8 +71,9 @@ fun PlayerScreen(
     modifier: Modifier = Modifier,
 ) {
     val viewModel: PlayerViewModel = viewModel()
-    val deviceTracksState = viewModel.tracks.collectAsState()
-    val deviceTracks = deviceTracksState.value
+    val deviceTracks = viewModel.tracks.collectAsState().value
+    val favoriteIds = viewModel.favoriteIds.collectAsState().value
+    val playlistIds = viewModel.playlistIds.collectAsState().value
     val context = LocalContext.current
 
     val mediaPlayer = remember { MediaPlayer() }
@@ -81,6 +85,7 @@ fun PlayerScreen(
     }
 
     var currentTrack by remember { mutableStateOf<DeviceTrack?>(null) }
+    var currentIndex by remember { mutableStateOf(-1) }
     var isPlaying by remember { mutableStateOf(false) }
     var shuffleOn by remember { mutableStateOf(false) }
     var repeatOn by remember { mutableStateOf(false) }
@@ -177,8 +182,21 @@ fun PlayerScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Vista grande de la canción actual
-            CurrentTrackLargeCard(currentTrack = currentTrack, artwork = currentArtwork)
+            // Vista grande de la canción actual + acciones
+            CurrentTrackLargeCard(
+                currentTrack = currentTrack,
+                artwork = currentArtwork,
+                isFavorite = currentTrack?.let { favoriteIds.contains(it.id) } ?: false,
+                onToggleFavorite = {
+                    currentTrack?.let { viewModel.toggleFavorite(it) }
+                },
+                onAddToPlaylist = {
+                    currentTrack?.let {
+                        val added = viewModel.addToPlaylist(it, allowDuplicate = false)
+                        // Aquí podríamos mostrar un Toast si !added (duplicado)
+                    }
+                },
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -203,17 +221,24 @@ fun PlayerScreen(
                     PlayerTrackRow(
                         track = track,
                         isCurrent = currentTrack?.id == track.id,
+                        isFavorite = favoriteIds.contains(track.id),
+                        inMainPlaylist = playlistIds.contains(track.id),
                         onClick = {
                             try {
                                 mediaPlayer.reset()
-                                mediaPlayer.setDataSource(context, Uri.parse(track.uri))
+                                mediaPlayer.setDataSource(context, track.uri.toUri())
                                 mediaPlayer.prepare()
                                 mediaPlayer.start()
                                 currentTrack = track
+                                currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
                                 isPlaying = true
                             } catch (_: Exception) {
                                 // TODO: mostrar error al usuario
                             }
+                        },
+                        onToggleFavorite = { viewModel.toggleFavorite(track) },
+                        onAddToPlaylist = {
+                            viewModel.addToPlaylist(track, allowDuplicate = false)
                         },
                     )
                 }
@@ -245,6 +270,48 @@ fun PlayerScreen(
                         mediaPlayer.seekTo((dur * newPos).toInt())
                     }
                 },
+                onPrev = {
+                    if (deviceTracks.isNotEmpty()) {
+                        val nextIndex = when {
+                            currentIndex <= 0 -> deviceTracks.lastIndex
+                            else -> currentIndex - 1
+                        }
+                        val track = deviceTracks.getOrNull(nextIndex)
+                        if (track != null) {
+                            try {
+                                mediaPlayer.reset()
+                                mediaPlayer.setDataSource(context, Uri.parse(track.uri))
+                                mediaPlayer.prepare()
+                                mediaPlayer.start()
+                                currentTrack = track
+                                currentIndex = nextIndex
+                                isPlaying = true
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }
+                },
+                onNext = {
+                    if (deviceTracks.isNotEmpty()) {
+                        val nextIndex = when {
+                            currentIndex < 0 || currentIndex >= deviceTracks.lastIndex -> 0
+                            else -> currentIndex + 1
+                        }
+                        val track = deviceTracks.getOrNull(nextIndex)
+                        if (track != null) {
+                            try {
+                                mediaPlayer.reset()
+                                mediaPlayer.setDataSource(context, Uri.parse(track.uri))
+                                mediaPlayer.prepare()
+                                mediaPlayer.start()
+                                currentTrack = track
+                                currentIndex = nextIndex
+                                isPlaying = true
+                            } catch (_: Exception) {
+                            }
+                        }
+                    }
+                },
             )
         }
     }
@@ -254,7 +321,11 @@ fun PlayerScreen(
 private fun PlayerTrackRow(
     track: DeviceTrack,
     isCurrent: Boolean,
+    isFavorite: Boolean,
+    inMainPlaylist: Boolean,
     onClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAddToPlaylist: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -302,11 +373,32 @@ private fun PlayerTrackRow(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
             }
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = "Favorito",
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                    )
+                }
+                IconButton(onClick = onAddToPlaylist) {
+                    Icon(
+                        imageVector = Icons.Filled.PlaylistAdd,
+                        contentDescription = "Añadir a playlist",
+                        tint = if (inMainPlaylist) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                )
+            }
         }
     }
 }
@@ -322,6 +414,8 @@ private fun BottomPlayerBar(
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
     onSeek: (Float) -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -380,7 +474,7 @@ private fun BottomPlayerBar(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = { /* prev */ }) {
+                    IconButton(onClick = onPrev) {
                         Icon(
                             imageVector = Icons.Filled.SkipPrevious,
                             contentDescription = "Previous",
@@ -394,7 +488,7 @@ private fun BottomPlayerBar(
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
-                    IconButton(onClick = { /* next */ }) {
+                    IconButton(onClick = onNext) {
                         Icon(
                             imageVector = Icons.Filled.SkipNext,
                             contentDescription = "Next",
@@ -420,6 +514,9 @@ private fun BottomPlayerBar(
 private fun CurrentTrackLargeCard(
     currentTrack: DeviceTrack?,
     artwork: Bitmap?,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onAddToPlaylist: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -474,23 +571,48 @@ private fun CurrentTrackLargeCard(
                     modifier = Modifier
                         .padding(start = 16.dp)
                         .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(
-                        text = currentTrack.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = currentTrack.album ?: currentTrack.artist,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                    )
-                    Text(
-                        text = currentTrack.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = currentTrack.title,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = currentTrack.album ?: currentTrack.artist,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        )
+                        Text(
+                            text = currentTrack.artist,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconButton(onClick = onToggleFavorite) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                contentDescription = "Favorito",
+                                tint = if (isFavorite) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                            )
+                        }
+                        IconButton(onClick = onAddToPlaylist) {
+                            Icon(
+                                imageVector = Icons.Filled.PlaylistAdd,
+                                contentDescription = "Añadir a playlist",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                            )
+                        }
+                    }
                 }
             }
         }
