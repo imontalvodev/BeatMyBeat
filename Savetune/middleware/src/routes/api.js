@@ -67,6 +67,35 @@ router.get('/search-youtube', async (req, res, next) => {
   }
 });
 
+// GET /api/lyrics?title=...&artist=...
+router.get('/lyrics', async (req, res, next) => {
+  try {
+    const { title, artist } = req.query;
+
+    if (!title || !artist) {
+      return res.status(400).json({
+        success: false,
+        error: 'MissingMetadata',
+        message: 'Please provide title and artist',
+      });
+    }
+
+    const url = new URL(`${PY_BACKEND_URL}/api/lyrics`);
+    url.searchParams.set('title', title);
+    url.searchParams.set('artist', artist);
+
+    const upstream = await fetch(url);
+    const body = await upstream.text();
+
+    res
+      .status(upstream.status)
+      .set('Content-Type', upstream.headers.get('content-type') || 'application/json')
+      .send(body);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/download?videoId=...
 router.get('/download', async (req, res, next) => {
   try {

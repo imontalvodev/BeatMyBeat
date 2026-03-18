@@ -35,6 +35,7 @@ En el frontend:
    - El frontend llama a rutas como:
      - `GET {MIDDLEWARE_URL}/api/playlist`
      - `GET {MIDDLEWARE_URL}/api/search-youtube`
+     - `GET {MIDDLEWARE_URL}/api/lyrics`
      - `GET {MIDDLEWARE_URL}/api/download`
      - `GET {MIDDLEWARE_URL}/api/download-auto`
 
@@ -42,6 +43,7 @@ En el frontend:
    - El middleware reenvía la petición a:
      - `GET {PY_BACKEND_URL}/api/playlist`
      - `GET {PY_BACKEND_URL}/api/search-youtube`
+     - `GET {PY_BACKEND_URL}/api/lyrics`
      - `GET {PY_BACKEND_URL}/api/download`
      - `GET {PY_BACKEND_URL}/api/download-auto`
 
@@ -153,6 +155,56 @@ const data = await res.json(); // data.video.id, data.video.title, etc.
 ```
 
 ---
+
+### 3.3 `GET /api/lyrics` (nuevo)
+
+Este endpoint expone letras de canciones hacia el frontend, proxyeando el endpoint del backend Python:
+- Backend Python: `GET {PY_BACKEND_URL}/api/lyrics`
+
+**Frontend → Middleware**
+
+- Método: `GET`
+- URL: `{MIDDLEWARE_URL}/api/lyrics`
+- Query params:
+  - `title` (obligatorio)
+  - `artist` (obligatorio)
+
+Ejemplo:
+
+```text
+GET {MIDDLEWARE_URL}/api/lyrics?title=In%20The%20End&artist=Linkin%20Park
+```
+
+**Middleware → Backend Python**
+
+- Método: `GET`
+- URL: `{PY_BACKEND_URL}/api/lyrics` con los mismos query params.
+
+**Validación en middleware**
+
+- Si falta `title` o `artist`, el middleware puede responder directamente:
+
+```json
+{
+  "success": false,
+  "error": "MissingMetadata",
+  "message": "Please provide title and artist"
+}
+```
+
+**Respuesta al frontend**
+
+- Reenvía tal cual el JSON del backend Python (ver contrato en `backend/API_DOCS.md`):
+  - `success`, `source`, `sourceUrl`, `lyrics` (y campos de apoyo `pageTitle`, `pageArtist`)
+  - o error `LyricsNotFound` con status `404`.
+
+Uso típico desde frontend:
+
+```ts
+const params = new URLSearchParams({ title: song.title, artist: song.artist });
+const res = await fetch(`${MIDDLEWARE_URL}/api/lyrics?${params.toString()}`);
+const data = await res.json(); // data.lyrics
+```
 
 ## 4. Endpoints de descarga: *streaming* de audio
 
