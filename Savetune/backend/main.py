@@ -5,6 +5,8 @@ import tempfile
 import re
 import json
 import unicodedata
+import shutil
+import uuid
 from functools import lru_cache
 from typing import Generator
 
@@ -910,8 +912,9 @@ def api_lyrics(
 
 def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, None], str]:
     """Descarga audio de YouTube y devuelve (filename, stream, media_type)"""
-    tmp_dir = tempfile.gettempdir()
-    out_tmpl = os.path.join(tmp_dir, "savetune_%(id)s.%(ext)s")
+    # Directorio único por petición para evitar colisiones (WinError 32)
+    job_dir = tempfile.mkdtemp(prefix="savetune_")
+    out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
     opts = {
         "format": "bestaudio/best",
         "outtmpl": out_tmpl,
@@ -948,15 +951,15 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
     # Buscar el archivo descargado
     path_file = ""
     for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
-        candidate = os.path.join(tmp_dir, f"savetune_{video_id}{ext}")
+        candidate = os.path.join(job_dir, f"audio_{video_id}{ext}")
         if os.path.isfile(candidate):
             path_file = candidate
             break
 
     if not path_file:
-        for f in os.listdir(tmp_dir):
-            if f.startswith(f"savetune_{video_id}"):
-                path_file = os.path.join(tmp_dir, f)
+        for f in os.listdir(job_dir):
+            if f.startswith(f"audio_{video_id}"):
+                path_file = os.path.join(job_dir, f)
                 break
 
     if not path_file:
@@ -1003,8 +1006,9 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
                 while chunk := f.read(8192):
                     yield chunk
         finally:
+            # Limpieza completa del job dir (audio + thumbnail/temp)
             try:
-                os.remove(path_file)
+                shutil.rmtree(job_dir, ignore_errors=True)
             except OSError:
                 pass
 
@@ -1091,9 +1095,9 @@ def api_download_auto(
 
     print(f"\n🎵 Búsqueda y descarga automática: {final_query}")
 
-    # Usar yt-dlp con búsqueda automática (ytsearch1)
-    tmp_dir = tempfile.gettempdir()
-    out_tmpl = os.path.join(tmp_dir, "savetune_%(id)s.%(ext)s")
+    # Usar un directorio único por petición para evitar colisiones en Temp (WinError 32)
+    job_dir = tempfile.mkdtemp(prefix="savetune_")
+    out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
 
     opts = {
         "format": "bestaudio/best",
@@ -1139,15 +1143,15 @@ def api_download_auto(
         # Buscar el archivo descargado
         path_file = ""
         for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
-            candidate = os.path.join(tmp_dir, f"savetune_{video_id}{ext}")
+            candidate = os.path.join(job_dir, f"audio_{video_id}{ext}")
             if os.path.isfile(candidate):
                 path_file = candidate
                 break
 
         if not path_file:
-            for f in os.listdir(tmp_dir):
-                if f.startswith(f"savetune_{video_id}"):
-                    path_file = os.path.join(tmp_dir, f)
+            for f in os.listdir(job_dir):
+                if f.startswith(f"audio_{video_id}"):
+                    path_file = os.path.join(job_dir, f)
                     break
 
         if not path_file:
@@ -1197,7 +1201,7 @@ def api_download_auto(
                         yield chunk
             finally:
                 try:
-                    os.remove(path_file)
+                    shutil.rmtree(job_dir, ignore_errors=True)
                 except OSError:
                     pass
 
@@ -1215,6 +1219,11 @@ def api_download_auto(
 
     except Exception as e:
         print(f"❌ Error en descarga automática: {e}")
+        # Limpieza si falló antes de crear el stream
+        try:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception:
+            pass
         return JSONResponse(
             status_code=503,
             content={
