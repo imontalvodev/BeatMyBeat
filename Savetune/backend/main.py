@@ -3,6 +3,9 @@
 import os
 import tempfile
 import re
+import json
+import unicodedata
+from functools import lru_cache
 from typing import Generator
 
 from dotenv import load_dotenv
@@ -16,6 +19,8 @@ from services.spotify import SpotifyPlaylistScraper
 from services.spotify_api import SpotifyWebAPI
 import yt_dlp
 from mutagen import File as MutagenFile
+import requests
+from bs4 import BeautifulSoup
 
 
 app = FastAPI(title="SaveTune Python Backend")
@@ -36,6 +41,460 @@ def _extract_playlist_id(url: str) -> str | None:
         if m:
             return m.group(1)
     return None
+
+
+def _strip_accents(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
+
+def _slugify_letras(s: str) -> str:
+    """
+    Convierte texto a slug estilo letras.com.
+    Ej: "Creep (Acoustic)" -> "creep-acoustic"
+    """
+    s = (s or "").strip().lower()
+    s = _strip_accents(s)
+    # Normalizaciones comunes
+    s = s.replace("&", " and ")
+    s = re.sub(r"\b(feat|ft)\.?\b", "", s, flags=re.I)
+    s = re.sub(r"[\[\]\(\)\{\}]", " ", s)  # quita paréntesis/llaves
+    s = re.sub(r"[\"'“”‘’`´]", "", s)
+    s = re.sub(r"[^a-z0-9]+", "-", s)  # todo lo no alfanumérico a '-'
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    return s
+
+
+def _candidate_title_variants(title: str) -> list[str]:
+    t = (title or "").strip()
+    if not t:
+        return []
+
+    # Quitar contenido entre paréntesis (versiones, remasters, etc.)
+    no_paren = re.sub(r"\s*[\(\[].*?[\)\]]\s*", " ", t).strip()
+
+    # Quitar sufijos comunes
+    no_suffix = re.sub(
+        r"\s*-\s*(remaster(ed)?(\s*\d{4})?|radio edit|edit|mono|stereo|live|acoustic|demo|official.*)$",
+        "",
+        t,
+        flags=re.I,
+    ).strip()
+
+    # Prioridad: variantes "limpias" primero, y el título original al final.
+    # Esto evita quedarnos con páginas tipo "(Demo)" cuando también existe la versión normal.
+    variants: list[str] = []
+    for cand in (no_paren, no_suffix, t):
+        if cand and cand.strip():
+            variants.append(cand.strip())
+
+    # Deduplicar preservando orden
+    out: list[str] = []
+    seen = set()
+    for v in variants:
+        key = v.lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(v)
+    return out
+
+
+def _letras_candidate_urls(artist: str, title: str) -> list[str]:
+    artist_slug = _slugify_letras(artist)
+    if not artist_slug:
+        return []
+
+    urls: list[str] = []
+    for t in _candidate_title_variants(title):
+        title_slug = _slugify_letras(t)
+        if not title_slug:
+            continue
+        urls.append(f"https://m.letras.com/{artist_slug}/{title_slug}/")
+        urls.append(f"https://www.letras.com/{artist_slug}/{title_slug}/")
+
+    # Deduplicar preservando orden
+    out: list[str] = []
+    seen = set()
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def _extract_lyrics_from_jsonld(soup: BeautifulSoup) -> str | None:
+    scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
+    for sc in scripts:
+        raw = sc.string or sc.get_text(strip=True) or ""
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+
+        # JSON-LD puede venir como lista o dict
+        nodes = data if isinstance(data, list) else [data]
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            lyrics = node.get("lyrics")
+            if isinstance(lyrics, dict):
+                text = lyrics.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+            if isinstance(lyrics, str) and lyrics.strip():
+                return lyrics.strip()
+    return None
+
+
+def _normalize_lyrics_text(text: str) -> str:
+    # Mantener saltos de línea “bonitos”
+    text = re.sub(r"\r\n?", "\n", text or "")
+    # Colapsar demasiadas líneas vacías
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
+def _page_canonical_url(soup: BeautifulSoup) -> str:
+    link = soup.find("link", attrs={"rel": "canonical"})
+    href = link.get("href") if link else ""
+    return href or ""
+
+
+def _extract_lyrics_from_known_letras_containers(soup: BeautifulSoup) -> str | None:
+    """
+    Letras.com suele renderizar la letra dentro de contenedores concretos, por ejemplo:
+    - div.lyric-original  (muy común; el que enseñas en la captura)
+    - div.lyric-cnt / div#lyrics / article div.lyric (variantes)
+
+    Aquí construimos la letra a partir de <p> y <br> para preservar saltos.
+    """
+    selectors = [
+        "div.lyric-original",
+        "div.lyric-cnt",
+        "div#lyrics",
+        "article div.lyric",
+        "article div.lyric-original",
+    ]
+
+    for sel in selectors:
+        node = soup.select_one(sel)
+        if not node:
+            continue
+
+        # Si hay <p>, usar esos como líneas/estrofas
+        ps = node.find_all("p")
+        if ps:
+            parts: list[str] = []
+            for p in ps:
+                txt = p.get_text("\n", strip=True)
+                if txt:
+                    parts.append(txt)
+                else:
+                    parts.append("")
+            out = "\n\n".join(parts)
+            out = _normalize_lyrics_text(out)
+            if len(out) >= 80 and out.count("\n") >= 3:
+                return out
+
+        # Si no hay <p>, respetar <br> usando separador \n
+        txt = node.get_text("\n", strip=True)
+        txt = _normalize_lyrics_text(txt)
+        if len(txt) >= 80 and txt.count("\n") >= 3:
+            return txt
+
+    return None
+
+
+def _extract_lyrics_from_dom(soup: BeautifulSoup) -> str | None:
+    """
+    Fallback heurístico: intenta encontrar el bloque de letra como el texto más largo
+    dentro de contenedores cuyo class/id sugiere 'lyric/letra'.
+    """
+    # Primero: contenedores conocidos de letras.com
+    known = _extract_lyrics_from_known_letras_containers(soup)
+    if known:
+        return known
+
+    candidates: list[str] = []
+
+    # 1) Contenedores obvios por class/id
+    for tag in soup.find_all(["div", "section", "article"]):
+        attrs = " ".join(
+            [
+                " ".join(tag.get("class", []) or []),
+                tag.get("id") or "",
+                tag.get("data-testid") or "",
+            ]
+        ).lower()
+        if not attrs:
+            continue
+        if ("lyric" in attrs) or ("lyrics" in attrs) or ("letra" in attrs):
+            txt = tag.get_text("\n", strip=True)
+            if txt and len(txt) >= 200:
+                candidates.append(txt)
+
+    # 2) Evitar el "body completo" (mete menús, CTAs, etc.).
+    # Si no hay candidatos razonables, preferimos fallar para que el caller pruebe otra URL.
+    if not candidates:
+        return None
+
+    best = max(candidates, key=lambda t: len(t), default="")
+    if not best or len(best) < 200:
+        return None
+
+    # Recorte: cortar a partir de "Written by:" si existe
+    cut_markers = ["Written by:", "Escrita por:", "Composicao:", "Composição:", "Written-by:"]
+    low = best.lower()
+    for m in cut_markers:
+        idx = low.find(m.lower())
+        if idx != -1:
+            best = best[:idx].strip()
+            break
+
+    # Quitar ruido típico de navegación/acciones
+    noise_lines = {
+        "lyrics",
+        "meaning",
+        "translations",
+        "letra",
+        "traducción",
+        "restoreapply",
+        "clear selection",
+        "join the community",
+        "most popular",
+        "most played",
+        "related playlists",
+        "agregar a favoritos",
+        "agregar a playlist",
+        "tamaño de la fuente",
+        "acordes",
+        "imprimir",
+        "corregir",
+        "desplazamiento automático",
+        "anotaciones",
+        "habilitadas",
+        "deshabilitadas",
+    }
+    lines = [ln.strip() for ln in best.splitlines()]
+    cleaned: list[str] = []
+    for ln in lines:
+        if not ln:
+            cleaned.append("")
+            continue
+        if ln.lower() in noise_lines:
+            continue
+        cleaned.append(ln)
+
+    out = "\n".join(cleaned)
+    out = _normalize_lyrics_text(out)
+
+    # Heurística final: asegurarnos de que sea "poesía" (varias líneas)
+    if out.count("\n") < 3:
+        return None
+    return out
+
+
+def _page_song_artist(soup: BeautifulSoup) -> tuple[str, str]:
+    """
+    Obtiene (song_title, artist_name) desde encabezados visibles.
+    En letras.com suele ser h1 = canción, h2 = artista.
+    """
+    h1 = soup.find("h1")
+    h2 = soup.find("h2")
+    song = h1.get_text(" ", strip=True) if h1 else ""
+    artist = h2.get_text(" ", strip=True) if h2 else ""
+    return song, artist
+
+
+def _score_letras_candidate(
+    requested_title: str, requested_artist: str, page_title: str, page_artist: str
+) -> int:
+    """
+    Puntúa una página candidata para escoger la mejor cuando hay variantes
+    (demo, acústica, etc.).
+    """
+    req_base = _slugify_letras(re.sub(r"\s*[\(\[].*?[\)\]]\s*", " ", requested_title).strip())
+    page_slug = _slugify_letras(page_title)
+
+    score = 0
+
+    if page_slug == req_base:
+        score += 5
+    elif req_base and page_slug.startswith(req_base):
+        score += 2
+    elif req_base and req_base in page_slug:
+        score += 1
+
+    # Coincidencia de artista (suave: en letras puede venir sin "The", etc.)
+    req_artist = _slugify_letras(requested_artist)
+    page_artist_slug = _slugify_letras(page_artist)
+    if req_artist and page_artist_slug == req_artist:
+        score += 2
+    elif req_artist and req_artist in page_artist_slug:
+        score += 1
+
+    # Penalizar "demo" si el usuario no lo pidió explícitamente
+    req_has_demo = bool(re.search(r"\bdemo\b", requested_title, flags=re.I))
+    page_has_demo = bool(re.search(r"\bdemo\b", page_title, flags=re.I))
+    if page_has_demo and not req_has_demo:
+        score -= 4
+
+    return score
+
+
+def _is_demo_title(page_title: str) -> bool:
+    return bool(re.search(r"\bdemo\b", page_title or "", flags=re.I))
+
+
+def _discover_song_urls_from_artist_page(artist_slug: str, title_base_slug: str) -> list[str]:
+    """
+    Fallback: muchas canciones tienen URL numérica (ej: /linkin-park/23091/).
+    Para evitar quedarnos con versiones "demo", consultamos la página del artista
+    y extraemos enlaces que parezcan canciones del artista.
+    """
+    if not artist_slug:
+        return []
+
+    candidates: list[str] = []
+    for base in (f"https://www.letras.com/{artist_slug}/", f"https://m.letras.com/{artist_slug}/"):
+        try:
+            status, html = _fetch_letras_page(base)
+            if status != 200 or not html:
+                continue
+            soup = BeautifulSoup(html, "html.parser")
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                text = a.get_text(" ", strip=True) or ""
+                if not href.startswith("http"):
+                    # normalizar a absoluto
+                    if href.startswith("/"):
+                        href = "https://www.letras.com" + href
+                    else:
+                        continue
+
+                # Solo enlaces del propio artista
+                if f"/{artist_slug}/" not in href:
+                    continue
+
+                text_slug = _slugify_letras(text)
+
+                # Coincidencia fuerte por texto del enlace (normalmente es el título de la canción)
+                if title_base_slug and text_slug == title_base_slug:
+                    candidates.append(href)
+                    continue
+
+                # Coincidencia por slug del título en el href (si lo tiene)
+                if title_base_slug and title_base_slug in href:
+                    candidates.append(href)
+                    continue
+
+                # Enlaces numéricos SOLO si el texto parece el título buscado (o lo contiene)
+                if re.search(rf"/{re.escape(artist_slug)}/\d+/?$", href):
+                    if title_base_slug and (title_base_slug in text_slug or text_slug in title_base_slug):
+                        candidates.append(href)
+
+        except Exception:
+            continue
+
+    # Deduplicar preservando orden
+    out: list[str] = []
+    seen = set()
+    for u in candidates:
+        u = u.split("#", 1)[0]
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    # No necesitamos muchos: con 10-15 suele bastar y reduce latencia muchísimo.
+    return out[:15]
+
+
+@lru_cache(maxsize=512)
+def _fetch_letras_page(url: str) -> tuple[int, str]:
+    # Session global simple para keep-alive (mejora latencia en múltiples requests)
+    global _LETRAS_SESSION  # type: ignore[name-defined]
+    try:
+        sess = _LETRAS_SESSION  # type: ignore[name-defined]
+    except Exception:
+        sess = requests.Session()
+        _LETRAS_SESSION = sess  # type: ignore[name-defined]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+    }
+    resp = sess.get(url, headers=headers, timeout=10, allow_redirects=True)
+    return resp.status_code, resp.text
+
+
+def _get_lyrics_from_letras(artist: str, title: str) -> dict:
+    urls = _letras_candidate_urls(artist, title)
+    if not urls:
+        return {"success": False, "error": "MissingMetadata", "message": "artist y title son obligatorios"}
+
+    # Fallback: añadir URLs descubiertas desde la página del artista (incluye IDs numéricos)
+    artist_slug = _slugify_letras(artist)
+    title_base_slug = _slugify_letras(re.sub(r"\s*[\(\[].*?[\)\]]\s*", " ", title).strip())
+    discovered = _discover_song_urls_from_artist_page(artist_slug, title_base_slug)
+    for u in discovered:
+        if u not in urls:
+            urls.append(u)
+
+    last_error = ""
+    best: dict | None = None
+    best_score = -10_000
+    for url in urls:
+        try:
+            status, html = _fetch_letras_page(url)
+            if status != 200 or not html:
+                last_error = f"HTTP {status}"
+                continue
+
+            soup = BeautifulSoup(html, "html.parser")
+            page_title, page_artist = _page_song_artist(soup)
+            canonical = _page_canonical_url(soup)
+
+            lyrics = _extract_lyrics_from_jsonld(soup)
+            if not lyrics:
+                lyrics = _extract_lyrics_from_dom(soup)
+
+            if lyrics:
+                # Si es demo y no la pidieron, no aceptarla como único resultado
+                if _is_demo_title(page_title) and not re.search(r"\bdemo\b", title, flags=re.I):
+                    last_error = "DemoVariantSkipped"
+                    continue
+
+                candidate = {
+                    "success": True,
+                    "source": "letras.com",
+                    "sourceUrl": canonical or url,
+                    "lyrics": _normalize_lyrics_text(lyrics),
+                    "pageTitle": page_title,
+                    "pageArtist": page_artist,
+                }
+                score = _score_letras_candidate(title, artist, page_title, page_artist)
+                if score > best_score:
+                    best_score = score
+                    best = candidate
+                # Si es match perfecto, podemos cortar
+                if best_score >= 7:
+                    break
+
+            last_error = "NoLyricsExtracted"
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    if best:
+        return best
+
+    return {
+        "success": False,
+        "error": "LyricsNotFound",
+        "message": f"No se encontraron letras en letras.com ({last_error})",
+        "triedUrls": urls[:10],
+    }
 
 
 def _fetch_playlist_via_api(url: str) -> dict | None:
@@ -173,6 +632,16 @@ def index():
             <pre id="search-output"></pre>
         </div>
 
+        <div class="card">
+            <h2>/api/lyrics</h2>
+            <label>Título</label>
+            <input id="lyrics-title" type="text" placeholder="Photograph" />
+            <label>Artista</label>
+            <input id="lyrics-artist" type="text" placeholder="Ed Sheeran" />
+            <button onclick="callLyrics()">Obtener letra</button>
+            <pre id="lyrics-output"></pre>
+        </div>
+
         <div class="card" style="border: 2px solid #22d3ee;">
             <h2>🆕 /api/download-auto <span class="highlight">NUEVO</span></h2>
             <p class="small">Busca y descarga automáticamente sin necesidad de videoId</p>
@@ -223,6 +692,18 @@ def index():
                 const res = await fetch('/api/search-youtube?query=' + encodeURIComponent(q));
                 const json = await res.json();
                 document.getElementById('search-output').textContent = JSON.stringify(json, null, 2);
+            }
+            async function callLyrics() {
+                const title = document.getElementById('lyrics-title').value.trim();
+                const artist = document.getElementById('lyrics-artist').value.trim();
+                if (!title || !artist) return;
+                const res = await fetch('/api/lyrics?title=' + encodeURIComponent(title) + '&artist=' + encodeURIComponent(artist));
+                const text = await res.text();
+                try {
+                    document.getElementById('lyrics-output').textContent = JSON.stringify(JSON.parse(text), null, 2);
+                } catch {
+                    document.getElementById('lyrics-output').textContent = text;
+                }
             }
             async function callDownload() {
                 const id = document.getElementById('yt-id').value.trim();
@@ -400,6 +881,31 @@ def api_search_youtube(
                 "message": str(e),
             },
         )
+
+
+@app.get("/api/lyrics")
+def api_lyrics(
+    title: str = Query(..., alias="title"),
+    artist: str = Query(..., alias="artist"),
+):
+    """
+    Obtiene letras desde letras.com (scraping).
+    """
+    if not title or not title.strip() or not artist or not artist.strip():
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "MissingMetadata",
+                "message": "Please provide title and artist",
+            },
+        )
+
+    result = _get_lyrics_from_letras(artist.strip(), title.strip())
+    if result.get("success"):
+        return result
+
+    return JSONResponse(status_code=404, content=result)
 
 
 def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, None], str]:
