@@ -4,38 +4,46 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
-import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,15 +64,21 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.imontalvodev.savetune.R
 import com.imontalvodev.savetune.ui.data.DeviceTrack
+import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
+import com.imontalvodev.savetune.ui.network.LyricsCache
+import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import androidx.core.net.toUri
+import kotlinx.coroutines.withContext
 
 @Composable
 fun PlayerScreen(
@@ -87,10 +101,13 @@ fun PlayerScreen(
     var currentTrack by remember { mutableStateOf<DeviceTrack?>(null) }
     var currentIndex by remember { mutableStateOf(-1) }
     var isPlaying by remember { mutableStateOf(false) }
-    var shuffleOn by remember { mutableStateOf(false) }
-    var repeatOn by remember { mutableStateOf(false) }
     var position by remember { mutableStateOf(0f) }
     var currentArtwork by remember { mutableStateOf<Bitmap?>(null) }
+
+    var query by remember { mutableStateOf("") }
+    var selectedSection by remember { mutableStateOf(PlayerSection.Songs) }
+    var isExpanded by remember { mutableStateOf(false) }
+    var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
 
     LaunchedEffect(Unit) {
         viewModel.syncLibrary(auto = true)
@@ -153,9 +170,105 @@ fun PlayerScreen(
         }
     }
 
-    val bgBrush = Brush.verticalGradient(
-        colors = listOf(NeonBackgroundTop, NeonBackgroundBottom),
-    )
+    // Cargar letra cuando se abre el overlay o cambia la canción
+    LaunchedEffect(currentTrack?.id) {
+        val t = currentTrack ?: run {
+            lyricsState = LyricsUiState.Empty("Selecciona una canción")
+            return@LaunchedEffect
+        }
+        if (t.title.isBlank() || t.artist.isBlank()) {
+            lyricsState = LyricsUiState.Empty("Faltan metadatos (título/artista)")
+            return@LaunchedEffect
+        }
+
+        // 1) Intentar caché local primero (offline-friendly)
+        val cached = withContext(Dispatchers.IO) {
+            LyricsCache.get(context, t.title, t.artist)
+        }
+        if (!cached.isNullOrBlank()) {
+            lyricsState = LyricsUiState.Ready(cached)
+            return@LaunchedEffect
+        }
+
+        // 2) Si no hay caché, intentar red (puede fallar si no hay internet)
+        lyricsState = LyricsUiState.Loading
+        val res = runCatching {
+            withContext(Dispatchers.IO) {
+                MiddlewareApi.fetchLyrics(
+                    baseUrl = MIDDLEWARE_BASE_URL,
+                    title = t.title,
+                    artist = t.artist,
+                )
+            }
+        }.getOrNull()
+
+        if (res != null && res.success && res.lyrics.isNotBlank()) {
+            withContext(Dispatchers.IO) {
+                LyricsCache.put(context, t.title, t.artist, res.lyrics)
+            }
+            lyricsState = LyricsUiState.Ready(res.lyrics)
+        } else {
+            lyricsState = LyricsUiState.Empty(
+                res?.message ?: res?.error ?: "Sin conexión o letras no disponibles",
+            )
+        }
+    }
+
+    val bgBrush = Brush.verticalGradient(colors = listOf(NeonBackgroundTop, NeonBackgroundBottom))
+
+    val visibleTracks = remember(deviceTracks, favoriteIds, playlistIds, query, selectedSection) {
+        val base = when (selectedSection) {
+            PlayerSection.Songs -> deviceTracks
+            PlayerSection.Favorites -> deviceTracks.filter { favoriteIds.contains(it.id) }
+            PlayerSection.Playlist -> deviceTracks.filter { playlistIds.contains(it.id) }
+        }
+        if (query.isBlank()) base
+        else {
+            val q = query.trim().lowercase()
+            base.filter {
+                it.title.lowercase().contains(q) ||
+                    it.artist.lowercase().contains(q) ||
+                    (it.album ?: "").lowercase().contains(q)
+            }
+        }
+    }
+
+    fun playTrack(track: DeviceTrack) {
+        try {
+            mediaPlayer.reset()
+            mediaPlayer.setDataSource(context, track.uri.toUri())
+            mediaPlayer.prepare()
+            mediaPlayer.start()
+            currentTrack = track
+            currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
+            isPlaying = true
+        } catch (_: Exception) {
+        }
+    }
+
+    fun playPrev() {
+        if (deviceTracks.isEmpty()) return
+        val nextIndex = when {
+            currentIndex <= 0 -> deviceTracks.lastIndex
+            else -> currentIndex - 1
+        }
+        deviceTracks.getOrNull(nextIndex)?.let { track ->
+            playTrack(track)
+            currentIndex = nextIndex
+        }
+    }
+
+    fun playNext() {
+        if (deviceTracks.isEmpty()) return
+        val nextIndex = when {
+            currentIndex < 0 || currentIndex >= deviceTracks.lastIndex -> 0
+            else -> currentIndex + 1
+        }
+        deviceTracks.getOrNull(nextIndex)?.let { track ->
+            playTrack(track)
+            currentIndex = nextIndex
+        }
+    }
 
     Surface(
         modifier = modifier
@@ -163,94 +276,92 @@ fun PlayerScreen(
             .background(bgBrush),
         color = Color.Transparent,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-        ) {
-            // Header
-            Text(
-                text = "Savetune Player",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = "${deviceTracks.size} tracks found",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Vista grande de la canción actual + acciones
-            CurrentTrackLargeCard(
-                currentTrack = currentTrack,
-                artwork = currentArtwork,
-                isFavorite = currentTrack?.let { favoriteIds.contains(it.id) } ?: false,
-                onToggleFavorite = {
-                    currentTrack?.let { viewModel.toggleFavorite(it) }
-                },
-                onAddToPlaylist = {
-                    currentTrack?.let {
-                        val added = viewModel.addToPlaylist(it, allowDuplicate = false)
-                        // Aquí podríamos mostrar un Toast si !added (duplicado)
-                    }
-                },
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Botón para sync manual
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+        Box(modifier = Modifier.fillMaxSize()) {
+            // LISTA (boceto 1)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
-                androidx.compose.material3.TextButton(onClick = { viewModel.syncLibrary(auto = false) }) {
-                    Text("Actualizar biblioteca")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Track list
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(deviceTracks) { track ->
-                    PlayerTrackRow(
-                        track = track,
-                        isCurrent = currentTrack?.id == track.id,
-                        isFavorite = favoriteIds.contains(track.id),
-                        inMainPlaylist = playlistIds.contains(track.id),
-                        onClick = {
-                            try {
-                                mediaPlayer.reset()
-                                mediaPlayer.setDataSource(context, track.uri.toUri())
-                                mediaPlayer.prepare()
-                                mediaPlayer.start()
-                                currentTrack = track
-                                currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
-                                isPlaying = true
-                            } catch (_: Exception) {
-                                // TODO: mostrar error al usuario
-                            }
-                        },
-                        onToggleFavorite = { viewModel.toggleFavorite(track) },
-                        onAddToPlaylist = {
-                            viewModel.addToPlaylist(track, allowDuplicate = false)
-                        },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "LISTA CANCIONES",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary,
                     )
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                shape = RoundedCornerShape(20.dp),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Person,
+                            contentDescription = "Perfil de usuario",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Buscador") },
+                    shape = RoundedCornerShape(18.dp),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                PrimaryPillButton(
+                    text = "PLAY ALL TRACKS",
+                    onClick = {
+                        val first = visibleTracks.firstOrNull() ?: deviceTracks.firstOrNull()
+                        if (first != null) playTrack(first)
+                    },
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                SectionChips(
+                    selected = selectedSection,
+                    onSelect = { selectedSection = it },
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 120.dp),
+                ) {
+                    items(visibleTracks) { track ->
+                        TrackRow(
+                            track = track,
+                            isCurrent = currentTrack?.id == track.id,
+                            onClick = { playTrack(track) },
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            BottomPlayerBar(
+            // MINI PLAYER (parte inferior boceto 1)
+            MiniPlayerBar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
                 track = currentTrack,
                 isPlaying = isPlaying,
-                shuffleOn = shuffleOn,
-                repeatOn = repeatOn,
                 position = position,
                 onTogglePlay = {
                     if (mediaPlayer.isPlaying) {
@@ -261,223 +372,292 @@ fun PlayerScreen(
                         isPlaying = true
                     }
                 },
-                onToggleShuffle = { shuffleOn = !shuffleOn },
-                onToggleRepeat = { repeatOn = !repeatOn },
+                onPrev = { playPrev() },
+                onNext = { playNext() },
                 onSeek = { newPos ->
                     position = newPos
                     val dur = mediaPlayer.duration
-                    if (dur > 0) {
-                        mediaPlayer.seekTo((dur * newPos).toInt())
-                    }
+                    if (dur > 0) mediaPlayer.seekTo((dur * newPos).toInt())
                 },
-                onPrev = {
-                    if (deviceTracks.isNotEmpty()) {
-                        val nextIndex = when {
-                            currentIndex <= 0 -> deviceTracks.lastIndex
-                            else -> currentIndex - 1
-                        }
-                        val track = deviceTracks.getOrNull(nextIndex)
-                        if (track != null) {
-                            try {
-                                mediaPlayer.reset()
-                                mediaPlayer.setDataSource(context, Uri.parse(track.uri))
-                                mediaPlayer.prepare()
-                                mediaPlayer.start()
-                                currentTrack = track
-                                currentIndex = nextIndex
-                                isPlaying = true
-                            } catch (_: Exception) {
-                            }
-                        }
-                    }
-                },
-                onNext = {
-                    if (deviceTracks.isNotEmpty()) {
-                        val nextIndex = when {
-                            currentIndex < 0 || currentIndex >= deviceTracks.lastIndex -> 0
-                            else -> currentIndex + 1
-                        }
-                        val track = deviceTracks.getOrNull(nextIndex)
-                        if (track != null) {
-                            try {
-                                mediaPlayer.reset()
-                                mediaPlayer.setDataSource(context, Uri.parse(track.uri))
-                                mediaPlayer.prepare()
-                                mediaPlayer.start()
-                                currentTrack = track
-                                currentIndex = nextIndex
-                                isPlaying = true
-                            } catch (_: Exception) {
-                            }
-                        }
-                    }
-                },
+                onOpenExpanded = { isExpanded = true },
             )
+
+            // OVERLAY EXPANDIDO (boceto 2)
+            if (isExpanded) {
+                ExpandedPlayerOverlay(
+                    modifier = Modifier.fillMaxSize(),
+                    bgBrush = bgBrush,
+                    track = currentTrack,
+                    artwork = currentArtwork,
+                    lyricsState = lyricsState,
+                    isPlaying = isPlaying,
+                    position = position,
+                    onClose = { isExpanded = false },
+                    onTogglePlay = {
+                        if (mediaPlayer.isPlaying) {
+                            mediaPlayer.pause()
+                            isPlaying = false
+                        } else if (currentTrack != null) {
+                            mediaPlayer.start()
+                            isPlaying = true
+                        }
+                    },
+                    onPrev = { playPrev() },
+                    onNext = { playNext() },
+                    onSeek = { newPos ->
+                        position = newPos
+                        val dur = mediaPlayer.duration
+                        if (dur > 0) mediaPlayer.seekTo((dur * newPos).toInt())
+                    },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun PlayerTrackRow(
+private fun TrackRow(
     track: DeviceTrack,
     isCurrent: Boolean,
-    isFavorite: Boolean,
-    inMainPlaylist: Boolean,
     onClick: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onAddToPlaylist: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isCurrent) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-            } else {
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-            },
+            containerColor = if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            else Color.Black.copy(alpha = 0.35f),
         ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(10.dp)
-                .clickable { onClick() },
+                .clickable { onClick() }
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .height(40.dp)
-                    .fillMaxWidth(0.18f),
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .padding(start = 12.dp)
-                    .weight(1f),
-            ) {
+                    .size(36.dp)
+                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+            )
+            Spacer(modifier = Modifier.size(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    text = track.title.toTitleCaseSimple(),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = track.album ?: track.artist,
+                    text = track.artist.toTitleCaseSimple(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                IconButton(onClick = onToggleFavorite) {
-                    Icon(
-                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription = "Favorito",
-                        tint = if (isFavorite) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                    )
-                }
-                IconButton(onClick = onAddToPlaylist) {
-                    Icon(
-                        imageVector = Icons.Filled.PlaylistAdd,
-                        contentDescription = "Añadir a playlist",
-                        tint = if (inMainPlaylist) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                )
-            }
+            TrackOverflowMenu(
+                onQueue = { /* TODO */ },
+                onSaveLibrary = { /* TODO */ },
+                onHide = { /* TODO */ },
+            )
         }
     }
 }
 
 @Composable
-private fun BottomPlayerBar(
-    track: DeviceTrack?,
-    isPlaying: Boolean,
-    shuffleOn: Boolean,
-    repeatOn: Boolean,
-    position: Float,
-    onTogglePlay: () -> Unit,
-    onToggleShuffle: () -> Unit,
-    onToggleRepeat: () -> Unit,
-    onSeek: (Float) -> Unit,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
+private fun TrackOverflowMenu(
+    onQueue: () -> Unit,
+    onSaveLibrary: () -> Unit,
+    onHide: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "Más opciones",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("Poner en cola") },
+                onClick = { expanded = false; onQueue() },
+            )
+            DropdownMenuItem(
+                text = { Text("Guardar en biblioteca") },
+                onClick = { expanded = false; onSaveLibrary() },
+            )
+            DropdownMenuItem(
+                text = { Text("Ocultar") },
+                onClick = { expanded = false; onHide() },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SectionChips(
+    selected: PlayerSection,
+    onSelect: (PlayerSection) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SectionChip(
+            text = "Canciones",
+            selected = selected == PlayerSection.Songs,
+            onClick = { onSelect(PlayerSection.Songs) },
+        )
+        SectionChip(
+            text = "Favoritos",
+            selected = selected == PlayerSection.Favorites,
+            onClick = { onSelect(PlayerSection.Favorites) },
+        )
+        SectionChip(
+            text = "Playlist",
+            selected = selected == PlayerSection.Playlist,
+            onClick = { onSelect(PlayerSection.Playlist) },
+        )
+    }
+}
+
+@Composable
+private fun RowScope.SectionChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+    else Color.Black.copy(alpha = 0.18f)
+    val border = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .background(bg, RoundedCornerShape(14.dp))
+            .border(1.dp, border, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(vertical = 10.dp, horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun PrimaryPillButton(
+    text: String,
+    onClick: () -> Unit,
 ) {
     Card(
         modifier = Modifier
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        ),
+            .fillMaxWidth()
+            .height(44.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(999.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.35f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayerBar(
+    modifier: Modifier,
+    track: DeviceTrack?,
+    isPlaying: Boolean,
+    position: Float,
+    onTogglePlay: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onSeek: (Float) -> Unit,
+    onOpenExpanded: () -> Unit,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 18.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
-            if (track != null) {
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = track.album ?: track.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                )
-            } else {
-                Text(
-                    text = "Sin canción seleccionada",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp)),
+                    )
+                    Spacer(modifier = Modifier.size(10.dp))
+                    Text(
+                        text = "${(track?.title ?: "Sin canción").toTitleCaseSimple()} | ${(track?.artist ?: "").toTitleCaseSimple()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                IconButton(onClick = onOpenExpanded) {
+                    Icon(
+                        imageVector = Icons.Filled.Visibility,
+                        contentDescription = "Ver letra",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Slider(
-                value = position,
-                onValueChange = onSeek,
-            )
+            Slider(value = position, onValueChange = onSeek)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onToggleShuffle) {
+                IconButton(onClick = { /* TODO volumen */ }) {
                     Icon(
                         imageVector = Icons.Outlined.Shuffle,
-                        contentDescription = "Shuffle",
-                        tint = if (shuffleOn) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        contentDescription = "Opciones",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
                 }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onPrev) {
                         Icon(
                             imageVector = Icons.Filled.SkipPrevious,
-                            contentDescription = "Previous",
+                            contentDescription = "Anterior",
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
@@ -485,24 +665,22 @@ private fun BottomPlayerBar(
                         Icon(
                             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = "Play/Pause",
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                     IconButton(onClick = onNext) {
                         Icon(
                             imageVector = Icons.Filled.SkipNext,
-                            contentDescription = "Next",
+                            contentDescription = "Siguiente",
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
-
-                IconButton(onClick = onToggleRepeat) {
+                IconButton(onClick = { /* TODO repeat */ }) {
                     Icon(
                         imageVector = Icons.Outlined.Loop,
-                        contentDescription = "Repeat",
-                        tint = if (repeatOn) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        contentDescription = "Repetir",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
                 }
             }
@@ -511,105 +689,159 @@ private fun BottomPlayerBar(
 }
 
 @Composable
-private fun CurrentTrackLargeCard(
-    currentTrack: DeviceTrack?,
+private fun ExpandedPlayerOverlay(
+    modifier: Modifier,
+    bgBrush: Brush,
+    track: DeviceTrack?,
     artwork: Bitmap?,
-    isFavorite: Boolean,
-    onToggleFavorite: () -> Unit,
-    onAddToPlaylist: () -> Unit,
+    lyricsState: LyricsUiState,
+    isPlaying: Boolean,
+    position: Float,
+    onClose: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onSeek: (Float) -> Unit,
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(220.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
+    Surface(
+        modifier = modifier.background(bgBrush),
+        color = Color.Transparent,
     ) {
-        if (currentTrack == null) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
             ) {
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = "Cerrar",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
+            ) {
+                if (artwork != null) {
+                    Image(
+                        bitmap = artwork.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize())
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val scroll = rememberScrollState()
+            Text(
+                text = (track?.title ?: "").toTitleCaseSimple(),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = (track?.artist ?: "").toTitleCaseSimple(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.30f)),
+            ) {
+                val bodyText = when (lyricsState) {
+                    LyricsUiState.Idle -> "Pulsa para cargar letra"
+                    LyricsUiState.Loading -> "Cargando letra..."
+                    is LyricsUiState.Ready -> lyricsState.lyrics
+                    is LyricsUiState.Empty -> lyricsState.message
+                }
                 Text(
-                    text = "Selecciona una canción para reproducirla",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    text = bodyText,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scroll)
+                        .padding(16.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                 )
             }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 18.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .height(160.dp)
-                        .fillMaxWidth(0.45f),
-                ) {
-                    if (artwork != null) {
-                        Image(
-                            bitmap = artwork.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
-                }
                 Column(
                     modifier = Modifier
-                        .padding(start = 16.dp)
-                        .weight(1f),
-                    verticalArrangement = Arrangement.SpaceBetween,
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                 ) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = currentTrack.title,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = currentTrack.album ?: currentTrack.artist,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                        )
-                        Text(
-                            text = currentTrack.artist,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Slider(value = position, onValueChange = onSeek)
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = onToggleFavorite) {
+                        IconButton(onClick = { /* TODO shuffle */ }) {
                             Icon(
-                                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                contentDescription = "Favorito",
-                                tint = if (isFavorite) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                imageVector = Icons.Outlined.Shuffle,
+                                contentDescription = "Shuffle",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
                         }
-                        IconButton(onClick = onAddToPlaylist) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onPrev) {
+                                Icon(
+                                    imageVector = Icons.Filled.SkipPrevious,
+                                    contentDescription = "Anterior",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            IconButton(onClick = onTogglePlay) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = "Play/Pause",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            IconButton(onClick = onNext) {
+                                Icon(
+                                    imageVector = Icons.Filled.SkipNext,
+                                    contentDescription = "Siguiente",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                        IconButton(onClick = { /* TODO repeat */ }) {
                             Icon(
-                                imageVector = Icons.Filled.PlaylistAdd,
-                                contentDescription = "Añadir a playlist",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                imageVector = Icons.Outlined.Loop,
+                                contentDescription = "Repeat",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
                         }
                     }
@@ -617,5 +849,27 @@ private fun CurrentTrackLargeCard(
             }
         }
     }
+}
+
+private enum class PlayerSection { Songs, Favorites, Playlist }
+
+private sealed interface LyricsUiState {
+    data object Idle : LyricsUiState
+    data object Loading : LyricsUiState
+    data class Ready(val lyrics: String) : LyricsUiState
+    data class Empty(val message: String) : LyricsUiState
+}
+
+private fun String.toTitleCaseSimple(): String {
+    val trimmed = trim()
+    if (trimmed.isEmpty()) return trimmed
+    return trimmed
+        .split(Regex("\\s+"))
+        .joinToString(" ") { word ->
+            val lower = word.lowercase()
+            lower.replaceFirstChar { ch ->
+                if (ch.isLowerCase()) ch.titlecase() else ch.toString()
+            }
+        }
 }
 

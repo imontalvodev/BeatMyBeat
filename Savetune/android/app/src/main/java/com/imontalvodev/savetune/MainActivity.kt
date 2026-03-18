@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
 import com.imontalvodev.savetune.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.savetune.ui.feature.playlist.PlaylistScreen
 import com.imontalvodev.savetune.ui.feature.player.PlayerScreen
@@ -116,12 +118,24 @@ class MainActivity : ComponentActivity() {
                                                     SavetuneThemeMode.NeonMint
                                                 }
                                         },
-                                        onOpenPlaylist = { navController.navigate("playlist") },
+                                        onOpenPlaylist = { playlistUrl ->
+                                            navController.navigate("playlist?url=${java.net.URLEncoder.encode(playlistUrl, "UTF-8")}")
+                                        },
                                     )
                                 }
-                                composable("playlist") {
+                                composable(
+                                    route = "playlist?url={url}",
+                                    arguments = listOf(
+                                        navArgument("url") {
+                                            type = NavType.StringType
+                                            defaultValue = ""
+                                        }
+                                    ),
+                                ) { backStackEntry ->
+                                    val url = backStackEntry.arguments?.getString("url").orEmpty()
                                     PlaylistScreen(
                                         onOpenPlayer = { navController.navigate("player") },
+                                        playlistUrl = url,
                                     )
                                 }
                             composable("player") {

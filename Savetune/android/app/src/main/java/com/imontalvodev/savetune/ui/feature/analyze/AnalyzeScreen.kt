@@ -38,12 +38,13 @@ import com.imontalvodev.savetune.ui.theme.SavetuneThemeMode
 import com.imontalvodev.savetune.ui.theme.ModeChip
 import com.imontalvodev.savetune.ui.theme.PrimaryButton
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun AnalyzeScreen(
     themeMode: SavetuneThemeMode,
     onToggleTheme: () -> Unit,
-    onOpenPlaylist: () -> Unit,
+    onOpenPlaylist: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val backgroundBrush = remember(themeMode) {
@@ -194,12 +195,15 @@ fun AnalyzeScreen(
                                     )
                                 }
                             } else {
-                                // Spotify pausado de momento
-                                Toast.makeText(
-                                    context,
-                                    "Soporte para playlists de Spotify disponible en futuras versiones.",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                if (playlistUrl.isBlank()) {
+                                    Toast.makeText(
+                                        context,
+                                        "Pega un enlace de playlist de Spotify.",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                } else {
+                                    onOpenPlaylist(playlistUrl.trim())
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -227,7 +231,13 @@ private fun startAutoDownloadInApp(
 
     val url = httpUrlBuilder.build()
 
-    val client = okhttp3.OkHttpClient()
+    val client = okhttp3.OkHttpClient.Builder()
+        // Descargas pueden tardar bastante (search + stream)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.MINUTES)
+        .writeTimeout(2, TimeUnit.MINUTES)
+        .callTimeout(7, TimeUnit.MINUTES)
+        .build()
     val request = okhttp3.Request.Builder()
         .url(url)
         .get()

@@ -1,6 +1,5 @@
 package com.imontalvodev.savetune.ui.feature.playlist
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,36 +22,54 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.imontalvodev.savetune.R
+import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
+import com.imontalvodev.savetune.ui.network.MiddlewareApi
+import com.imontalvodev.savetune.ui.network.PlaylistSong
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
 import com.imontalvodev.savetune.ui.theme.PrimaryButton
-
-data class UiTrack(
-    val id: String,
-    val title: String,
-    val artist: String,
-)
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun PlaylistScreen(
     modifier: Modifier = Modifier,
     onOpenPlayer: () -> Unit,
+    playlistUrl: String,
 ) {
-    val demoTracks = listOf(
-        UiTrack("1", "City Lights Chill", "Beatmaker X"),
-        UiTrack("2", "Demo Light Chill", "Beatmaker X"),
-        UiTrack("3", "Morrow Chill", "Beatmaker X"),
-        UiTrack("4", "Freeflow Chill", "Beatmaker X"),
-    )
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var title by remember { mutableStateOf("Playlist") }
+    var tracks by remember { mutableStateOf<List<PlaylistSong>>(emptyList()) }
+
+    LaunchedEffect(playlistUrl) {
+        if (playlistUrl.isBlank()) return@LaunchedEffect
+        loading = true
+        error = null
+        val res = withContext(Dispatchers.IO) {
+            MiddlewareApi.fetchPlaylist(MIDDLEWARE_BASE_URL, playlistUrl)
+        }
+        loading = false
+        if (!res.success) {
+            error = res.message ?: res.error ?: "No se pudo cargar la playlist"
+            title = "Playlist"
+            tracks = emptyList()
+        } else {
+            title = res.playlist?.name?.ifBlank { "Playlist" } ?: "Playlist"
+            tracks = res.songs
+        }
+    }
 
     val bgBrush = Brush.verticalGradient(
         colors = listOf(NeonBackgroundTop, NeonBackgroundBottom),
@@ -70,8 +87,12 @@ fun PlaylistScreen(
                 .padding(horizontal = 16.dp, vertical = 16.dp),
         ) {
             PlaylistHeader(
-                title = "Late Night Lo-Fi Playlist",
-                subtitle = "${demoTracks.size} Tracks found",
+                title = title,
+                subtitle = when {
+                    loading -> "Cargando..."
+                    error != null -> error!!
+                    else -> "${tracks.size} Tracks found"
+                },
                 onPrimaryClick = onOpenPlayer,
             )
 
@@ -80,7 +101,7 @@ fun PlaylistScreen(
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(demoTracks) { track ->
+                items(tracks) { track ->
                     TrackRow(track = track)
                 }
             }
@@ -115,11 +136,11 @@ private fun PlaylistHeader(
                         .height(56.dp)
                         .fillMaxWidth(0.25f),
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
+                    // Placeholder cover (el backend da imageUrl por canción, pero no cover global)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
                     )
                 }
                 Spacer(modifier = Modifier.height(0.dp))
@@ -153,7 +174,7 @@ private fun PlaylistHeader(
 }
 
 @Composable
-private fun TrackRow(track: UiTrack) {
+private fun TrackRow(track: PlaylistSong) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -172,11 +193,10 @@ private fun TrackRow(track: UiTrack) {
                     .height(40.dp)
                     .fillMaxWidth(0.18f),
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
                 )
             }
             Column(
