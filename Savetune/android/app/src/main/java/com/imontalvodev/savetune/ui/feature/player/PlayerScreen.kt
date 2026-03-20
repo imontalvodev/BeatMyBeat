@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -47,11 +49,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -72,6 +77,7 @@ import com.imontalvodev.savetune.R
 import com.imontalvodev.savetune.ui.data.DeviceTrack
 import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.LyricsCache
+import com.imontalvodev.savetune.ui.network.ArtworkCache
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
@@ -87,10 +93,11 @@ fun PlayerScreen(
     val viewModel: PlayerViewModel = viewModel()
     val deviceTracks = viewModel.tracks.collectAsState().value
     val favoriteIds = viewModel.favoriteIds.collectAsState().value
-    val playlistIds = viewModel.playlistIds.collectAsState().value
+    val playlists = viewModel.playlists.collectAsState().value
     val context = LocalContext.current
 
     val mediaPlayer = remember { MediaPlayer() }
+    val queue = remember { mutableStateListOf<DeviceTrack>() }
     DisposableEffect(Unit) {
         onDispose {
             mediaPlayer.reset()
@@ -108,6 +115,31 @@ fun PlayerScreen(
     var selectedSection by remember { mutableStateOf(PlayerSection.Songs) }
     var isExpanded by remember { mutableStateOf(false) }
     var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
+
+    var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(playlists) {
+        if (selectedPlaylistId == null && playlists.isNotEmpty()) {
+            selectedPlaylistId = playlists.first().id
+        }
+    }
+
+    // Al cambiar de sección/playlist limpiamos la cola para evitar saltos raros
+    LaunchedEffect(selectedSection, selectedPlaylistId) {
+        queue.clear()
+    }
+
+    var addToPlaylistDialogOpen by remember { mutableStateOf(false) }
+    var addToPlaylistTrack by remember { mutableStateOf<DeviceTrack?>(null) }
+    var addToPlaylistExistingId by remember { mutableStateOf<Long?>(null) }
+    var addToPlaylistNewName by remember { mutableStateOf("") }
+    var addToPlaylistPickerExpanded by remember { mutableStateOf(false) }
+
+    data class DuplicateConfirmState(
+        val trackId: Long,
+        val playlistId: Long,
+    )
+
+    var duplicateDialog by remember { mutableStateOf<DuplicateConfirmState?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.syncLibrary(auto = true)
@@ -148,26 +180,32 @@ fun PlayerScreen(
         }
     }
 
-    // Cargar carátula embebida de la pista actual, si existe
-    LaunchedEffect(currentTrack) {
+    // Cargar carátula embebida de la pista actual, si existe (con caché)
+    LaunchedEffect(currentTrack?.id) {
         if (currentTrack == null) {
             currentArtwork = null
-        } else {
+            return@LaunchedEffect
+        }
+
+        val cached = ArtworkCache.get(currentTrack!!.id)
+        if (cached != null) {
+            currentArtwork = cached
+            return@LaunchedEffect
+        }
+
+        val loaded = runCatching {
             val retriever = MediaMetadataRetriever()
             try {
-                retriever.setDataSource(context, currentTrack!!.uri.toUri())
+                retriever.setDataSource(context, Uri.parse(currentTrack!!.uri))
                 val data = retriever.embeddedPicture
-                currentArtwork = if (data != null) {
-                    BitmapFactory.decodeByteArray(data, 0, data.size)
-                } else {
-                    null
-                }
-            } catch (_: Exception) {
-                currentArtwork = null
+                if (data != null) BitmapFactory.decodeByteArray(data, 0, data.size) else null
             } finally {
                 retriever.release()
             }
-        }
+        }.getOrNull()
+
+        currentArtwork = loaded
+        if (loaded != null) ArtworkCache.put(currentTrack!!.id, loaded)
     }
 
     // Cargar letra cuando se abre el overlay o cambia la canción
@@ -216,11 +254,16 @@ fun PlayerScreen(
 
     val bgBrush = Brush.verticalGradient(colors = listOf(NeonBackgroundTop, NeonBackgroundBottom))
 
-    val visibleTracks = remember(deviceTracks, favoriteIds, playlistIds, query, selectedSection) {
+    val visibleTracks = remember(deviceTracks, favoriteIds, playlists, selectedPlaylistId, query, selectedSection) {
+        val trackById = deviceTracks.associateBy { it.id }
         val base = when (selectedSection) {
             PlayerSection.Songs -> deviceTracks
             PlayerSection.Favorites -> deviceTracks.filter { favoriteIds.contains(it.id) }
-            PlayerSection.Playlist -> deviceTracks.filter { playlistIds.contains(it.id) }
+            PlayerSection.Playlist -> {
+                val playlist = playlists.firstOrNull { it.id == selectedPlaylistId }
+                if (playlist == null) emptyList()
+                else playlist.songIds.mapNotNull { trackById[it] }
+            }
         }
         if (query.isBlank()) base
         else {
@@ -233,8 +276,9 @@ fun PlayerScreen(
         }
     }
 
-    fun playTrack(track: DeviceTrack) {
+    fun playTrack(track: DeviceTrack, clearQueue: Boolean = false) {
         try {
+            if (clearQueue) queue.clear()
             mediaPlayer.reset()
             mediaPlayer.setDataSource(context, track.uri.toUri())
             mediaPlayer.prepare()
@@ -247,26 +291,37 @@ fun PlayerScreen(
     }
 
     fun playPrev() {
-        if (deviceTracks.isEmpty()) return
-        val nextIndex = when {
-            currentIndex <= 0 -> deviceTracks.lastIndex
-            else -> currentIndex - 1
+        if (visibleTracks.isEmpty()) return
+        val curId = currentTrack?.id ?: return
+        val idx = visibleTracks.indexOfFirst { it.id == curId }
+        val prevIndex = when {
+            idx < 0 -> 0
+            idx <= 0 -> visibleTracks.lastIndex
+            else -> idx - 1
         }
-        deviceTracks.getOrNull(nextIndex)?.let { track ->
+        visibleTracks.getOrNull(prevIndex)?.let { track ->
             playTrack(track)
-            currentIndex = nextIndex
         }
     }
 
     fun playNext() {
-        if (deviceTracks.isEmpty()) return
-        val nextIndex = when {
-            currentIndex < 0 || currentIndex >= deviceTracks.lastIndex -> 0
-            else -> currentIndex + 1
+        // 1) Si hay cola, consumimos lo primero encolado
+        if (queue.isNotEmpty()) {
+            val next = queue.removeAt(0)
+            playTrack(next, clearQueue = false)
+            return
         }
-        deviceTracks.getOrNull(nextIndex)?.let { track ->
-            playTrack(track)
-            currentIndex = nextIndex
+
+        // 2) Si no hay cola, navegamos dentro de la lista actual (según filtro/playlist)
+        if (visibleTracks.isEmpty()) return
+        val curId = currentTrack?.id ?: return
+        val idx = visibleTracks.indexOfFirst { it.id == curId }
+        val nextIndex = when {
+            idx < 0 || idx >= visibleTracks.lastIndex -> 0
+            else -> idx + 1
+        }
+        visibleTracks.getOrNull(nextIndex)?.let { track ->
+            playTrack(track, clearQueue = false)
         }
     }
 
@@ -289,7 +344,14 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = "LISTA CANCIONES",
+                        text = when (selectedSection) {
+                            PlayerSection.Songs -> "LISTA CANCIONES"
+                            PlayerSection.Favorites -> "FAVORITOS"
+                            PlayerSection.Playlist -> {
+                                val name = playlists.firstOrNull { it.id == selectedPlaylistId }?.name
+                                name ?: "PLAYLIST"
+                            }
+                        },
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -327,7 +389,7 @@ fun PlayerScreen(
                     text = "PLAY ALL TRACKS",
                     onClick = {
                         val first = visibleTracks.firstOrNull() ?: deviceTracks.firstOrNull()
-                        if (first != null) playTrack(first)
+                        if (first != null) playTrack(first, clearQueue = true)
                     },
                 )
 
@@ -340,6 +402,24 @@ fun PlayerScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                if (selectedSection == PlayerSection.Playlist) {
+                    PlaylistPickerBar(
+                        playlists = playlists,
+                        selectedPlaylistId = selectedPlaylistId,
+                        onSelect = { id ->
+                            selectedPlaylistId = id
+                        },
+                        onCreateEmpty = {
+                            val res = viewModel.createPlaylist("Mi playlist")
+                            selectedPlaylistId = when (res) {
+                                is PlayerViewModel.CreatePlaylistResult.Created -> res.id
+                                is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
+                            }
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -349,7 +429,15 @@ fun PlayerScreen(
                         TrackRow(
                             track = track,
                             isCurrent = currentTrack?.id == track.id,
-                            onClick = { playTrack(track) },
+                            onClick = { playTrack(track, clearQueue = true) },
+                            onQueue = { queue.add(track) },
+                            onSaveLibrary = { viewModel.toggleFavorite(track) },
+                            onAddToPlaylist = {
+                                addToPlaylistDialogOpen = true
+                                addToPlaylistTrack = track
+                                addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
+                                addToPlaylistNewName = " "
+                            },
                         )
                     }
                 }
@@ -411,6 +499,205 @@ fun PlayerScreen(
                     },
                 )
             }
+
+            // DIALOG: Añadir a playlist (crear o seleccionar)
+            if (addToPlaylistDialogOpen && addToPlaylistTrack != null) {
+                val track = addToPlaylistTrack!!
+                val currentSelectedId = addToPlaylistExistingId
+                    ?: selectedPlaylistId
+                    ?: playlists.firstOrNull()?.id
+
+                AlertDialog(
+                    onDismissRequest = {
+                        addToPlaylistDialogOpen = false
+                        addToPlaylistPickerExpanded = false
+                    },
+                    title = { Text("Añadir a playlist") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (playlists.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(
+                                        text = "Playlist objetivo: ${
+                                            playlists.firstOrNull { it.id == currentSelectedId }?.name
+                                                ?: "Ninguna"
+                                        }",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                                    )
+                                    IconButton(
+                                        onClick = { addToPlaylistPickerExpanded = !addToPlaylistPickerExpanded },
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.KeyboardArrowDown,
+                                            contentDescription = "Elegir playlist",
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                if (addToPlaylistPickerExpanded) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        playlists.forEach { p ->
+                                            val selected = p.id == (addToPlaylistExistingId ?: currentSelectedId)
+                                            Card(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        addToPlaylistExistingId = p.id
+                                                        addToPlaylistPickerExpanded = false
+                                                    },
+                                                shape = RoundedCornerShape(12.dp),
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = if (selected) {
+                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                                    } else {
+                                                        Color.Black.copy(alpha = 0.25f)
+                                                    },
+                                                ),
+                                            ) {
+                                                Text(
+                                                    text = "${p.name} (Canciones: ${p.songIds.size})",
+                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = addToPlaylistNewName,
+                                onValueChange = { addToPlaylistNewName = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Nueva playlist (opcional)") },
+                                placeholder = { Text("Ej: Mis favoritos Chill") },
+                            )
+
+                            Text(
+                                text = "Si no pones nombre nuevo, se añade a la playlist seleccionada.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val newName = addToPlaylistNewName.trim()
+                                val chosenId =
+                                    addToPlaylistExistingId
+                                        ?: selectedPlaylistId
+                                        ?: playlists.firstOrNull()?.id
+                                        ?: return@TextButton
+
+                                val targetPlaylistId = if (newName.isNotBlank()) {
+                                    val res = viewModel.createPlaylist(newName)
+                                    when (res) {
+                                        is PlayerViewModel.CreatePlaylistResult.Created -> {
+                                            selectedPlaylistId = res.id
+                                            res.id
+                                        }
+
+                                        is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
+                                            Toast.makeText(
+                                                context,
+                                                "Ya existe una playlist con ese nombre.",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                            selectedPlaylistId = res.id
+                                            res.id
+                                        }
+                                    }
+                                } else {
+                                    chosenId
+                                }
+
+                                val res = viewModel.addToPlaylist(
+                                    track = track,
+                                    playlistId = targetPlaylistId,
+                                    allowDuplicate = false,
+                                )
+                                when (res) {
+                                    is PlayerViewModel.AddToPlaylistResult.Added -> {
+                                        selectedPlaylistId = targetPlaylistId
+                                        addToPlaylistDialogOpen = false
+                                        addToPlaylistTrack = null
+                                    }
+
+                                    is PlayerViewModel.AddToPlaylistResult.AlreadyExists -> {
+                                        selectedPlaylistId = targetPlaylistId
+                                        addToPlaylistDialogOpen = false
+                                        addToPlaylistTrack = null
+                                        duplicateDialog = DuplicateConfirmState(
+                                            trackId = track.id,
+                                            playlistId = targetPlaylistId,
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("Añadir")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                addToPlaylistDialogOpen = false
+                                addToPlaylistTrack = null
+                            }
+                        ) {
+                            Text("Cancelar")
+                        }
+                    },
+                )
+            }
+
+            // DIALOG: confirmación duplicado en playlist
+            if (duplicateDialog != null) {
+                val d = duplicateDialog!!
+                val track = deviceTracks.firstOrNull { it.id == d.trackId }
+                if (track != null) {
+                    AlertDialog(
+                        onDismissRequest = { duplicateDialog = null },
+                        title = { Text("Duplicado detectado") },
+                        text = {
+                            Text("La canción ya existe en esta playlist. ¿Quieres duplicarla?")
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    viewModel.addToPlaylist(
+                                        track = track,
+                                        playlistId = d.playlistId,
+                                        allowDuplicate = true,
+                                    )
+                                    duplicateDialog = null
+                                },
+                            ) {
+                                Text("Duplicar")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { duplicateDialog = null }) {
+                                Text("No duplicar")
+                            }
+                        },
+                    )
+                } else {
+                    duplicateDialog = null
+                }
+            }
         }
     }
 }
@@ -420,6 +707,9 @@ private fun TrackRow(
     track: DeviceTrack,
     isCurrent: Boolean,
     onClick: () -> Unit,
+    onQueue: () -> Unit,
+    onSaveLibrary: () -> Unit,
+    onAddToPlaylist: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -440,7 +730,9 @@ private fun TrackRow(
                 modifier = Modifier
                     .size(36.dp)
                     .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
-            )
+            ) {
+                ArtworkThumbnail(track = track, sizeDp = 36)
+            }
             Spacer(modifier = Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -459,8 +751,9 @@ private fun TrackRow(
                 )
             }
             TrackOverflowMenu(
-                onQueue = { /* TODO */ },
-                onSaveLibrary = { /* TODO */ },
+                onQueue = onQueue,
+                onSaveLibrary = onSaveLibrary,
+                onAddToPlaylist = onAddToPlaylist,
                 onHide = { /* TODO */ },
             )
         }
@@ -468,9 +761,61 @@ private fun TrackRow(
 }
 
 @Composable
+private fun ArtworkThumbnail(
+    track: DeviceTrack,
+    sizeDp: Int,
+    isPlaceholderOnly: Boolean = false,
+) {
+    val context = LocalContext.current
+    var bitmap by remember(track.id) { mutableStateOf<Bitmap?>(ArtworkCache.get(track.id)) }
+
+    LaunchedEffect(track.id) {
+        if (bitmap != null) return@LaunchedEffect
+
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(context, Uri.parse(track.uri))
+                    val data = retriever.embeddedPicture
+                    if (data != null) BitmapFactory.decodeByteArray(data, 0, data.size) else null
+                } finally {
+                    retriever.release()
+                }
+            }.getOrNull()
+        }
+
+        bitmap = loaded
+        if (loaded != null) ArtworkCache.put(track.id, loaded)
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier
+                .size(sizeDp.dp)
+                .border(0.dp, Color.Transparent),
+            contentScale = ContentScale.Crop,
+        )
+    } else if (!isPlaceholderOnly) {
+        // Si no hay carátula embebida, mostramos icono genérico.
+        Image(
+            painter = painterResource(id = R.drawable.ic_launcher_foreground),
+            contentDescription = null,
+            modifier = Modifier
+                .size(sizeDp.dp)
+                .border(0.dp, Color.Transparent),
+            contentScale = ContentScale.Crop,
+        )
+    }
+}
+
+@Composable
 private fun TrackOverflowMenu(
     onQueue: () -> Unit,
     onSaveLibrary: () -> Unit,
+    onAddToPlaylist: () -> Unit,
     onHide: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -493,6 +838,10 @@ private fun TrackOverflowMenu(
             DropdownMenuItem(
                 text = { Text("Guardar en biblioteca") },
                 onClick = { expanded = false; onSaveLibrary() },
+            )
+            DropdownMenuItem(
+                text = { Text("Añadir a playlist") },
+                onClick = { expanded = false; onAddToPlaylist() },
             )
             DropdownMenuItem(
                 text = { Text("Ocultar") },
@@ -555,6 +904,87 @@ private fun RowScope.SectionChip(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+@Composable
+private fun PlaylistPickerBar(
+    playlists: List<PlayerViewModel.PlaylistEntity>,
+    selectedPlaylistId: Long?,
+    onSelect: (Long) -> Unit,
+    onCreateEmpty: () -> Unit,
+) {
+    if (playlists.isEmpty()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.25f)),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+            ) {
+                Text(
+                    text = "Aún no tienes playlists",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                PrimaryPillButton(
+                    text = "Crear una playlist",
+                    onClick = onCreateEmpty,
+                )
+            }
+        }
+        return
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        PrimaryPillButton(
+            text = "Crear una playlist",
+            onClick = onCreateEmpty,
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        playlists.forEach { p ->
+            val selected = p.id == selectedPlaylistId
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(p.id) },
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (selected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    } else {
+                        Color.Black.copy(alpha = 0.25f)
+                    },
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 10.dp else 0.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = p.name,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${p.songIds.size} canciones",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
     }
 }
 

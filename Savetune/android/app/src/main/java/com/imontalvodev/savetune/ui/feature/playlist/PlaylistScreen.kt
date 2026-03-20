@@ -1,5 +1,8 @@
 package com.imontalvodev.savetune.ui.feature.playlist
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,14 +34,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.imontalvodev.savetune.ui.network.RemoteArtworkCache
 import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.network.PlaylistSong
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
 import com.imontalvodev.savetune.ui.theme.PrimaryButton
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -193,11 +201,7 @@ private fun TrackRow(track: PlaylistSong) {
                     .height(40.dp)
                     .fillMaxWidth(0.18f),
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
-                )
+                RemoteArtworkThumbnail(url = track.imageUrl)
             }
             Column(
                 modifier = Modifier
@@ -221,6 +225,47 @@ private fun TrackRow(track: PlaylistSong) {
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
             )
         }
+    }
+}
+
+@Composable
+private fun RemoteArtworkThumbnail(url: String) {
+    val client = remember { OkHttpClient() }
+    val context = LocalContext.current
+    var bitmap by remember(url) { mutableStateOf<Bitmap?>(RemoteArtworkCache.get(url)) }
+
+    LaunchedEffect(url) {
+        if (url.isBlank()) return@LaunchedEffect
+        if (bitmap != null) return@LaunchedEffect
+
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder().url(url).get().build()
+                client.newCall(req).execute().use { res ->
+                    if (!res.isSuccessful) return@use null
+                    val bytes = res.body?.bytes() ?: return@use null
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }
+            }.getOrNull()
+        }
+        bitmap = loaded
+        if (loaded != null) RemoteArtworkCache.put(url, loaded)
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp)),
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
+        )
     }
 }
 
