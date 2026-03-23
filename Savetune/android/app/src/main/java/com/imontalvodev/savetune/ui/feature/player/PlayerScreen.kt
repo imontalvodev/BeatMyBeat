@@ -72,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import java.io.File
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.imontalvodev.savetune.R
 import com.imontalvodev.savetune.ui.data.DeviceTrack
@@ -214,14 +215,22 @@ fun PlayerScreen(
             lyricsState = LyricsUiState.Empty("Selecciona una canción")
             return@LaunchedEffect
         }
-        if (t.title.isBlank() || t.artist.isBlank()) {
-            lyricsState = LyricsUiState.Empty("Faltan metadatos (título/artista)")
+        val title = t.title.trim()
+        val artist = t.artist.trim()
+
+        fun isUnknown(s: String): Boolean =
+            s.equals("unknown", ignoreCase = true) ||
+                s.equals("unknown artist", ignoreCase = true) ||
+                s.isBlank()
+
+        if (isUnknown(title) || isUnknown(artist)) {
+            lyricsState = LyricsUiState.Empty("No hay letra disponible para esta canción")
             return@LaunchedEffect
         }
 
         // 1) Intentar caché local primero (offline-friendly)
         val cached = withContext(Dispatchers.IO) {
-            LyricsCache.get(context, t.title, t.artist)
+            LyricsCache.get(context, title, artist)
         }
         if (!cached.isNullOrBlank()) {
             lyricsState = LyricsUiState.Ready(cached)
@@ -234,21 +243,29 @@ fun PlayerScreen(
             withContext(Dispatchers.IO) {
                 MiddlewareApi.fetchLyrics(
                     baseUrl = MIDDLEWARE_BASE_URL,
-                    title = t.title,
-                    artist = t.artist,
+                    title = title,
+                    artist = artist,
                 )
             }
         }.getOrNull()
 
         if (res != null && res.success && res.lyrics.isNotBlank()) {
             withContext(Dispatchers.IO) {
-                LyricsCache.put(context, t.title, t.artist, res.lyrics)
+                LyricsCache.put(context, title, artist, res.lyrics)
             }
             lyricsState = LyricsUiState.Ready(res.lyrics)
         } else {
-            lyricsState = LyricsUiState.Empty(
-                res?.message ?: res?.error ?: "Sin conexión o letras no disponibles",
-            )
+            val raw = res?.message ?: res?.error ?: "Sin conexión o letras no disponibles"
+            val pretty = when (res?.error) {
+                "LyricsNotFound" -> "No hay letra disponible para esta canción"
+                "MissingMetadata" -> "Sin metadatos para cargar letras"
+                else -> {
+                    if (raw.contains("title", ignoreCase = true) && raw.contains("artist", ignoreCase = true)) {
+                        "Sin metadatos para cargar letras"
+                    } else raw
+                }
+            }
+            lyricsState = LyricsUiState.Empty(pretty)
         }
     }
 
@@ -322,6 +339,44 @@ fun PlayerScreen(
         }
         visibleTracks.getOrNull(nextIndex)?.let { track ->
             playTrack(track, clearQueue = false)
+        }
+    }
+
+    fun deleteTrackFromDevice(track: DeviceTrack) {
+        try {
+            val uri = Uri.parse(track.uri)
+            val deleted = when (uri.scheme) {
+                "content" -> context.contentResolver.delete(uri, null, null) > 0
+                "file" -> {
+                    val path = uri.path
+                    if (path.isNullOrBlank()) false else File(path).delete()
+                }
+                else -> {
+                    // Por si viene como `file:///...` pero sin scheme reconocido
+                    val path = uri.path
+                    if (path.isNullOrBlank()) false else File(path).delete()
+                }
+            }
+
+            if (!deleted) {
+                Toast.makeText(context, "No se pudo eliminar la canción.", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            queue.removeAll { it.id == track.id }
+            if (currentTrack?.id == track.id) {
+                mediaPlayer.reset()
+                isPlaying = false
+                currentTrack = null
+                currentArtwork = null
+                position = 0f
+                lyricsState = LyricsUiState.Empty("Selecciona una canción")
+            }
+
+            viewModel.syncLibrary(auto = true)
+            Toast.makeText(context, "Eliminado del teléfono.", Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) {
+            Toast.makeText(context, "Error eliminando la canción.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -425,7 +480,9 @@ fun PlayerScreen(
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 120.dp),
+                    // El mini-player está anclado abajo en un `Box`, así que reservamos
+                    // espacio para que el listado no se solape y los taps funcionen bien.
+                    contentPadding = PaddingValues(bottom = 190.dp),
                 ) {
                     items(visibleTracks) { track ->
                         TrackRow(
@@ -440,6 +497,7 @@ fun PlayerScreen(
                                 addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
                                 addToPlaylistNewName = " "
                             },
+                            onDeleteFromDevice = { deleteTrackFromDevice(track) },
                         )
                     }
                 }
@@ -712,6 +770,7 @@ private fun TrackRow(
     onQueue: () -> Unit,
     onSaveLibrary: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    onDeleteFromDevice: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -757,6 +816,7 @@ private fun TrackRow(
                 onSaveLibrary = onSaveLibrary,
                 onAddToPlaylist = onAddToPlaylist,
                 onHide = { /* TODO */ },
+                onDeleteFromDevice = onDeleteFromDevice,
             )
         }
     }
@@ -819,6 +879,7 @@ private fun TrackOverflowMenu(
     onSaveLibrary: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onHide: () -> Unit,
+    onDeleteFromDevice: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -848,6 +909,13 @@ private fun TrackOverflowMenu(
             DropdownMenuItem(
                 text = { Text("Ocultar") },
                 onClick = { expanded = false; onHide() },
+            )
+            DropdownMenuItem(
+                text = { Text("Eliminar del teléfono") },
+                onClick = {
+                    expanded = false
+                    onDeleteFromDevice()
+                },
             )
         }
     }
