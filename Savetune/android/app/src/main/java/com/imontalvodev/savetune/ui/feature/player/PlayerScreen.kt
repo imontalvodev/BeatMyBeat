@@ -388,8 +388,10 @@ fun PlayerScreen(
                 PrimaryPillButton(
                     text = "PLAY ALL TRACKS",
                     onClick = {
-                        val first = visibleTracks.firstOrNull() ?: deviceTracks.firstOrNull()
-                        if (first != null) playTrack(first, clearQueue = true)
+                        if (visibleTracks.isEmpty()) return@PrimaryPillButton
+                        val first = visibleTracks.first()
+                        playTrack(first, clearQueue = true)
+                        queue.addAll(visibleTracks.drop(1))
                     },
                 )
 

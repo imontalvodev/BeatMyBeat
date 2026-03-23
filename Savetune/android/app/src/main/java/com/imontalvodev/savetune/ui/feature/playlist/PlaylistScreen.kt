@@ -2,8 +2,10 @@ package com.imontalvodev.savetune.ui.feature.playlist
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -41,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.imontalvodev.savetune.ui.network.RemoteArtworkCache
 import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
+import com.imontalvodev.savetune.ui.network.AudioDownloader
 import com.imontalvodev.savetune.ui.network.PlaylistSong
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
@@ -48,6 +52,7 @@ import com.imontalvodev.savetune.ui.theme.PrimaryButton
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -57,9 +62,13 @@ fun PlaylistScreen(
     playlistUrl: String,
 ) {
     var loading by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var title by remember { mutableStateOf("Playlist") }
     var tracks by remember { mutableStateOf<List<PlaylistSong>>(emptyList()) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(playlistUrl) {
         if (playlistUrl.isBlank()) return@LaunchedEffect
@@ -101,7 +110,38 @@ fun PlaylistScreen(
                     error != null -> error!!
                     else -> "${tracks.size} Tracks found"
                 },
-                onPrimaryClick = onOpenPlayer,
+                onPrimaryClick = {
+                    if (tracks.isEmpty() || downloading) return@PlaylistHeader
+                    downloading = true
+                    Toast.makeText(
+                        context,
+                        "Descargando ${tracks.size} canciones...",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    scope.launch {
+                        try {
+                            for (t in tracks) {
+                                AudioDownloader.downloadAutoToAppMusic(
+                                    context = context,
+                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                    title = t.title,
+                                    artist = t.artist,
+                                    album = t.album,
+                                )
+                            }
+                            Toast.makeText(context, "Descargas listas.", Toast.LENGTH_SHORT).show()
+                            downloading = false
+                            onOpenPlayer()
+                        } catch (e: Exception) {
+                            downloading = false
+                            Toast.makeText(
+                                context,
+                                "Error al descargar: ${e.message}",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                },
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -110,7 +150,27 @@ fun PlaylistScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(tracks) { track ->
-                    TrackRow(track = track)
+                    TrackRow(track = track, onPlay = {
+                        if (downloading) return@TrackRow
+                        downloading = true
+                        Toast.makeText(context, "Descargando: ${track.title}", Toast.LENGTH_SHORT).show()
+                        scope.launch {
+                            try {
+                                AudioDownloader.downloadAutoToAppMusic(
+                                    context = context,
+                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                    title = track.title,
+                                    artist = track.artist,
+                                    album = track.album,
+                                )
+                                downloading = false
+                                onOpenPlayer()
+                            } catch (e: Exception) {
+                                downloading = false
+                                Toast.makeText(context, "No se pudo descargar.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    })
                 }
             }
         }
@@ -182,9 +242,11 @@ private fun PlaylistHeader(
 }
 
 @Composable
-private fun TrackRow(track: PlaylistSong) {
+private fun TrackRow(track: PlaylistSong, onPlay: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onPlay() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
