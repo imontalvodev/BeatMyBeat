@@ -119,7 +119,12 @@ fun PlayerScreen(
 
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(playlists) {
-        if (selectedPlaylistId == null && playlists.isNotEmpty()) {
+        if (playlists.isEmpty()) {
+            selectedPlaylistId = null
+            return@LaunchedEffect
+        }
+        val stillExists = selectedPlaylistId != null && playlists.any { it.id == selectedPlaylistId }
+        if (!stillExists) {
             selectedPlaylistId = playlists.first().id
         }
     }
@@ -141,6 +146,10 @@ fun PlayerScreen(
     )
 
     var duplicateDialog by remember { mutableStateOf<DuplicateConfirmState?>(null) }
+
+    var playlistDeleteDialogId by remember { mutableStateOf<Long?>(null) }
+    var playlistRenameDialogId by remember { mutableStateOf<Long?>(null) }
+    var playlistRenameNewName by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.syncLibrary(auto = true)
@@ -473,6 +482,14 @@ fun PlayerScreen(
                                 is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
                             }
                         },
+                        onRequestDelete = { id ->
+                            playlistDeleteDialogId = id
+                        },
+                        onRequestRename = { id ->
+                            playlistRenameDialogId = id
+                            val currentName = playlists.firstOrNull { it.id == id }?.name ?: ""
+                            playlistRenameNewName = currentName
+                        },
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                 }
@@ -485,6 +502,12 @@ fun PlayerScreen(
                     contentPadding = PaddingValues(bottom = 190.dp),
                 ) {
                     items(visibleTracks) { track ->
+                        val currentPlaylist =
+                            selectedPlaylistId?.let { pid -> playlists.firstOrNull { it.id == pid } }
+                        val showRemoveFromPlaylist =
+                            selectedSection == PlayerSection.Playlist &&
+                                selectedPlaylistId != null &&
+                                currentPlaylist?.songIds?.contains(track.id) == true
                         TrackRow(
                             track = track,
                             isCurrent = currentTrack?.id == track.id,
@@ -498,6 +521,16 @@ fun PlayerScreen(
                                 addToPlaylistNewName = " "
                             },
                             onDeleteFromDevice = { deleteTrackFromDevice(track) },
+                            showRemoveFromPlaylist = showRemoveFromPlaylist,
+                            onRemoveFromPlaylist = {
+                                selectedPlaylistId?.let { pid ->
+                                    viewModel.removeSongFromPlaylist(
+                                        trackId = track.id,
+                                        playlistId = pid,
+                                        removeAllOccurrences = true,
+                                    )
+                                }
+                            },
                         )
                     }
                 }
@@ -758,6 +791,93 @@ fun PlayerScreen(
                     duplicateDialog = null
                 }
             }
+
+            // DIALOG: eliminar playlist
+            if (playlistDeleteDialogId != null) {
+                val id = playlistDeleteDialogId!!
+                val name = playlists.firstOrNull { it.id == id }?.name ?: "Playlist"
+                AlertDialog(
+                    onDismissRequest = { playlistDeleteDialogId = null },
+                    title = { Text("Eliminar playlist") },
+                    text = { Text("¿Seguro que quieres eliminar \"${name}\"?") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val ok = viewModel.deletePlaylist(id)
+                                playlistDeleteDialogId = null
+                                if (!ok) {
+                                    Toast.makeText(
+                                        context,
+                                        "No se pudo eliminar la playlist.",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            },
+                        ) {
+                            Text("Eliminar")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { playlistDeleteDialogId = null }) {
+                            Text("Cancelar")
+                        }
+                    },
+                )
+            }
+
+            // DIALOG: renombrar playlist
+            if (playlistRenameDialogId != null) {
+                val id = playlistRenameDialogId!!
+                val currentName = playlists.firstOrNull { it.id == id }?.name ?: ""
+                AlertDialog(
+                    onDismissRequest = { playlistRenameDialogId = null },
+                    title = { Text("Editar nombre") },
+                    text = {
+                        OutlinedTextField(
+                            value = playlistRenameNewName,
+                            onValueChange = { playlistRenameNewName = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Nombre de la playlist") },
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val newName = playlistRenameNewName.trim()
+                                if (newName.isBlank()) {
+                                    Toast.makeText(
+                                        context,
+                                        "Introduce un nombre válido.",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                    return@TextButton
+                                }
+
+                                when (val res = viewModel.renamePlaylist(id, newName)) {
+                                    is PlayerViewModel.RenamePlaylistResult.Renamed -> {
+                                        playlistRenameDialogId = null
+                                    }
+
+                                    is PlayerViewModel.RenamePlaylistResult.AlreadyExists -> {
+                                        Toast.makeText(
+                                            context,
+                                            "Ya existe una playlist con ese nombre.",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            },
+                        ) {
+                            Text("Guardar")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { playlistRenameDialogId = null }) {
+                            Text("Cancelar")
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -771,6 +891,8 @@ private fun TrackRow(
     onSaveLibrary: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDeleteFromDevice: () -> Unit,
+    showRemoveFromPlaylist: Boolean,
+    onRemoveFromPlaylist: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -817,6 +939,8 @@ private fun TrackRow(
                 onAddToPlaylist = onAddToPlaylist,
                 onHide = { /* TODO */ },
                 onDeleteFromDevice = onDeleteFromDevice,
+                showRemoveFromPlaylist = showRemoveFromPlaylist,
+                onRemoveFromPlaylist = onRemoveFromPlaylist,
             )
         }
     }
@@ -880,6 +1004,8 @@ private fun TrackOverflowMenu(
     onAddToPlaylist: () -> Unit,
     onHide: () -> Unit,
     onDeleteFromDevice: () -> Unit,
+    showRemoveFromPlaylist: Boolean,
+    onRemoveFromPlaylist: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -917,6 +1043,16 @@ private fun TrackOverflowMenu(
                     onDeleteFromDevice()
                 },
             )
+
+            if (showRemoveFromPlaylist) {
+                DropdownMenuItem(
+                    text = { Text("Quitar de la playlist") },
+                    onClick = {
+                        expanded = false
+                        onRemoveFromPlaylist()
+                    },
+                )
+            }
         }
     }
 }
@@ -983,6 +1119,8 @@ private fun PlaylistPickerBar(
     selectedPlaylistId: Long?,
     onSelect: (Long) -> Unit,
     onCreateEmpty: () -> Unit,
+    onRequestDelete: (Long) -> Unit,
+    onRequestRename: (Long) -> Unit,
 ) {
     if (playlists.isEmpty()) {
         Card(
@@ -1051,6 +1189,37 @@ private fun PlaylistPickerBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.MoreVert,
+                                contentDescription = "Opciones de playlist",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Editar nombre") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRequestRename(p.id)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Eliminar playlist") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRequestDelete(p.id)
+                                },
+                            )
+                        }
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))

@@ -45,10 +45,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         data class AlreadyExists(val id: Long) : CreatePlaylistResult
     }
 
+    sealed interface RenamePlaylistResult {
+        data object Renamed : RenamePlaylistResult
+        data class AlreadyExists(val id: Long) : RenamePlaylistResult
+    }
+
     fun syncLibrary(auto: Boolean) {
         viewModelScope.launch {
             val scanned = scanner.scanAudio()
             _tracks.value = scanned
+
+            // Mantener playlists coherentes con el contenido real del teléfono
+            val validIds = scanned.map { it.id }.toSet()
+            cleanupPlaylists(validIds)
         }
     }
 
@@ -118,6 +127,91 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _playlists.value = updated
         savePlaylists(updated)
         return AddToPlaylistResult.Added
+    }
+
+    fun deletePlaylist(playlistId: Long): Boolean {
+        val updated = _playlists.value.filterNot { it.id == playlistId }
+        if (updated.size == _playlists.value.size) return false
+        _playlists.value = updated
+        savePlaylists(updated)
+        return true
+    }
+
+    fun renamePlaylist(playlistId: Long, newName: String): RenamePlaylistResult {
+        val safeName = newName.trim().ifBlank { "Playlist" }
+        val normalized = safeName.lowercase()
+
+        // Evitar duplicados por nombre (case-insensitive)
+        val existing = _playlists.value.firstOrNull {
+            it.id != playlistId && it.name.lowercase() == normalized
+        }
+        if (existing != null) {
+            return RenamePlaylistResult.AlreadyExists(existing.id)
+        }
+
+        val idx = _playlists.value.indexOfFirst { it.id == playlistId }
+        if (idx < 0) return RenamePlaylistResult.Renamed
+
+        val updated = _playlists.value.toMutableList().apply {
+            this[idx] = this[idx].copy(name = safeName)
+        }
+        _playlists.value = updated
+        savePlaylists(updated)
+        return RenamePlaylistResult.Renamed
+    }
+
+    /**
+     * Quita una canción de una playlist (no borra el archivo del teléfono).
+     * @param removeAllOccurrences Si true elimina todas las apariciones; si false elimina una.
+     */
+    fun removeSongFromPlaylist(
+        trackId: Long,
+        playlistId: Long,
+        removeAllOccurrences: Boolean = true,
+    ): Boolean {
+        val current = _playlists.value
+        val idx = current.indexOfFirst { it.id == playlistId }
+        if (idx < 0) return false
+
+        val playlist = current[idx]
+        val occurrences = playlist.songIds.filter { it == trackId }
+        if (occurrences.isEmpty()) return false
+
+        val newSongIds = if (removeAllOccurrences) {
+            playlist.songIds.filterNot { it == trackId }
+        } else {
+            // Eliminar una sola aparición manteniendo el orden
+            val out = mutableListOf<Long>()
+            var removedOnce = false
+            playlist.songIds.forEach { id ->
+                if (!removedOnce && id == trackId) {
+                    removedOnce = true
+                } else {
+                    out.add(id)
+                }
+            }
+            out
+        }
+
+        val updatedPlaylist = playlist.copy(songIds = newSongIds)
+        val updated = current.toMutableList().also { it[idx] = updatedPlaylist }
+        _playlists.value = updated
+        savePlaylists(updated)
+        return true
+    }
+
+    private fun cleanupPlaylists(validTrackIds: Set<Long>) {
+        val current = _playlists.value
+        var changed = false
+        val cleaned = current.map { p ->
+            val filtered = p.songIds.filter { it in validTrackIds }
+            if (filtered.size != p.songIds.size) changed = true
+            p.copy(songIds = filtered)
+        }
+        if (changed) {
+            _playlists.value = cleaned
+            savePlaylists(cleaned)
+        }
     }
 
     private fun loadIdSet(key: String): Set<Long> {
