@@ -43,6 +43,24 @@ app.add_middleware(
 # Objetivo: máximo de `MAX_CONCURRENT_DOWNLOADS` descargas en paralelo y,
 # si se supera, informar al frontend con una posición en cola.
 MAX_CONCURRENT_DOWNLOADS = int(os.environ.get("MAX_CONCURRENT_DOWNLOADS", "5"))
+MAX_DOWNLOAD_QUEUE_SIZE = int(os.environ.get("MAX_DOWNLOAD_QUEUE_SIZE", "200"))
+DOWNLOAD_JOB_TTL_SECONDS = int(os.environ.get("DOWNLOAD_JOB_TTL_SECONDS", "1800"))
+DOWNLOAD_JOB_CLEANUP_INTERVAL_SECONDS = int(os.environ.get("DOWNLOAD_JOB_CLEANUP_INTERVAL_SECONDS", "60"))
+
+# --- Filtros para evitar "letra rara" cuando la canción no tiene vocals ---
+MIN_LYRICS_CHARS = int(os.environ.get("MIN_LYRICS_CHARS", "250"))
+MIN_LYRICS_LINES = int(os.environ.get("MIN_LYRICS_LINES", "6"))
+MIN_LYRICS_SCORE = int(os.environ.get("MIN_LYRICS_SCORE", "3"))
+
+NO_LYRICS_TEXT_MARKERS = [
+    "instrumental",
+    "sin letra",
+    "no tiene letra",
+    "no hay letra",
+    "solo instrumental",
+    "letra instrumental",
+    "sin vocals",
+]
 _download_semaphore = threading.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 _downloads_lock = threading.Lock()
 _active_downloads = 0  # descargas en fase "yt-dlp/ffmpeg" (no streaming)
@@ -51,6 +69,7 @@ _download_job_queue = queue_module.Queue()
 _pending_job_ids = deque()  # en orden FIFO
 _download_jobs: dict[str, dict] = {}  # jobId -> info
 _workers_started = False
+_cleanup_started = False
 
 
 def _get_job_snapshot_position(job_id: str) -> int:
@@ -88,7 +107,12 @@ def _download_youtube_audio_to_file(
         "no_warnings": True,
         "prefer_ffmpeg": True,
         "keepvideo": False,
+        "noplaylist": True,
         "writethumbnail": True,
+        "concurrent_fragment_downloads": 4,
+        "retries": 3,
+        "fragment_retries": 3,
+        "socket_timeout": 15,
         "postprocessors": [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
             {"key": "FFmpegMetadata"},
@@ -184,7 +208,12 @@ def _download_auto_audio_to_file(
         "no_warnings": True,
         "prefer_ffmpeg": True,
         "keepvideo": False,
+        "noplaylist": True,
         "writethumbnail": True,
+        "concurrent_fragment_downloads": 4,
+        "retries": 3,
+        "fragment_retries": 3,
+        "socket_timeout": 15,
         "default_search": "ytsearch1",
         "postprocessors": [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
@@ -346,6 +375,39 @@ def _ensure_workers_started():
     for _ in range(MAX_CONCURRENT_DOWNLOADS):
         t = threading.Thread(target=_download_job_worker, daemon=True)
         t.start()
+
+    # Lanzar cleanup para evitar crecimiento sin fin de `_download_jobs`
+    global _cleanup_started
+    if _cleanup_started:
+        return
+    _cleanup_started = True
+
+    def _job_cleanup_loop():
+        while True:
+            time.sleep(DOWNLOAD_JOB_CLEANUP_INTERVAL_SECONDS)
+            now = int(time.time())
+            to_delete: list[tuple[str, str]] = []
+            with _downloads_lock:
+                for job_id, job in list(_download_jobs.items()):
+                    created_at = job.get("createdAt") or job.get("readyAt") or job.get("errorAt") or 0
+                    status = job.get("status")
+                    if status in ("ready", "error") and created_at:
+                        if now - int(created_at) > DOWNLOAD_JOB_TTL_SECONDS:
+                            job_dir = job.get("job_dir") or ""
+                            to_delete.append((job_id, job_dir))
+
+                for job_id, _job_dir in to_delete:
+                    _download_jobs.pop(job_id, None)
+
+            # Borrar fuera del lock (reduce el tiempo bloqueando el estado global)
+            for _job_id, job_dir in to_delete:
+                if job_dir and os.path.isdir(job_dir):
+                    try:
+                        shutil.rmtree(job_dir, ignore_errors=True)
+                    except OSError:
+                        pass
+
+    threading.Thread(target=_job_cleanup_loop, daemon=True).start()
 
 
 def _extract_playlist_id(url: str) -> str | None:
@@ -742,6 +804,7 @@ def _fetch_letras_page(url: str) -> tuple[int, str]:
     return resp.status_code, resp.text
 
 
+@lru_cache(maxsize=256)
 def _get_lyrics_from_letras(artist: str, title: str) -> dict:
     urls = _letras_candidate_urls(artist, title)
     if not urls:
@@ -779,11 +842,25 @@ def _get_lyrics_from_letras(artist: str, title: str) -> dict:
                     last_error = "DemoVariantSkipped"
                     continue
 
+                normalized = _normalize_lyrics_text(lyrics)
+                lines_count = normalized.count("\n") + 1 if normalized else 0
+
+                # Filtros: longitud mínima y marcadores de "sin letra"
+                lowered = (normalized or "").lower()
+                if (
+                    (len(normalized) < MIN_LYRICS_CHARS)
+                    or (lines_count < MIN_LYRICS_LINES)
+                    or any(marker in lowered for marker in NO_LYRICS_TEXT_MARKERS)
+                    or any(marker in (page_title or "").lower() for marker in NO_LYRICS_TEXT_MARKERS)
+                ):
+                    last_error = "LyricsFilteredLowQuality"
+                    continue
+
                 candidate = {
                     "success": True,
                     "source": "letras.com",
                     "sourceUrl": canonical or url,
-                    "lyrics": _normalize_lyrics_text(lyrics),
+                    "lyrics": normalized,
                     "pageTitle": page_title,
                     "pageArtist": page_artist,
                 }
@@ -800,7 +877,7 @@ def _get_lyrics_from_letras(artist: str, title: str) -> dict:
             last_error = str(e)
             continue
 
-    if best:
+    if best and best_score >= MIN_LYRICS_SCORE:
         return best
 
     return {
@@ -1234,7 +1311,12 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         "no_warnings": True,
         "prefer_ffmpeg": True,
         "keepvideo": False,
+        "noplaylist": True,
         "writethumbnail": True,
+        "concurrent_fragment_downloads": 4,
+        "retries": 3,
+        "fragment_retries": 3,
+        "socket_timeout": 15,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -1348,6 +1430,16 @@ def api_download(videoId: str = Query(..., alias="videoId")):
     acquired = _download_semaphore.acquire(blocking=False)
     if not acquired:
         _ensure_workers_started()
+        with _downloads_lock:
+            if len(_pending_job_ids) >= MAX_DOWNLOAD_QUEUE_SIZE:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "error": "QueueFull",
+                        "message": "Cola llena. Vuelve a intentarlo en unos segundos.",
+                    },
+                )
         job_id = str(uuid.uuid4())
 
         with _downloads_lock:
@@ -1454,6 +1546,16 @@ def api_download_auto(
     acquired = _download_semaphore.acquire(blocking=False)
     if not acquired:
         _ensure_workers_started()
+        with _downloads_lock:
+            if len(_pending_job_ids) >= MAX_DOWNLOAD_QUEUE_SIZE:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "error": "QueueFull",
+                        "message": "Cola llena. Vuelve a intentarlo en unos segundos.",
+                    },
+                )
         job_id = str(uuid.uuid4())
         with _downloads_lock:
             queue_position = _active_downloads + len(_pending_job_ids) + 1
