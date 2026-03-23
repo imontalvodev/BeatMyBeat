@@ -508,12 +508,13 @@ fun PlayerScreen(
                             selectedSection == PlayerSection.Playlist &&
                                 selectedPlaylistId != null &&
                                 currentPlaylist?.songIds?.contains(track.id) == true
+                        val isFavorite = favoriteIds.contains(track.id)
                         TrackRow(
                             track = track,
                             isCurrent = currentTrack?.id == track.id,
                             onClick = { playTrack(track, clearQueue = true) },
                             onQueue = { queue.add(track) },
-                            onSaveLibrary = { viewModel.toggleFavorite(track) },
+                            onToggleFavorite = { viewModel.toggleFavorite(track) },
                             onAddToPlaylist = {
                                 addToPlaylistDialogOpen = true
                                 addToPlaylistTrack = track
@@ -521,6 +522,7 @@ fun PlayerScreen(
                                 addToPlaylistNewName = " "
                             },
                             onDeleteFromDevice = { deleteTrackFromDevice(track) },
+                            isFavorite = isFavorite,
                             showRemoveFromPlaylist = showRemoveFromPlaylist,
                             onRemoveFromPlaylist = {
                                 selectedPlaylistId?.let { pid ->
@@ -888,9 +890,10 @@ private fun TrackRow(
     isCurrent: Boolean,
     onClick: () -> Unit,
     onQueue: () -> Unit,
-    onSaveLibrary: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDeleteFromDevice: () -> Unit,
+    isFavorite: Boolean,
     showRemoveFromPlaylist: Boolean,
     onRemoveFromPlaylist: () -> Unit,
 ) {
@@ -935,10 +938,11 @@ private fun TrackRow(
             }
             TrackOverflowMenu(
                 onQueue = onQueue,
-                onSaveLibrary = onSaveLibrary,
+                onToggleFavorite = onToggleFavorite,
                 onAddToPlaylist = onAddToPlaylist,
                 onHide = { /* TODO */ },
                 onDeleteFromDevice = onDeleteFromDevice,
+                isFavorite = isFavorite,
                 showRemoveFromPlaylist = showRemoveFromPlaylist,
                 onRemoveFromPlaylist = onRemoveFromPlaylist,
             )
@@ -1000,10 +1004,11 @@ private fun ArtworkThumbnail(
 @Composable
 private fun TrackOverflowMenu(
     onQueue: () -> Unit,
-    onSaveLibrary: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onHide: () -> Unit,
     onDeleteFromDevice: () -> Unit,
+    isFavorite: Boolean,
     showRemoveFromPlaylist: Boolean,
     onRemoveFromPlaylist: () -> Unit,
 ) {
@@ -1025,8 +1030,10 @@ private fun TrackOverflowMenu(
                 onClick = { expanded = false; onQueue() },
             )
             DropdownMenuItem(
-                text = { Text("Guardar en biblioteca") },
-                onClick = { expanded = false; onSaveLibrary() },
+                text = {
+                    Text(if (isFavorite) "Quitar de favoritos" else "Añadir a favoritos")
+                },
+                onClick = { expanded = false; onToggleFavorite() },
             )
             DropdownMenuItem(
                 text = { Text("Añadir a playlist") },
