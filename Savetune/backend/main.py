@@ -389,12 +389,18 @@ def _ensure_workers_started():
             to_delete: list[tuple[str, str]] = []
             with _downloads_lock:
                 for job_id, job in list(_download_jobs.items()):
-                    created_at = job.get("createdAt") or job.get("readyAt") or job.get("errorAt") or 0
+                    created_at = job.get("createdAt") or job.get("startedAt") or job.get("readyAt") or job.get("errorAt") or 0
                     status = job.get("status")
-                    if status in ("ready", "error") and created_at:
+                    if status in ("queued", "processing", "ready", "error") and created_at:
                         if now - int(created_at) > DOWNLOAD_JOB_TTL_SECONDS:
                             job_dir = job.get("job_dir") or ""
                             to_delete.append((job_id, job_dir))
+                            # Si sigue pendiente, sacarlo del FIFO para que no altere posiciones
+                            try:
+                                if job_id in _pending_job_ids:
+                                    _pending_job_ids.remove(job_id)
+                            except ValueError:
+                                pass
 
                 for job_id, _job_dir in to_delete:
                     _download_jobs.pop(job_id, None)
