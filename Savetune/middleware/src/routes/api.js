@@ -184,4 +184,64 @@ router.get('/download-auto', async (req, res, next) => {
   }
 });
 
+// GET /api/download-job?jobId=...
+router.get('/download-job', async (req, res, next) => {
+  try {
+    const { jobId } = req.query;
+    if (!jobId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing jobId',
+        message: 'Please provide a jobId',
+      });
+    }
+
+    const upstream = await fetch(`${PY_BACKEND_URL}/api/download-job?jobId=${encodeURIComponent(jobId)}`);
+    const body = await upstream.text();
+
+    res
+      .status(upstream.status)
+      .set('Content-Type', upstream.headers.get('content-type') || 'application/json')
+      .send(body);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/download-job/stream?jobId=...
+router.get('/download-job/stream', async (req, res, next) => {
+  try {
+    const { jobId } = req.query;
+    if (!jobId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing jobId',
+        message: 'Please provide a jobId',
+      });
+    }
+
+    const upstream = await fetch(`${PY_BACKEND_URL}/api/download-job/stream?jobId=${encodeURIComponent(jobId)}`);
+
+    const contentType = upstream.headers.get('content-type') || '';
+    if (!upstream.ok && contentType.includes('application/json')) {
+      const json = await upstream.text();
+      return res
+        .status(upstream.status)
+        .set('Content-Type', contentType)
+        .send(json);
+    }
+
+    const disposition = upstream.headers.get('content-disposition');
+    if (disposition) {
+      res.setHeader('Content-Disposition', disposition);
+    }
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
+
+    const nodeStream = Readable.fromWeb(upstream.body);
+    nodeStream.pipe(res);
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

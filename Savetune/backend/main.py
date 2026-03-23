@@ -7,6 +7,10 @@ import json
 import unicodedata
 import shutil
 import uuid
+import threading
+import queue as queue_module
+import time
+from collections import deque
 from functools import lru_cache
 from typing import Generator
 
@@ -34,6 +38,314 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Descargas concurrentes + cola para multijugador ---
+# Objetivo: máximo de `MAX_CONCURRENT_DOWNLOADS` descargas en paralelo y,
+# si se supera, informar al frontend con una posición en cola.
+MAX_CONCURRENT_DOWNLOADS = int(os.environ.get("MAX_CONCURRENT_DOWNLOADS", "5"))
+_download_semaphore = threading.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+_downloads_lock = threading.Lock()
+_active_downloads = 0  # descargas en fase "yt-dlp/ffmpeg" (no streaming)
+
+_download_job_queue = queue_module.Queue()
+_pending_job_ids = deque()  # en orden FIFO
+_download_jobs: dict[str, dict] = {}  # jobId -> info
+_workers_started = False
+
+
+def _get_job_snapshot_position(job_id: str) -> int:
+    """
+    Posición aproximada en la cola: número de trabajos (incluyendo activos) que
+    van antes que este job. Se recalcula sobre `_pending_job_ids`.
+    """
+    with _downloads_lock:
+        try:
+            idx = list(_pending_job_ids).index(job_id)
+        except ValueError:
+            idx = -1
+        # activos + trabajos en pending antes de este + este mismo
+        return _active_downloads + (idx if idx >= 0 else 0) + 1
+
+
+def _download_youtube_audio_to_file(
+    video_url: str,
+    job_dir: str,
+    *,
+    spotify_title: str | None = None,
+    spotify_artist: str | None = None,
+    spotify_album: str | None = None,
+    force_spotify_metadata: bool = False,
+) -> tuple[str, str, str, str]:
+    """
+    Descarga audio a disco y devuelve (file_path, filename, media_type, ext).
+    No limpia `job_dir`; lo hace el caller cuando sirva/termine el job.
+    """
+    out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
+    opts = {
+        "format": "bestaudio/best",
+        "outtmpl": out_tmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "keepvideo": False,
+        "writethumbnail": True,
+        "postprocessors": [
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
+            {"key": "FFmpegMetadata"},
+            {"key": "EmbedThumbnail"},
+        ],
+    }
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(video_url, download=True)
+
+    if not info:
+        raise ValueError("No se pudo obtener información del vídeo")
+
+    video_id = info.get("id") or "unknown"
+    raw_title = info.get("title") or "audio"
+    title_safe = raw_title.replace("/", "-").replace("\\", "-")[:200]
+
+    # Buscar el archivo descargado
+    path_file = ""
+    for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
+        candidate = os.path.join(job_dir, f"audio_{video_id}{ext}")
+        if os.path.isfile(candidate):
+            path_file = candidate
+            break
+
+    if not path_file:
+        for f in os.listdir(job_dir):
+            if f.startswith(f"audio_{video_id}"):
+                path_file = os.path.join(job_dir, f)
+                break
+
+    if not path_file:
+        raise ValueError("No se encontró el archivo de audio descargado")
+
+    ext = os.path.splitext(path_file)[1].lstrip(".")
+
+    # Enriquecer metadatos ID3
+    if ext == "mp3":
+        if force_spotify_metadata:
+            track_title = spotify_title or raw_title
+            track_artist = spotify_artist or info.get("artist") or info.get("uploader") or ""
+            track_album = spotify_album or info.get("album") or ""
+        else:
+            track_title = raw_title
+            track_artist = info.get("artist") or info.get("uploader") or ""
+            track_album = info.get("album") or ""
+
+            if " - " in raw_title and not track_artist:
+                parts = raw_title.rsplit(" - ", 1)
+                if len(parts) == 2:
+                    left, right = parts[0].strip(), parts[1].strip()
+                    if 2 <= len(right) <= 40:
+                        track_title, track_artist = left, right
+
+        audio = MutagenFile(path_file, easy=True)
+        if audio is not None:
+            audio["title"] = [track_title]
+            if track_artist:
+                audio["artist"] = [track_artist]
+            if track_album:
+                audio["album"] = [track_album]
+            audio.save()
+
+    media_type = (
+        "audio/mpeg"
+        if ext == "mp3"
+        else "audio/mp4"
+        if ext in ("m4a", "mp4")
+        else "audio/webm"
+    )
+
+    filename = f"{title_safe}.{ext}"
+    return path_file, filename, media_type, ext
+
+
+def _download_auto_audio_to_file(
+    final_query: str,
+    job_dir: str,
+    *,
+    spotify_title: str | None = None,
+    spotify_artist: str | None = None,
+    spotify_album: str | None = None,
+) -> tuple[str, str, str, str]:
+    """
+    Variante de descarga automática (ytsearch1) que devuelve el audio a disco.
+    """
+    out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
+
+    opts = {
+        "format": "bestaudio/best",
+        "outtmpl": out_tmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "keepvideo": False,
+        "writethumbnail": True,
+        "default_search": "ytsearch1",
+        "postprocessors": [
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
+            {"key": "FFmpegMetadata"},
+            {"key": "EmbedThumbnail"},
+        ],
+    }
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(final_query, download=True)
+
+    if not info:
+        raise ValueError("No se pudo obtener información del vídeo")
+
+    video_info = info["entries"][0] if "entries" in info and info["entries"] else info
+
+    video_id = (video_info.get("id") or "unknown") if isinstance(video_info, dict) else "unknown"
+    raw_title = (video_info.get("title") or "audio") if isinstance(video_info, dict) else "audio"
+    title_safe = raw_title.replace("/", "-").replace("\\", "-")[:200]
+
+    path_file = ""
+    for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
+        candidate = os.path.join(job_dir, f"audio_{video_id}{ext}")
+        if os.path.isfile(candidate):
+            path_file = candidate
+            break
+
+    if not path_file:
+        for f in os.listdir(job_dir):
+            if f.startswith(f"audio_{video_id}"):
+                path_file = os.path.join(job_dir, f)
+                break
+
+    if not path_file:
+        raise ValueError("No se encontró el archivo de audio descargado")
+
+    ext = os.path.splitext(path_file)[1].lstrip(".")
+
+    if ext == "mp3":
+        track_title = spotify_title or raw_title
+        track_artist = spotify_artist or (
+            video_info.get("artist") if isinstance(video_info, dict) else ""
+        ) or (video_info.get("uploader") if isinstance(video_info, dict) else "") or ""
+        track_album = spotify_album or (video_info.get("album") if isinstance(video_info, dict) else "") or ""
+
+        if " - " in raw_title and not track_artist:
+            parts_split = raw_title.rsplit(" - ", 1)
+            if len(parts_split) == 2:
+                left, right = parts_split[0].strip(), parts_split[1].strip()
+                if 2 <= len(right) <= 40:
+                    track_title, track_artist = left, right
+
+        audio = MutagenFile(path_file, easy=True)
+        if audio is not None:
+            audio["title"] = [track_title]
+            if track_artist:
+                audio["artist"] = [track_artist]
+            if track_album:
+                audio["album"] = [track_album]
+            audio.save()
+
+    media_type = (
+        "audio/mpeg"
+        if ext == "mp3"
+        else "audio/mp4"
+        if ext in ("m4a", "mp4")
+        else "audio/webm"
+    )
+
+    filename = f"{title_safe}.{ext}"
+    return path_file, filename, media_type, ext
+
+
+def _download_job_worker():
+    """
+    Worker FIFO: cada job descarga a disco y queda listo para streaming.
+    """
+    global _active_downloads
+    while True:
+        job_id = _download_job_queue.get()
+        if not job_id:
+            continue
+
+        job = _download_jobs.get(job_id)
+        if not job:
+            _download_job_queue.task_done()
+            continue
+
+        try:
+            # Reservar un slot de descarga (yt-dlp/ffmpeg). Se libera al terminar de descargar.
+            _download_semaphore.acquire()
+            with _downloads_lock:
+                _active_downloads += 1
+                # sacar de pending (si está)
+                try:
+                    # pending mantiene FIFO; debería estar por delante pero no asumimos.
+                    if job_id in _pending_job_ids:
+                        _pending_job_ids.remove(job_id)
+                except ValueError:
+                    pass
+                job["status"] = "processing"
+                job["startedAt"] = int(time.time())
+
+            job_dir = tempfile.mkdtemp(prefix="savetune_job_")
+            job["job_dir"] = job_dir
+
+            job_type = job.get("type")
+            if job_type == "download":
+                video_url = f"https://www.youtube.com/watch?v={job['videoId']}"
+                file_path, filename, media_type, _ = _download_youtube_audio_to_file(
+                    video_url,
+                    job_dir,
+                    force_spotify_metadata=False,
+                )
+            elif job_type == "download-auto":
+                final_query = job.get("final_query")
+                file_path, filename, media_type, _ = _download_auto_audio_to_file(
+                    final_query,
+                    job_dir,
+                    spotify_title=job.get("title"),
+                    spotify_artist=job.get("artist"),
+                    spotify_album=job.get("album"),
+                )
+            else:
+                raise ValueError(f"Unknown job type: {job_type}")
+
+            with _downloads_lock:
+                job["status"] = "ready"
+                job["file_path"] = file_path
+                job["filename"] = filename
+                job["media_type"] = media_type
+                job["readyAt"] = int(time.time())
+
+        except Exception as e:
+            with _downloads_lock:
+                job["status"] = "error"
+                job["error"] = str(e)
+                job["errorAt"] = int(time.time())
+
+            # Evitar fugas de disco si el job falla (cleanup del job_dir si existe)
+            try:
+                jd = job.get("job_dir")
+                if jd and os.path.isdir(jd):
+                    shutil.rmtree(jd, ignore_errors=True)
+            except Exception:
+                pass
+        finally:
+            with _downloads_lock:
+                _active_downloads = max(0, _active_downloads - 1)
+            _download_semaphore.release()
+            _download_job_queue.task_done()
+
+
+def _ensure_workers_started():
+    global _workers_started
+    if _workers_started:
+        return
+    _workers_started = True
+    for _ in range(MAX_CONCURRENT_DOWNLOADS):
+        t = threading.Thread(target=_download_job_worker, daemon=True)
+        t.start()
 
 
 def _extract_playlist_id(url: str) -> str | None:
@@ -1019,6 +1331,7 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
 @app.get("/api/download")
 def api_download(videoId: str = Query(..., alias="videoId")):
     """Descarga audio de un video de YouTube"""
+    global _active_downloads
     if not videoId or not videoId.strip():
         return JSONResponse(
             status_code=400,
@@ -1031,9 +1344,45 @@ def api_download(videoId: str = Query(..., alias="videoId")):
 
     video_url = f"https://www.youtube.com/watch?v={videoId.strip()}"
 
+    # Intentar ocupar uno de los slots (máx. 5 descargas simultáneas).
+    acquired = _download_semaphore.acquire(blocking=False)
+    if not acquired:
+        _ensure_workers_started()
+        job_id = str(uuid.uuid4())
+
+        with _downloads_lock:
+            queue_position = _active_downloads + len(_pending_job_ids) + 1
+            _download_jobs[job_id] = {
+                "type": "download",
+                "videoId": videoId.strip(),
+                "status": "queued",
+                "queuePosition": queue_position,
+                "createdAt": int(time.time()),
+            }
+            _pending_job_ids.append(job_id)
+
+        _download_job_queue.put(job_id)
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "success": False,
+                "error": "Queued",
+                "message": f"Servidor petado: eres el numero {queue_position}. Te toca cuando se libere el numero {max(queue_position - 1, 0)}.",
+                "jobId": job_id,
+                "queuePosition": queue_position,
+            },
+        )
+
+    with _downloads_lock:
+        _active_downloads += 1
+
     try:
         filename, stream_gen, media_type = _download_with_yt_dlp(video_url)
     except Exception as e:
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
         print(f"❌ Error descargando: {e}")
         return JSONResponse(
             status_code=503,
@@ -1043,6 +1392,11 @@ def api_download(videoId: str = Query(..., alias="videoId")):
                 "message": str(e),
             },
         )
+
+    # El trabajo pesado (yt-dlp/ffmpeg) ya terminó; liberamos el slot.
+    with _downloads_lock:
+        _active_downloads = max(0, _active_downloads - 1)
+    _download_semaphore.release()
 
     return StreamingResponse(
         stream_gen,
@@ -1068,6 +1422,7 @@ def api_download_auto(
     - /api/download-auto?query=SexyBack Timbaland
     - /api/download-auto?title=SexyBack&artist=Justin Timberlake&album=FutureSex/LoveSounds
     """
+    global _active_downloads
     # Construir la query de búsqueda
     parts: list[str] = []
     if title and title.strip():
@@ -1094,6 +1449,40 @@ def api_download_auto(
         )
 
     print(f"\n🎵 Búsqueda y descarga automática: {final_query}")
+
+    # Intentar ocupar uno de los slots (máx. 5 descargas simultáneas).
+    acquired = _download_semaphore.acquire(blocking=False)
+    if not acquired:
+        _ensure_workers_started()
+        job_id = str(uuid.uuid4())
+        with _downloads_lock:
+            queue_position = _active_downloads + len(_pending_job_ids) + 1
+            _download_jobs[job_id] = {
+                "type": "download-auto",
+                "final_query": final_query,
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "status": "queued",
+                "queuePosition": queue_position,
+                "createdAt": int(time.time()),
+            }
+            _pending_job_ids.append(job_id)
+        _download_job_queue.put(job_id)
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "success": False,
+                "error": "Queued",
+                "message": f"Servidor petado: eres el numero {queue_position}. Te toca cuando se libere el numero {max(queue_position - 1, 0)}.",
+                "jobId": job_id,
+                "queuePosition": queue_position,
+            },
+        )
+
+    with _downloads_lock:
+        _active_downloads += 1
 
     # Usar un directorio único por petición para evitar colisiones en Temp (WinError 32)
     job_dir = tempfile.mkdtemp(prefix="savetune_")
@@ -1209,13 +1598,20 @@ def api_download_auto(
 
         print(f"✅ Descarga completada: {filename}")
 
-        return StreamingResponse(
+        resp = StreamingResponse(
             stream_file(),
             media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },
         )
+
+        # El trabajo pesado ya terminó; liberamos el slot (no hace falta mantenerlo durante el streaming).
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+
+        return resp
 
     except Exception as e:
         print(f"❌ Error en descarga automática: {e}")
@@ -1224,6 +1620,11 @@ def api_download_auto(
             shutil.rmtree(job_dir, ignore_errors=True)
         except Exception:
             pass
+
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+
         return JSONResponse(
             status_code=503,
             content={
@@ -1232,6 +1633,109 @@ def api_download_auto(
                 "message": str(e),
             },
         )
+
+
+@app.get("/api/download-job")
+def api_download_job(jobId: str = Query(..., alias="jobId")):
+    """
+    Estado de un job en cola para descargas.
+    Usado cuando /api/download o /api/download-auto devuelven 'error=Queued'.
+    """
+    job = _download_jobs.get(jobId)
+    if not job:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "JobNotFound", "message": "No existe el job"},
+        )
+
+    status = job.get("status") or "queued"
+    queue_position = job.get("queuePosition")
+    if status == "queued":
+        queue_position = _get_job_snapshot_position(jobId)
+
+    payload: dict = {
+        "success": True,
+        "jobId": jobId,
+        "status": status,
+    }
+    if queue_position is not None:
+        payload["queuePosition"] = queue_position
+
+    if status == "ready":
+        payload["filename"] = job.get("filename") or ""
+        payload["media_type"] = job.get("media_type") or job.get("mediaType") or ""
+    if status == "error":
+        payload["message"] = job.get("error") or ""
+
+    return payload
+
+
+@app.get("/api/download-job/stream")
+def api_download_job_stream(jobId: str = Query(..., alias="jobId")):
+    """Stream de audio para un job listo."""
+    job = _download_jobs.get(jobId)
+    if not job:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "JobNotFound", "message": "No existe el job"},
+        )
+
+    status = job.get("status")
+    if status != "ready":
+        if status == "error":
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": "JobError",
+                    "message": job.get("error") or "Job falló",
+                },
+            )
+
+        return JSONResponse(
+            status_code=425,
+            content={
+                "success": False,
+                "error": "NotReady",
+                "status": status,
+                "message": "Aún no está listo para descargar",
+                "queuePosition": _get_job_snapshot_position(jobId),
+            },
+        )
+
+    file_path = job.get("file_path") or ""
+    media_type = job.get("media_type") or "audio/mpeg"
+    filename = job.get("filename") or "audio.mp3"
+    job_dir = job.get("job_dir") or ""
+
+    if not file_path or not os.path.isfile(file_path):
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": "FileMissing", "message": "El archivo no está disponible"},
+        )
+
+    def stream_file() -> Generator[bytes, None, None]:
+        try:
+            with open(file_path, "rb") as f:
+                while chunk := f.read(8192):
+                    yield chunk
+        finally:
+            # Eliminar recursos del job al terminar el streaming.
+            try:
+                if job_dir:
+                    shutil.rmtree(job_dir, ignore_errors=True)
+            except OSError:
+                pass
+            with _downloads_lock:
+                _download_jobs.pop(jobId, None)
+
+    return StreamingResponse(
+        stream_file(),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 if __name__ == "__main__":

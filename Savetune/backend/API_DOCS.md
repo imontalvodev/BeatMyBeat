@@ -348,7 +348,45 @@ a.remove();
 
 ---
 
-## 6. Consideraciones de integración desde frontend
+## 6. Cola de descargas (limitado a 5 simultáneas)
+
+Por protección del servidor, el backend limita descargas concurrentes (por defecto `5`). Cuando no hay slots disponibles, los endpoints:
+- `GET /api/download`
+- `GET /api/download-auto`
+
+pueden devolver:
+
+**Response 202 – En cola**
+```json
+{
+  "success": false,
+  "error": "Queued",
+  "message": "Servidor petado: eres el numero X. Te toca cuando se libere el numero X-1.",
+  "jobId": "....",
+  "queuePosition": X
+}
+```
+
+En ese caso, el frontend debe consultar el job y luego descargar el stream:
+
+### 6.1 `GET /api/download-job?jobId=...`
+**Response 200**
+```json
+{
+  "success": true,
+  "jobId": "...",
+  "status": "queued|processing|ready|error",
+  "queuePosition": 1
+}
+```
+
+### 6.2 `GET /api/download-job/stream?jobId=...`
+- Si `status=ready`, responde con un stream de audio (igual que `/api/download`).
+- Si no está listo, responde con JSON `425` (`NotReady`).
+
+---
+
+## 7. Consideraciones de integración desde frontend
 
 - **Base URL configurable**: se recomienda tener una variable de entorno o configuración (`BACKEND_URL`) para que el frontend no asuma `localhost:4000` en producción.
 - **Manejo de errores**:

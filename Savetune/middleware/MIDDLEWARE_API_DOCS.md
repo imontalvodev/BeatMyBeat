@@ -336,6 +336,40 @@ const url = `${MIDDLEWARE_URL}/api/download-auto?${params.toString()}`;
 
 ---
 
+### 4.3 Descargas en cola (`Queued`) + endpoints de job
+
+Los endpoints de descarga `GET /api/download` y `GET /api/download-auto` pueden devolver un JSON en vez de un stream cuando el backend está saturado:
+
+**Response 202 – `Queued`**
+```json
+{
+  "success": false,
+  "error": "Queued",
+  "message": "Servidor petado: eres el numero X. Te toca cuando se libere el numero X-1.",
+  "jobId": "....",
+  "queuePosition": X
+}
+```
+
+En ese caso, el frontend debe consultar el estado del job y, cuando esté listo, descargar el stream desde:
+
+### 4.3.1 `GET /api/download-job?jobId=...`
+**Response 200**
+```json
+{
+  "success": true,
+  "jobId": "...",
+  "status": "queued|processing|ready|error",
+  "queuePosition": 1
+}
+```
+
+### 4.3.2 `GET /api/download-job/stream?jobId=...`
+- Si `status=ready`, devuelve un stream de audio.
+- Si aún no está listo, responde con JSON `425` (`NotReady`).
+
+---
+
 ## 5. Resumen de contratos Front ↔ Middle ↔ Back
 
 - **Frontend ↔ Middleware**

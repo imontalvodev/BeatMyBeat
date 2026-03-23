@@ -7,3 +7,4 @@ requests>=2.32.0
 beautifulsoup4>=4.12.3
 python-dotenv>=1.0.1
 spotipy>=2.25.2
+httpx>=0.29.1
