@@ -271,6 +271,7 @@ Este endpoint utiliza el nuevo endpoint del backend Python `/api/download-auto` 
     - `title` (opcional pero recomendado)
     - `artist` (opcional)
     - `album` (opcional)
+    - `imageUrl` (opcional): portada para incrustar en el MP3
   - Opción 2 (query libre):
     - `query`
 
@@ -279,6 +280,7 @@ Ejemplos:
 ```text
 GET {MIDDLEWARE_URL}/api/download-auto?title=SexyBack&artist=Justin%20Timberlake&album=FutureSex%2FLoveSounds
 GET {MIDDLEWARE_URL}/api/download-auto?query=SexyBack%20Timbaland
+GET {MIDDLEWARE_URL}/api/download-auto?title=In%20The%20End&artist=Linkin%20Park&album=Hybrid%20Theory&imageUrl=https%3A%2F%2Fi.scdn.co%2Fimage%2F...
 ```
 
 **Middleware → Backend Python**

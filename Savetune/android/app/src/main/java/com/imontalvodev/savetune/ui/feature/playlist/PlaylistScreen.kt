@@ -127,6 +127,7 @@ fun PlaylistScreen(
                                     title = t.title,
                                     artist = t.artist,
                                     album = t.album,
+                                    imageUrl = t.imageUrl,
                                 )
                             }
                             Toast.makeText(context, "Descargas listas.", Toast.LENGTH_SHORT).show()
@@ -162,6 +163,7 @@ fun PlaylistScreen(
                                     title = track.title,
                                     artist = track.artist,
                                     album = track.album,
+                                    imageUrl = track.imageUrl,
                                 )
                                 downloading = false
                                 onOpenPlayer()

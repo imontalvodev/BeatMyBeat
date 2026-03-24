@@ -6,6 +6,28 @@ const router = express.Router();
 const { validateSpotifyPlaylistUrl } = require('../utils/validators');
 
 const PY_BACKEND_URL = process.env.PY_BACKEND_URL || 'http://localhost:4000';
+const STREAM_HIGH_WATER_MARK = Number(process.env.MIDDLEWARE_STREAM_HIGH_WATER_MARK || 262144);
+
+function pipeUpstreamBody(upstream, res) {
+  if (!upstream.body) {
+    throw new Error('Upstream response has no body stream');
+  }
+  const nodeStream = Readable.fromWeb(upstream.body, {
+    highWaterMark: STREAM_HIGH_WATER_MARK,
+  });
+  nodeStream.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(502).json({
+        success: false,
+        error: 'ProxyStreamError',
+        message: err.message,
+      });
+      return;
+    }
+    res.destroy(err);
+  });
+  nodeStream.pipe(res);
+}
 
 // GET /api/playlist?url=...
 router.get('/playlist', async (req, res, next) => {
@@ -130,8 +152,7 @@ router.get('/download', async (req, res, next) => {
     }
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
 
-    const nodeStream = Readable.fromWeb(upstream.body);
-    nodeStream.pipe(res);
+    pipeUpstreamBody(upstream, res);
   } catch (error) {
     next(error);
   }
@@ -140,7 +161,7 @@ router.get('/download', async (req, res, next) => {
 // GET /api/download-auto
 router.get('/download-auto', async (req, res, next) => {
   try {
-    const { query, title, artist, album } = req.query;
+    const { query, title, artist, album, imageUrl } = req.query;
 
     // Debe existir al menos una fuente de búsqueda (query libre o metadatos)
     if (!query && !title && !artist && !album) {
@@ -157,6 +178,7 @@ router.get('/download-auto', async (req, res, next) => {
     if (title) url.searchParams.set('title', title);
     if (artist) url.searchParams.set('artist', artist);
     if (album) url.searchParams.set('album', album);
+    if (imageUrl) url.searchParams.set('imageUrl', imageUrl);
 
     const upstream = await fetch(url);
 
@@ -177,8 +199,7 @@ router.get('/download-auto', async (req, res, next) => {
     }
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
 
-    const nodeStream = Readable.fromWeb(upstream.body);
-    nodeStream.pipe(res);
+    pipeUpstreamBody(upstream, res);
   } catch (error) {
     next(error);
   }
@@ -217,8 +238,7 @@ router.get('/download-youtube-album', async (req, res, next) => {
     }
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/zip');
 
-    const nodeStream = Readable.fromWeb(upstream.body);
-    nodeStream.pipe(res);
+    pipeUpstreamBody(upstream, res);
   } catch (error) {
     next(error);
   }
@@ -305,8 +325,7 @@ router.get('/download-job/stream', async (req, res, next) => {
     }
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
 
-    const nodeStream = Readable.fromWeb(upstream.body);
-    nodeStream.pipe(res);
+    pipeUpstreamBody(upstream, res);
   } catch (error) {
     next(error);
   }

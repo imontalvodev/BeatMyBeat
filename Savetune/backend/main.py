@@ -26,6 +26,7 @@ from services.spotify import SpotifyPlaylistScraper
 from services.spotify_api import SpotifyWebAPI
 import yt_dlp
 from mutagen import File as MutagenFile
+from mutagen.id3 import APIC, ID3, ID3NoHeaderError
 import requests
 from bs4 import BeautifulSoup
 
@@ -47,6 +48,13 @@ MAX_CONCURRENT_DOWNLOADS = int(os.environ.get("MAX_CONCURRENT_DOWNLOADS", "5"))
 MAX_DOWNLOAD_QUEUE_SIZE = int(os.environ.get("MAX_DOWNLOAD_QUEUE_SIZE", "200"))
 DOWNLOAD_JOB_TTL_SECONDS = int(os.environ.get("DOWNLOAD_JOB_TTL_SECONDS", "1800"))
 DOWNLOAD_JOB_CLEANUP_INTERVAL_SECONDS = int(os.environ.get("DOWNLOAD_JOB_CLEANUP_INTERVAL_SECONDS", "60"))
+STREAM_CHUNK_SIZE_BYTES = int(os.environ.get("STREAM_CHUNK_SIZE_BYTES", "262144"))
+YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS = int(os.environ.get("YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS", "8"))
+YTDLP_SOCKET_TIMEOUT_SECONDS = int(os.environ.get("YTDLP_SOCKET_TIMEOUT_SECONDS", "20"))
+YTDLP_RETRIES = int(os.environ.get("YTDLP_RETRIES", "5"))
+YTDLP_FRAGMENT_RETRIES = int(os.environ.get("YTDLP_FRAGMENT_RETRIES", "5"))
+YTDLP_HTTP_CHUNK_SIZE_BYTES = int(os.environ.get("YTDLP_HTTP_CHUNK_SIZE_BYTES", "10485760"))
+MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", "5242880"))
 
 # --- Filtros para evitar "letra rara" cuando la canción no tiene vocals ---
 MIN_LYRICS_CHARS = int(os.environ.get("MIN_LYRICS_CHARS", "250"))
@@ -109,15 +117,15 @@ def _download_youtube_audio_to_file(
         "prefer_ffmpeg": True,
         "keepvideo": False,
         "noplaylist": True,
-        "writethumbnail": True,
-        "concurrent_fragment_downloads": 4,
-        "retries": 3,
-        "fragment_retries": 3,
-        "socket_timeout": 15,
+        "writethumbnail": False,
+        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+        "retries": YTDLP_RETRIES,
+        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
         "postprocessors": [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
             {"key": "FFmpegMetadata"},
-            {"key": "EmbedThumbnail"},
         ],
     }
 
@@ -196,6 +204,7 @@ def _download_auto_audio_to_file(
     spotify_title: str | None = None,
     spotify_artist: str | None = None,
     spotify_album: str | None = None,
+    spotify_image_url: str | None = None,
 ) -> tuple[str, str, str, str]:
     """
     Variante de descarga automática (ytsearch1) que devuelve el audio a disco.
@@ -210,16 +219,16 @@ def _download_auto_audio_to_file(
         "prefer_ffmpeg": True,
         "keepvideo": False,
         "noplaylist": True,
-        "writethumbnail": True,
-        "concurrent_fragment_downloads": 4,
-        "retries": 3,
-        "fragment_retries": 3,
-        "socket_timeout": 15,
+        "writethumbnail": False,
+        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+        "retries": YTDLP_RETRIES,
+        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
         "default_search": "ytsearch1",
         "postprocessors": [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
             {"key": "FFmpegMetadata"},
-            {"key": "EmbedThumbnail"},
         ],
     }
 
@@ -275,6 +284,9 @@ def _download_auto_audio_to_file(
             if track_album:
                 audio["album"] = [track_album]
             audio.save()
+        fallback_thumb = video_info.get("thumbnail") if isinstance(video_info, dict) else None
+        cover_url = _pick_cover_url(spotify_image_url, fallback_thumb)
+        _embed_cover_art_mp3(path_file, cover_url)
 
     media_type = (
         "audio/mpeg"
@@ -295,6 +307,62 @@ def _sanitize_filename(name: str, fallback: str = "album") -> str:
     safe = re.sub(r"[\\/:*?\"<>|]+", "-", raw)
     safe = re.sub(r"\s+", " ", safe).strip()[:180]
     return safe or fallback
+
+
+def _fetch_artwork_bytes(image_url: str | None) -> tuple[bytes, str] | None:
+    url = (image_url or "").strip()
+    if not url or not url.startswith(("http://", "https://")):
+        return None
+    try:
+        resp = requests.get(url, timeout=10, stream=True)
+        resp.raise_for_status()
+        mime = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip().lower()
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_ARTWORK_BYTES:
+                return None
+            chunks.append(chunk)
+        data = b"".join(chunks)
+        if not data:
+            return None
+        if mime not in ("image/jpeg", "image/jpg", "image/png", "image/webp"):
+            mime = "image/jpeg"
+        if mime == "image/jpg":
+            mime = "image/jpeg"
+        return data, mime
+    except Exception:
+        return None
+
+
+def _embed_cover_art_mp3(path_file: str, image_url: str | None) -> None:
+    art = _fetch_artwork_bytes(image_url)
+    if not art:
+        return
+    data, mime = art
+    try:
+        try:
+            tags = ID3(path_file)
+        except ID3NoHeaderError:
+            tags = ID3()
+        tags.delall("APIC")
+        tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=data))
+        tags.save(path_file, v2_version=3)
+    except Exception:
+        pass
+
+
+def _pick_cover_url(primary_url: str | None, fallback_url: str | None) -> str | None:
+    primary = (primary_url or "").strip()
+    if primary.startswith(("http://", "https://")):
+        return primary
+    fallback = (fallback_url or "").strip()
+    if fallback.startswith(("http://", "https://")):
+        return fallback
+    return None
 
 
 def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
@@ -462,10 +530,11 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
         "keepvideo": False,
         "noplaylist": False,
         "writethumbnail": False,
-        "concurrent_fragment_downloads": 4,
-        "retries": 3,
-        "fragment_retries": 3,
-        "socket_timeout": 15,
+        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+        "retries": YTDLP_RETRIES,
+        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
         "postprocessors": [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
             {"key": "FFmpegMetadata"},
@@ -554,6 +623,7 @@ def _download_job_worker():
                     spotify_title=job.get("title"),
                     spotify_artist=job.get("artist"),
                     spotify_album=job.get("album"),
+                    spotify_image_url=job.get("imageUrl"),
                 )
             else:
                 raise ValueError(f"Unknown job type: {job_type}")
@@ -1590,11 +1660,12 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         "prefer_ffmpeg": True,
         "keepvideo": False,
         "noplaylist": True,
-        "writethumbnail": True,
-        "concurrent_fragment_downloads": 4,
-        "retries": 3,
-        "fragment_retries": 3,
-        "socket_timeout": 15,
+        "writethumbnail": False,
+        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+        "retries": YTDLP_RETRIES,
+        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -1603,9 +1674,6 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
             },
             {
                 "key": "FFmpegMetadata",
-            },
-            {
-                "key": "EmbedThumbnail",
             },
         ],
     }
@@ -1675,7 +1743,7 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
     def stream_file() -> Generator[bytes, None, None]:
         try:
             with open(path_file, "rb") as f:
-                while chunk := f.read(8192):
+                while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
                     yield chunk
         finally:
             # Limpieza completa del job dir (audio + thumbnail/temp)
@@ -1783,6 +1851,7 @@ def api_download_auto(
     title: str | None = Query(None, alias="title"),
     artist: str | None = Query(None, alias="artist"),
     album: str | None = Query(None, alias="album"),
+    imageUrl: str | None = Query(None, alias="imageUrl"),
 ):
     """
     🆕 Busca automáticamente en YouTube y descarga el audio.
@@ -1843,6 +1912,7 @@ def api_download_auto(
                 "title": title,
                 "artist": artist,
                 "album": album,
+                "imageUrl": imageUrl,
                 "status": "queued",
                 "queuePosition": queue_position,
                 "createdAt": int(time.time()),
@@ -1875,7 +1945,12 @@ def api_download_auto(
         "no_warnings": True,
         "prefer_ffmpeg": True,
         "keepvideo": False,
-        "writethumbnail": True,
+        "writethumbnail": False,
+        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+        "retries": YTDLP_RETRIES,
+        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
         "default_search": "ytsearch1",  # 🔍 Busca automáticamente en YouTube
         "postprocessors": [
             {
@@ -1885,9 +1960,6 @@ def api_download_auto(
             },
             {
                 "key": "FFmpegMetadata",
-            },
-            {
-                "key": "EmbedThumbnail",
             },
         ],
     }
@@ -1951,7 +2023,10 @@ def api_download_auto(
                     if track_album:
                         audio["album"] = [track_album]
                     audio.save()
-                    print(f"✅ Metadatos guardados: {track_title} - {track_artist}")
+                fallback_thumb = video_info.get("thumbnail")
+                cover_url = _pick_cover_url(imageUrl, fallback_thumb)
+                _embed_cover_art_mp3(path_file, cover_url)
+                print(f"✅ Metadatos guardados: {track_title} - {track_artist}")
             except Exception as e:
                 print(f"⚠️ Error guardando metadatos: {e}")
 
@@ -1966,7 +2041,7 @@ def api_download_auto(
         def stream_file() -> Generator[bytes, None, None]:
             try:
                 with open(path_file, "rb") as f:
-                    while chunk := f.read(8192):
+                    while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
                         yield chunk
             finally:
                 try:
@@ -2125,7 +2200,7 @@ def api_download_youtube_album(
         def stream_zip() -> Generator[bytes, None, None]:
             try:
                 with open(zip_path, "rb") as f:
-                    while chunk := f.read(8192):
+                    while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
                         yield chunk
             finally:
                 try:
@@ -2314,7 +2389,7 @@ def api_download_job_stream(jobId: str = Query(..., alias="jobId")):
     def stream_file() -> Generator[bytes, None, None]:
         try:
             with open(file_path, "rb") as f:
-                while chunk := f.read(8192):
+                while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
                     yield chunk
         finally:
             # Eliminar recursos del job al terminar el streaming.

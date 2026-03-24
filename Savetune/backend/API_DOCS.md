@@ -131,6 +131,7 @@ Se puede usar de dos formas:
     - `title` (opcional pero recomendado)
     - `artist` (opcional)
     - `album` (opcional)
+    - `imageUrl` (opcional): portada del álbum/canción para incrustar en el MP3
   - Opción 2: query libre
     - `query` (string) – consulta de búsqueda completa.
 
@@ -290,6 +291,8 @@ Ejemplos:
 GET /api/download-auto?query=SexyBack%20Timbaland
 
 GET /api/download-auto?title=SexyBack&artist=Justin%20Timberlake&album=FutureSex%2FLoveSounds
+
+GET /api/download-auto?title=In%20The%20End&artist=Linkin%20Park&album=Hybrid%20Theory&imageUrl=https%3A%2F%2Fi.scdn.co%2Fimage%2F...
 ```
 
 **Construcción de la búsqueda**

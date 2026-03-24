@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
+import com.imontalvodev.savetune.ui.network.AudioDownloader
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundTop
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
@@ -38,6 +40,7 @@ import com.imontalvodev.savetune.ui.theme.ModeChip
 import com.imontalvodev.savetune.ui.theme.PrimaryButton
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.launch
 
 @Composable
 fun AnalyzeScreen(
@@ -65,6 +68,7 @@ fun AnalyzeScreen(
     var songAlbum by remember { mutableStateOf("") }
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     Surface(
         modifier = modifier
@@ -143,8 +147,8 @@ fun AnalyzeScreen(
                         OutlinedTextField(
                             value = playlistUrl,
                             onValueChange = { playlistUrl = it },
-                            label = { Text("Spotify playlist URL") },
-                            placeholder = { Text("Paste Spotify playlist link...") },
+                            label = { Text("Playlist URL (Spotify/YouTube)") },
+                            placeholder = { Text("Paste playlist link...") },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
@@ -197,11 +201,40 @@ fun AnalyzeScreen(
                                 if (playlistUrl.isBlank()) {
                                     Toast.makeText(
                                         context,
-                                        "Pega un enlace de playlist de Spotify.",
+                                        "Pega un enlace de playlist.",
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 } else {
-                                    onOpenPlaylist(playlistUrl.trim())
+                                    val normalizedUrl = playlistUrl.trim()
+                                    if (isYoutubePlaylistUrl(normalizedUrl)) {
+                                        Toast.makeText(
+                                            context,
+                                            "Descargando playlist de YouTube...",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                        scope.launch {
+                                            val result = AudioDownloader.downloadYoutubeAlbumZipToAppMusic(
+                                                context = context,
+                                                middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                                playlistUrl = normalizedUrl,
+                                            )
+                                            if (result.success) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Playlist descargada: ${result.extractedFiles} pistas",
+                                                    Toast.LENGTH_LONG,
+                                                ).show()
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Error playlist YouTube: ${result.error ?: "desconocido"}",
+                                                    Toast.LENGTH_LONG,
+                                                ).show()
+                                            }
+                                        }
+                                    } else {
+                                        onOpenPlaylist(normalizedUrl)
+                                    }
                                 }
                             }
                         },
@@ -211,6 +244,12 @@ fun AnalyzeScreen(
             }
         }
     }
+}
+
+private fun isYoutubePlaylistUrl(url: String): Boolean {
+    val u = url.lowercase()
+    return (u.contains("youtube.com") || u.contains("youtu.be") || u.contains("music.youtube.com")) &&
+        u.contains("list=")
 }
 
 private fun startAutoDownloadInApp(
