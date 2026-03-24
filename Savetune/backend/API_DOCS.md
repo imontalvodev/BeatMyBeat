@@ -391,23 +391,19 @@ En ese caso, el frontend debe consultar el job y luego descargar el stream:
 ## 7. `GET /api/resolve-youtube-album`
 
 **Descripción**: Resuelve un álbum/playlist de YouTube y devuelve metadata (sin descargar audio).
-
-Formas de uso:
-- **A)** `playlistUrl` directa
-- **B)** `album` + `artist` (autobúsqueda)
+Por ahora se usa **solo** con `playlistUrl` directa.
 
 **Request**
 - Método: `GET`
 - URL: `/api/resolve-youtube-album`
 - Query params:
-  - `playlistUrl` (opcional)
-  - `album` + `artist` (opcional, pero requeridos juntos si no hay `playlistUrl`)
+  - `playlistUrl` (obligatorio)
 
 **Response 200 – JSON**
 ```json
 {
   "success": true,
-  "mode": "playlistUrl|album+artist",
+  "mode": "playlistUrl",
   "resolvedPlaylistUrl": "https://youtube.com/playlist?list=...",
   "playlist": {
     "title": "Master of Puppets",
@@ -422,32 +418,25 @@ Formas de uso:
 **Errores**
 - `400 MissingMetadata`
 - `404 PlaylistNotFound`
-- `503 AlbumSearchError` / `PlaylistMetadataError`
+- `503 PlaylistMetadataError`
 
 ---
 
 ## 8. `GET /api/download-youtube-album`
 
 **Descripción**: Descarga un álbum/playlist de YouTube completo y devuelve un archivo `.zip` con todas las pistas en audio.
-
-Formas de uso:
-- **A)** `playlistUrl` directa (recomendado)
-- **B)** `album` + `artist` (el backend intenta resolver automáticamente una playlist)
+Por ahora se usa **solo** con `playlistUrl` directa.
 
 **Request**
 - Método: `GET`
 - URL: `/api/download-youtube-album`
 - Query params:
-  - `playlistUrl` (opcional, si no envías album+artist)
-  - `album` (opcional, requerido junto con `artist` si no hay `playlistUrl`)
-  - `artist` (opcional, requerido junto con `album` si no hay `playlistUrl`)
+  - `playlistUrl` (obligatorio)
 
 Ejemplos:
 
 ```text
 GET /api/download-youtube-album?playlistUrl=https://youtube.com/playlist?list=OLAK5...
-
-GET /api/download-youtube-album?album=Master%20of%20Puppets&artist=Metallica
 ```
 
 **Response 200 – ZIP stream**
@@ -456,10 +445,10 @@ GET /api/download-youtube-album?album=Master%20of%20Puppets&artist=Metallica
 - `Content-Disposition`: `attachment; filename="<album>.zip"`
 
 **Errores**
-- `400 MissingMetadata`: faltan parámetros (ni playlistUrl, ni album+artist)
-- `404 PlaylistNotFound`: no se pudo resolver playlist desde album+artist
+- `400 MissingMetadata`: falta `playlistUrl`
+- `404 PlaylistNotFound`: playlist no encontrada o inválida
 - `429 ServerBusy`/`QueueFull`: servidor ocupado o cola llena
-- `503 AlbumSearchError`/`AlbumDownloadError`: fallo al buscar o descargar
+- `503 AlbumDownloadError`: fallo al descargar
 
 ---
 

@@ -187,20 +187,18 @@ router.get('/download-auto', async (req, res, next) => {
 // GET /api/download-youtube-album
 router.get('/download-youtube-album', async (req, res, next) => {
   try {
-    const { playlistUrl, album, artist } = req.query;
+    const { playlistUrl } = req.query;
 
-    if (!playlistUrl && (!album || !artist)) {
+    if (!playlistUrl) {
       return res.status(400).json({
         success: false,
         error: 'MissingMetadata',
-        message: 'Provide playlistUrl OR album and artist',
+        message: 'Provide playlistUrl',
       });
     }
 
     const url = new URL(`${PY_BACKEND_URL}/api/download-youtube-album`);
     if (playlistUrl) url.searchParams.set('playlistUrl', playlistUrl);
-    if (album) url.searchParams.set('album', album);
-    if (artist) url.searchParams.set('artist', artist);
 
     const upstream = await fetch(url);
 
@@ -229,20 +227,18 @@ router.get('/download-youtube-album', async (req, res, next) => {
 // GET /api/resolve-youtube-album
 router.get('/resolve-youtube-album', async (req, res, next) => {
   try {
-    const { playlistUrl, album, artist } = req.query;
+    const { playlistUrl } = req.query;
 
-    if (!playlistUrl && (!album || !artist)) {
+    if (!playlistUrl) {
       return res.status(400).json({
         success: false,
         error: 'MissingMetadata',
-        message: 'Provide playlistUrl OR album and artist',
+        message: 'Provide playlistUrl',
       });
     }
 
     const url = new URL(`${PY_BACKEND_URL}/api/resolve-youtube-album`);
     if (playlistUrl) url.searchParams.set('playlistUrl', playlistUrl);
-    if (album) url.searchParams.set('album', album);
-    if (artist) url.searchParams.set('artist', artist);
 
     const upstream = await fetch(url);
     const body = await upstream.text();

@@ -382,17 +382,15 @@ Descarga un álbum/playlist completo de YouTube y devuelve un `.zip` con todas l
 - Método: `GET`
 - URL: `{MIDDLEWARE_URL}/api/download-youtube-album`
 - Query params:
-  - `playlistUrl` (recomendado), **o**
-  - `album` + `artist`
+  - `playlistUrl` (**obligatorio**)
 
 Ejemplos:
 ```text
 GET {MIDDLEWARE_URL}/api/download-youtube-album?playlistUrl=https://youtube.com/playlist?list=OLAK5...
-GET {MIDDLEWARE_URL}/api/download-youtube-album?album=Master%20of%20Puppets&artist=Metallica
 ```
 
 **Middleware → Backend Python**
-- Reenvía los mismos params a `{PY_BACKEND_URL}/api/download-youtube-album`
+- Reenvía `playlistUrl` a `{PY_BACKEND_URL}/api/download-youtube-album`
 
 **Respuesta**
 - `200` stream ZIP (`application/zip`) + `Content-Disposition`
@@ -408,12 +406,11 @@ Resuelve una playlist/álbum de YouTube sin descargar audio.
 - Método: `GET`
 - URL: `{MIDDLEWARE_URL}/api/resolve-youtube-album`
 - Query params:
-  - `playlistUrl`, **o**
-  - `album` + `artist`
+  - `playlistUrl` (**obligatorio**)
 
 **Respuesta**
 - `200` JSON con `resolvedPlaylistUrl` y `playlist.itemCount/title/...`
-- o JSON de error (`MissingMetadata`, `PlaylistNotFound`, `AlbumSearchError`, `PlaylistMetadataError`)
+- o JSON de error (`MissingMetadata`, `PlaylistNotFound`, `PlaylistMetadataError`)
 
 ---
 
