@@ -10,6 +10,7 @@ import uuid
 import threading
 import queue as queue_module
 import time
+import zipfile
 from collections import deque
 from functools import lru_cache
 from typing import Generator
@@ -285,6 +286,295 @@ def _download_auto_audio_to_file(
 
     filename = f"{title_safe}.{ext}"
     return path_file, filename, media_type, ext
+
+
+def _sanitize_filename(name: str, fallback: str = "album") -> str:
+    raw = (name or "").strip()
+    if not raw:
+        raw = fallback
+    safe = re.sub(r"[\\/:*?\"<>|]+", "-", raw)
+    safe = re.sub(r"\s+", " ", safe).strip()[:180]
+    return safe or fallback
+
+
+def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
+    """
+    Intenta resolver una playlist/álbum de YouTube a partir de album+artist.
+    """
+    album = (album or "").strip()
+    artist = (artist or "").strip()
+    if not album or not artist:
+        return None
+
+    queries = [
+        # YouTube Music suele dar albums/official playlists mejores
+        f"ytmusicsearch10:{artist} {album} album",
+        f"ytmusicsearch10:{album} {artist}",
+        # Fallback clásico YouTube
+        f"ytsearch10:{artist} {album} full album",
+        f"ytsearch10:{artist} {album} album playlist",
+        f"ytsearch10:{album} {artist} topic album",
+    ]
+
+    def _normalize_candidate_url(raw_url: str) -> str | None:
+        u = (raw_url or "").strip()
+        if not u:
+            return None
+        if u.startswith("http"):
+            return u
+        if u.startswith("/watch"):
+            return f"https://www.youtube.com{u}"
+        if u.startswith("watch?"):
+            return f"https://www.youtube.com/{u}"
+        # A veces devuelve solo id
+        if len(u) >= 10 and not u.startswith("ytsearch"):
+            return f"https://www.youtube.com/watch?v={u}"
+        return None
+
+    for query in queries:
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "skip_download": True,
+            "noplaylist": False,
+        }
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(query, download=False)
+        except Exception:
+            continue
+
+        entries = info.get("entries") if isinstance(info, dict) else None
+        if not entries:
+            continue
+
+        # 1) Mejor caso: resultado tipo playlist/album o URL con list=
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            candidate_type = (entry.get("_type") or "").lower()
+            url = _normalize_candidate_url(entry.get("url") or entry.get("webpage_url") or "")
+            title = (entry.get("title") or "").lower()
+
+            if not url:
+                continue
+            if "list=" in url:
+                return url
+            if candidate_type in ("playlist", "multi_video"):
+                return url
+            if "album" in title and ("topic" in title or artist.lower() in title):
+                return url
+
+        # 2) Fallback: primer resultado utilizable
+        first = entries[0]
+        if isinstance(first, dict):
+            url = _normalize_candidate_url(first.get("url") or first.get("webpage_url") or "")
+            if url:
+                return url
+
+    return None
+
+
+def _fetch_youtube_playlist_metadata(playlist_url: str) -> dict:
+    """
+    Devuelve metadata ligera de una playlist/álbum de YouTube sin descargar audio.
+    """
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "skip_download": True,
+        "noplaylist": False,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(playlist_url, download=False)
+
+    if not info or not isinstance(info, dict):
+        raise ValueError("No se pudo obtener metadata de la playlist")
+
+    entries = info.get("entries") or []
+    item_count = len(entries) if isinstance(entries, list) else 0
+
+    return {
+        "title": info.get("title") or "",
+        "id": info.get("id") or "",
+        "url": info.get("webpage_url") or playlist_url,
+        "uploader": info.get("uploader") or "",
+        "itemCount": item_count,
+    }
+
+
+def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[str, str, str]:
+    """
+    Descarga toda una playlist/álbum de YouTube y devuelve:
+    (zip_path, zip_filename, media_type)
+    """
+    out_tmpl = os.path.join(job_dir, "%(playlist_index)03d - %(title).180s.%(ext)s")
+    opts = {
+        "format": "bestaudio/best",
+        "outtmpl": out_tmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "keepvideo": False,
+        "noplaylist": False,
+        "writethumbnail": False,
+        "concurrent_fragment_downloads": 4,
+        "retries": 3,
+        "fragment_retries": 3,
+        "socket_timeout": 15,
+        "postprocessors": [
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
+            {"key": "FFmpegMetadata"},
+        ],
+    }
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(playlist_url, download=True)
+
+    if not info:
+        raise ValueError("No se pudo obtener información de la playlist/álbum")
+
+    playlist_title = ""
+    if isinstance(info, dict):
+        playlist_title = (info.get("title") or "").strip()
+
+    files: list[str] = []
+    for name in os.listdir(job_dir):
+        p = os.path.join(job_dir, name)
+        if not os.path.isfile(p):
+            continue
+        ext = os.path.splitext(name)[1].lower()
+        if ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
+            files.append(p)
+
+    if not files:
+        raise ValueError("No se descargó ningún audio de la playlist")
+
+    files.sort(key=lambda p: os.path.basename(p).lower())
+
+    zip_name = f"{_sanitize_filename(playlist_title, fallback='youtube-album')}.zip"
+    zip_path = os.path.join(job_dir, zip_name)
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in files:
+            zf.write(p, arcname=os.path.basename(p))
+
+    return zip_path, zip_name, "application/zip"
+
+
+def _sanitize_filename(name: str, fallback: str = "album") -> str:
+    raw = (name or "").strip()
+    if not raw:
+        raw = fallback
+    safe = re.sub(r"[\\/:*?\"<>|]+", "-", raw)
+    safe = re.sub(r"\s+", " ", safe).strip()[:180]
+    return safe or fallback
+
+
+def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
+    """
+    Intenta resolver una playlist/álbum de YouTube a partir de album+artist.
+    """
+    q = f"{album} {artist} full album playlist".strip()
+    search_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "skip_download": True,
+        "default_search": "ytsearch10",
+        "noplaylist": False,
+    }
+    with yt_dlp.YoutubeDL(search_opts) as ydl:
+        info = ydl.extract_info(q, download=False)
+
+    entries = info.get("entries") if isinstance(info, dict) else None
+    if not entries:
+        return None
+
+    # 1) prioridad a resultados que ya traen list=
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        url = (entry.get("url") or entry.get("webpage_url") or "").strip()
+        if "list=" in url:
+            if url.startswith("http"):
+                return url
+            if url.startswith("/watch"):
+                return f"https://www.youtube.com{url}"
+            if len(url) >= 10:
+                return f"https://www.youtube.com/watch?v={url}"
+
+    # 2) fallback al primer resultado usable
+    first = entries[0]
+    if isinstance(first, dict):
+        url = (first.get("url") or first.get("webpage_url") or "").strip()
+        if url:
+            if url.startswith("http"):
+                return url
+            if url.startswith("/watch"):
+                return f"https://www.youtube.com{url}"
+            return f"https://www.youtube.com/watch?v={url}"
+    return None
+
+
+def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[str, str, str]:
+    """
+    Descarga toda una playlist/álbum de YouTube y devuelve:
+    (zip_path, zip_filename, media_type)
+    """
+    out_tmpl = os.path.join(job_dir, "%(playlist_index)03d - %(title).180s.%(ext)s")
+    opts = {
+        "format": "bestaudio/best",
+        "outtmpl": out_tmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "keepvideo": False,
+        "noplaylist": False,
+        "writethumbnail": False,
+        "concurrent_fragment_downloads": 4,
+        "retries": 3,
+        "fragment_retries": 3,
+        "socket_timeout": 15,
+        "postprocessors": [
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
+            {"key": "FFmpegMetadata"},
+        ],
+    }
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(playlist_url, download=True)
+
+    if not info:
+        raise ValueError("No se pudo obtener información de la playlist/álbum")
+
+    playlist_title = ""
+    if isinstance(info, dict):
+        playlist_title = (info.get("title") or "").strip()
+
+    # reunir audios descargados
+    files: list[str] = []
+    for name in os.listdir(job_dir):
+        p = os.path.join(job_dir, name)
+        if not os.path.isfile(p):
+            continue
+        ext = os.path.splitext(name)[1].lower()
+        if ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
+            files.append(p)
+
+    if not files:
+        raise ValueError("No se descargó ningún audio de la playlist")
+
+    files.sort(key=lambda p: os.path.basename(p).lower())
+
+    zip_name = f"{_sanitize_filename(playlist_title, fallback='youtube-album')}.zip"
+    zip_path = os.path.join(job_dir, zip_name)
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in files:
+            zf.write(p, arcname=os.path.basename(p))
+
+    return zip_path, zip_name, "application/zip"
 
 
 def _download_job_worker():
@@ -1066,6 +1356,21 @@ def index():
             <button onclick="callDownload()">Descargar Audio</button>
         </div>
 
+        <div class="card" style="border: 2px solid #22d3ee;">
+            <h2>🆕 /api/resolve-youtube-album + /api/download-youtube-album</h2>
+            <p class="small">Resuelve metadata sin descargar o descarga ZIP completo de álbum/playlist</p>
+            <label>Playlist URL (opcional)</label>
+            <input id="album-playlist-url" type="text" placeholder="https://youtube.com/playlist?list=..." />
+            <p class="small" style="margin:0.5rem 0;">o busca por metadatos</p>
+            <label>Álbum</label>
+            <input id="album-name" type="text" placeholder="Master of Puppets" />
+            <label>Artista</label>
+            <input id="album-artist" type="text" placeholder="Metallica" />
+            <button onclick="callResolveYouTubeAlbum()">🔎 Resolver (sin descargar)</button>
+            <button onclick="callDownloadYouTubeAlbum()">📦 Descargar álbum ZIP</button>
+            <pre id="album-resolve-output"></pre>
+        </div>
+
         <script>
             async function callHealth() {
                 const res = await fetch('/health');
@@ -1143,6 +1448,45 @@ def index():
                 
                 const a = document.createElement('a');
                 a.href = '/api/download-auto?query=' + encodeURIComponent(query);
+                a.download = '';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+            function buildAlbumParams() {
+                const playlistUrl = document.getElementById('album-playlist-url').value.trim();
+                const album = document.getElementById('album-name').value.trim();
+                const artist = document.getElementById('album-artist').value.trim();
+
+                const params = new URLSearchParams();
+                if (playlistUrl) {
+                    params.set('playlistUrl', playlistUrl);
+                } else {
+                    if (!album || !artist) {
+                        alert('Ingresa playlistUrl o ambos album + artist');
+                        return null;
+                    }
+                    params.set('album', album);
+                    params.set('artist', artist);
+                }
+                return params;
+            }
+            async function callResolveYouTubeAlbum() {
+                const params = buildAlbumParams();
+                if (!params) return;
+                const res = await fetch('/api/resolve-youtube-album?' + params.toString());
+                const text = await res.text();
+                try {
+                    document.getElementById('album-resolve-output').textContent = JSON.stringify(JSON.parse(text), null, 2);
+                } catch {
+                    document.getElementById('album-resolve-output').textContent = text;
+                }
+            }
+            async function callDownloadYouTubeAlbum() {
+                const params = buildAlbumParams();
+                if (!params) return;
+                const a = document.createElement('a');
+                a.href = '/api/download-youtube-album?' + params.toString();
                 a.download = '';
                 document.body.appendChild(a);
                 a.click();
@@ -1741,6 +2085,202 @@ def api_download_auto(
                 "message": str(e),
             },
         )
+
+
+@app.get("/api/download-youtube-album")
+def api_download_youtube_album(
+    playlistUrl: str | None = Query(None, alias="playlistUrl"),
+    album: str | None = Query(None, alias="album"),
+    artist: str | None = Query(None, alias="artist"),
+):
+    """
+    Descarga un álbum/playlist de YouTube completo y devuelve un ZIP.
+    Formas de uso:
+    - playlistUrl directa
+    - album + artist (resuelve playlist automáticamente)
+    """
+    global _active_downloads
+
+    direct_playlist_url = (playlistUrl or "").strip()
+    album_name = (album or "").strip()
+    artist_name = (artist or "").strip()
+
+    if not direct_playlist_url and (not album_name or not artist_name):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "MissingMetadata",
+                "message": "Provide playlistUrl OR album and artist",
+            },
+        )
+
+    resolved_playlist_url = direct_playlist_url
+    if not resolved_playlist_url:
+        try:
+            resolved_playlist_url = _resolve_playlist_url_from_album(album_name, artist_name) or ""
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "error": "AlbumSearchError",
+                    "message": str(e),
+                },
+            )
+        if not resolved_playlist_url:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "error": "PlaylistNotFound",
+                    "message": "No se encontró playlist/álbum para ese album+artist",
+                },
+            )
+
+    # Proteger el servidor: si no hay slot, encolar igual que descargas individuales
+    acquired = _download_semaphore.acquire(blocking=False)
+    if not acquired:
+        _ensure_workers_started()
+        with _downloads_lock:
+            if len(_pending_job_ids) >= MAX_DOWNLOAD_QUEUE_SIZE:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "error": "QueueFull",
+                        "message": "Cola llena. Vuelve a intentarlo en unos segundos.",
+                    },
+                )
+            queue_position = _active_downloads + len(_pending_job_ids) + 1
+
+        return JSONResponse(
+            status_code=429,
+            content={
+                "success": False,
+                "error": "ServerBusy",
+                "message": f"Servidor ocupado. Intenta de nuevo cuando se libere el numero {max(queue_position - 1, 0)}.",
+                "queuePositionEstimate": queue_position,
+            },
+        )
+
+    with _downloads_lock:
+        _active_downloads += 1
+
+    job_dir = tempfile.mkdtemp(prefix="savetune_album_")
+    try:
+        zip_path, zip_filename, media_type = _download_youtube_playlist_to_zip(
+            resolved_playlist_url, job_dir
+        )
+
+        def stream_zip() -> Generator[bytes, None, None]:
+            try:
+                with open(zip_path, "rb") as f:
+                    while chunk := f.read(8192):
+                        yield chunk
+            finally:
+                try:
+                    shutil.rmtree(job_dir, ignore_errors=True)
+                except OSError:
+                    pass
+
+        resp = StreamingResponse(
+            stream_zip(),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{zip_filename}"',
+            },
+        )
+
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+
+        return resp
+    except Exception as e:
+        try:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception:
+            pass
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": "AlbumDownloadError",
+                "message": str(e),
+            },
+        )
+
+
+@app.get("/api/resolve-youtube-album")
+def api_resolve_youtube_album(
+    playlistUrl: str | None = Query(None, alias="playlistUrl"),
+    album: str | None = Query(None, alias="album"),
+    artist: str | None = Query(None, alias="artist"),
+):
+    """
+    Resuelve un álbum/playlist de YouTube sin descargar.
+    """
+    direct_playlist_url = (playlistUrl or "").strip()
+    album_name = (album or "").strip()
+    artist_name = (artist or "").strip()
+
+    if not direct_playlist_url and (not album_name or not artist_name):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "MissingMetadata",
+                "message": "Provide playlistUrl OR album and artist",
+            },
+        )
+
+    resolved_playlist_url = direct_playlist_url
+    mode = "playlistUrl" if resolved_playlist_url else "album+artist"
+
+    if not resolved_playlist_url:
+        try:
+            resolved_playlist_url = _resolve_playlist_url_from_album(album_name, artist_name) or ""
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "error": "AlbumSearchError",
+                    "message": str(e),
+                },
+            )
+        if not resolved_playlist_url:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "error": "PlaylistNotFound",
+                    "message": "No se encontró playlist/álbum para ese album+artist",
+                },
+            )
+
+    try:
+        metadata = _fetch_youtube_playlist_metadata(resolved_playlist_url)
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": "PlaylistMetadataError",
+                "message": str(e),
+            },
+        )
+
+    return {
+        "success": True,
+        "mode": mode,
+        "resolvedPlaylistUrl": resolved_playlist_url,
+        "playlist": metadata,
+    }
 
 
 @app.get("/api/download-job")

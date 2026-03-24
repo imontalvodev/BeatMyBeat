@@ -5,6 +5,8 @@ Backend en Python con FastAPI. Expone endpoints para:
 - **Lectura de playlists de Spotify**
 - **Búsqueda de vídeos en YouTube**
 - **Descarga de audio desde YouTube (por `videoId` o búsqueda automática)**
+- **Descarga de álbum/playlist de YouTube en ZIP**
+- **Resolución de álbum/playlist de YouTube (sin descargar)**
 
 El backend está pensado para correr en `http://localhost:4000` en desarrollo (ver `main.py`), pero puedes ajustar la URL base según tu entorno.
 
@@ -386,7 +388,82 @@ En ese caso, el frontend debe consultar el job y luego descargar el stream:
 
 ---
 
-## 7. Consideraciones de integración desde frontend
+## 7. `GET /api/resolve-youtube-album`
+
+**Descripción**: Resuelve un álbum/playlist de YouTube y devuelve metadata (sin descargar audio).
+
+Formas de uso:
+- **A)** `playlistUrl` directa
+- **B)** `album` + `artist` (autobúsqueda)
+
+**Request**
+- Método: `GET`
+- URL: `/api/resolve-youtube-album`
+- Query params:
+  - `playlistUrl` (opcional)
+  - `album` + `artist` (opcional, pero requeridos juntos si no hay `playlistUrl`)
+
+**Response 200 – JSON**
+```json
+{
+  "success": true,
+  "mode": "playlistUrl|album+artist",
+  "resolvedPlaylistUrl": "https://youtube.com/playlist?list=...",
+  "playlist": {
+    "title": "Master of Puppets",
+    "id": "OLAK5uy_...",
+    "url": "https://youtube.com/playlist?list=...",
+    "uploader": "Metallica",
+    "itemCount": 8
+  }
+}
+```
+
+**Errores**
+- `400 MissingMetadata`
+- `404 PlaylistNotFound`
+- `503 AlbumSearchError` / `PlaylistMetadataError`
+
+---
+
+## 8. `GET /api/download-youtube-album`
+
+**Descripción**: Descarga un álbum/playlist de YouTube completo y devuelve un archivo `.zip` con todas las pistas en audio.
+
+Formas de uso:
+- **A)** `playlistUrl` directa (recomendado)
+- **B)** `album` + `artist` (el backend intenta resolver automáticamente una playlist)
+
+**Request**
+- Método: `GET`
+- URL: `/api/download-youtube-album`
+- Query params:
+  - `playlistUrl` (opcional, si no envías album+artist)
+  - `album` (opcional, requerido junto con `artist` si no hay `playlistUrl`)
+  - `artist` (opcional, requerido junto con `album` si no hay `playlistUrl`)
+
+Ejemplos:
+
+```text
+GET /api/download-youtube-album?playlistUrl=https://youtube.com/playlist?list=OLAK5...
+
+GET /api/download-youtube-album?album=Master%20of%20Puppets&artist=Metallica
+```
+
+**Response 200 – ZIP stream**
+- Tipo: `StreamingResponse`
+- `Content-Type`: `application/zip`
+- `Content-Disposition`: `attachment; filename="<album>.zip"`
+
+**Errores**
+- `400 MissingMetadata`: faltan parámetros (ni playlistUrl, ni album+artist)
+- `404 PlaylistNotFound`: no se pudo resolver playlist desde album+artist
+- `429 ServerBusy`/`QueueFull`: servidor ocupado o cola llena
+- `503 AlbumSearchError`/`AlbumDownloadError`: fallo al buscar o descargar
+
+---
+
+## 9. Consideraciones de integración desde frontend
 
 - **Base URL configurable**: se recomienda tener una variable de entorno o configuración (`BACKEND_URL`) para que el frontend no asuma `localhost:4000` en producción.
 - **Manejo de errores**:
