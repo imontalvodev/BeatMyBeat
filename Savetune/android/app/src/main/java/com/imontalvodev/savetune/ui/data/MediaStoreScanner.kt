@@ -2,8 +2,8 @@ package com.imontalvodev.savetune.ui.data
 
 import android.content.Context
 import android.media.MediaMetadataRetriever
-import android.os.Environment
 import android.provider.MediaStore
+import java.io.File
 
 data class DeviceTrack(
     val id: Long,
@@ -70,8 +70,8 @@ class MediaStoreScanner(private val context: Context) {
             // Sin permisos de lectura, seguimos con la carpeta privada de la app.
         }
 
-        // 2) Incluir siempre los ficheros en la carpeta propia de música de Savetune
-        val appMusicDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+        // 2) Incluir siempre los ficheros en almacenamiento interno privado (.music)
+        val appMusicDir = File(context.filesDir, ".music")
         if (appMusicDir.exists()) {
             val audioExtensions = setOf("mp3", "m4a", "aac", "wav", "ogg", "flac")
             appMusicDir.listFiles()?.forEachIndexed { index, file ->

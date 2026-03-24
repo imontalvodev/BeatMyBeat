@@ -1,6 +1,5 @@
 package com.imontalvodev.savetune.ui.feature.analyze
 
-import android.media.MediaScannerConnection
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -272,8 +271,7 @@ private fun startAutoDownloadInApp(
                 val body = response.body ?: return@use
                 val inputStream = body.byteStream()
 
-                val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
-                    ?: context.filesDir
+                val dir = java.io.File(context.filesDir, ".music")
                 if (!dir.exists()) dir.mkdirs()
 
                 val fileNameFromHeader =
@@ -293,14 +291,6 @@ private fun startAutoDownloadInApp(
                     }
                     output.flush()
                 }
-
-                // Actualizar MediaStore para que el reproductor vea la nueva canción
-                MediaScannerConnection.scanFile(
-                    context,
-                    arrayOf(outFile.absolutePath),
-                    null,
-                    null,
-                )
 
                 android.os.Handler(context.mainLooper).post {
                     Toast.makeText(

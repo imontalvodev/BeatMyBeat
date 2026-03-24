@@ -2,6 +2,7 @@ package com.imontalvodev.savetune.ui.feature.player
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
@@ -73,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import java.io.File
+import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.imontalvodev.savetune.R
 import com.imontalvodev.savetune.ui.data.DeviceTrack
@@ -101,6 +103,7 @@ fun PlayerScreen(
     val mediaPlayer = remember { MediaPlayer() }
     val queue = remember { mutableStateListOf<DeviceTrack>() }
     DisposableEffect(Unit) {
+        mediaPlayer.setOnErrorListener { _, _, _ -> true }
         onDispose {
             mediaPlayer.reset()
             mediaPlayer.release()
@@ -238,6 +241,29 @@ fun PlayerScreen(
         val title = t.title.trim()
         val artist = t.artist.trim()
 
+        fun sanitizeTitle(input: String): String {
+            return input
+                .replace(Regex("\\s*[\\(\\[].*?[\\)\\]]\\s*"), " ")
+                .replace(Regex("(?i)\\b(remastered|remaster|official|audio|video|lyrics|live)\\b"), " ")
+                .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+        }
+
+        fun titleFromUri(uri: String): String {
+            val rawName = runCatching {
+                val parsed = Uri.parse(uri)
+                val path = parsed.lastPathSegment ?: return@runCatching ""
+                URLDecoder.decode(path, "UTF-8")
+            }.getOrElse { "" }
+            if (rawName.isBlank()) return ""
+            return rawName
+                .replace(Regex("\\.[A-Za-z0-9]{2,5}$"), "")
+                .replace(Regex("_"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+        }
+
         fun isUnknown(s: String): Boolean =
             s.equals("unknown", ignoreCase = true) ||
                 s.equals("unknown artist", ignoreCase = true) ||
@@ -259,19 +285,43 @@ fun PlayerScreen(
 
         // 2) Si no hay caché, intentar red (puede fallar si no hay internet)
         lyricsState = LyricsUiState.Loading
-        val res = runCatching {
-            withContext(Dispatchers.IO) {
-                MiddlewareApi.fetchLyrics(
-                    baseUrl = MIDDLEWARE_BASE_URL,
-                    title = title,
-                    artist = artist,
-                )
+        val uriTitle = titleFromUri(t.uri)
+        val attempts = listOf(
+            title,
+            sanitizeTitle(title),
+            uriTitle,
+            sanitizeTitle(uriTitle),
+        )
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        var res: com.imontalvodev.savetune.ui.network.LyricsResponse? = null
+        var usedTitle = title
+        for (candidate in attempts) {
+            val candidateRes = runCatching {
+                withContext(Dispatchers.IO) {
+                    MiddlewareApi.fetchLyrics(
+                        baseUrl = MIDDLEWARE_BASE_URL,
+                        title = candidate,
+                        artist = artist,
+                    )
+                }
+            }.getOrNull()
+            if (candidateRes != null && candidateRes.success && candidateRes.lyrics.isNotBlank()) {
+                res = candidateRes
+                usedTitle = candidate
+                break
             }
-        }.getOrNull()
+            if (res == null) res = candidateRes
+        }
 
         if (res != null && res.success && res.lyrics.isNotBlank()) {
             withContext(Dispatchers.IO) {
                 LyricsCache.put(context, title, artist, res.lyrics)
+                if (usedTitle != title) {
+                    LyricsCache.put(context, usedTitle, artist, res.lyrics)
+                }
             }
             lyricsState = LyricsUiState.Ready(res.lyrics)
         } else {
@@ -378,9 +428,16 @@ fun PlayerScreen(
                 queueRepeatIndex = -1
             }
             mediaPlayer.reset()
+            mediaPlayer.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
             mediaPlayer.setDataSource(context, track.uri.toUri())
             mediaPlayer.prepare()
             mediaPlayer.start()
+            mediaPlayer.setVolume(1f, 1f)
             currentTrack = track
             currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
             isPlaying = true
@@ -398,7 +455,9 @@ fun PlayerScreen(
                     shuffleIndex = shuffleOrder.indexOfFirst { it.id == track.id }
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            isPlaying = false
+            Toast.makeText(context, "No se pudo reproducir: ${e.message ?: "error"}", Toast.LENGTH_SHORT).show()
         }
     }
 

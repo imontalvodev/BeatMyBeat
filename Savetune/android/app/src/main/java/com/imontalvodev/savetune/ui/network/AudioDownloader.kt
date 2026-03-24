@@ -1,8 +1,6 @@
 package com.imontalvodev.savetune.ui.network
 
 import android.content.Context
-import android.media.MediaScannerConnection
-import android.os.Environment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -68,7 +66,8 @@ object AudioDownloader {
         val body = res.body ?: return DownloadResult(false, null, "EmptyBody")
         val inputStream = body.byteStream()
 
-        val dir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+        // Carpeta interna privada: no aparece en MediaStore y se elimina al desinstalar.
+        val dir = File(context.filesDir, ".music")
         if (!dir.exists()) dir.mkdirs()
 
         val fileNameFromHeader =
@@ -88,14 +87,6 @@ object AudioDownloader {
             }
             output.flush()
         }
-
-        // Actualizar índice para que el reproductor lo detecte
-        MediaScannerConnection.scanFile(
-            context,
-            arrayOf(outFile.absolutePath),
-            null,
-            null,
-        )
 
         return DownloadResult(true, outFile.name, null)
     }
