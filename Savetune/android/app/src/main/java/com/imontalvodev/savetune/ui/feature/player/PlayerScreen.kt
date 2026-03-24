@@ -86,6 +86,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlin.random.Random
 
 @Composable
 fun PlayerScreen(
@@ -117,6 +118,14 @@ fun PlayerScreen(
     var isExpanded by remember { mutableStateOf(false) }
     var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
 
+    var shuffleOn by remember { mutableStateOf(false) }
+    var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
+    // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
+    var queueRepeatSnapshot by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
+    var queueRepeatIndex by remember { mutableStateOf(-1) }
+    var shuffleOrder by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
+    var shuffleIndex by remember { mutableStateOf(-1) }
+
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(playlists) {
         if (playlists.isEmpty()) {
@@ -132,6 +141,8 @@ fun PlayerScreen(
     // Al cambiar de sección/playlist limpiamos la cola para evitar saltos raros
     LaunchedEffect(selectedSection, selectedPlaylistId) {
         queue.clear()
+        queueRepeatSnapshot = emptyList()
+        queueRepeatIndex = -1
     }
 
     var addToPlaylistDialogOpen by remember { mutableStateOf(false) }
@@ -302,9 +313,65 @@ fun PlayerScreen(
         }
     }
 
+    fun onToggleShuffle() {
+        shuffleOn = !shuffleOn
+        if (shuffleOn) {
+            queueRepeatSnapshot = emptyList()
+            queueRepeatIndex = -1
+            val base = visibleTracks.toMutableList()
+            currentTrack?.let { ct ->
+                if (base.none { it.id == ct.id }) base.add(ct)
+            }
+            shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
+            shuffleIndex =
+                currentTrack?.id?.let { id -> shuffleOrder.indexOfFirst { it.id == id } } ?: -1
+            if (shuffleIndex < 0 && shuffleOrder.isNotEmpty()) shuffleIndex = 0
+        } else {
+            shuffleOrder = emptyList()
+            shuffleIndex = -1
+        }
+    }
+
+    fun onCycleRepeatMode() {
+        val next = when (repeatMode) {
+            RepeatMode.OFF -> RepeatMode.LIST
+            RepeatMode.LIST -> RepeatMode.ONE
+            RepeatMode.ONE -> RepeatMode.OFF
+        }
+        repeatMode = next
+
+        // Iniciar/limpiar snapshot de repetición de cola si aplica.
+        if (next != RepeatMode.LIST || shuffleOn || currentTrack == null || queue.isEmpty()) {
+            queueRepeatSnapshot = emptyList()
+            queueRepeatIndex = -1
+        } else {
+            // Snapshot = [cancion actual] + cola restante
+            queueRepeatSnapshot = listOf(currentTrack!!) + queue.toList()
+            queueRepeatIndex = 0
+        }
+    }
+
+    // Si cambia la lista visible (filtros/búsqueda/playlist) y Shuffle está ON,
+    // regeneramos el orden aleatorio sin tocar el track actual.
+    LaunchedEffect(visibleTracks, shuffleOn) {
+        if (!shuffleOn) return@LaunchedEffect
+        val base = visibleTracks.toMutableList()
+        currentTrack?.let { ct ->
+            if (base.none { it.id == ct.id }) base.add(ct)
+        }
+        shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
+        val id = currentTrack?.id
+        shuffleIndex = if (id == null) -1 else shuffleOrder.indexOfFirst { it.id == id }
+        if (shuffleIndex < 0 && shuffleOrder.isNotEmpty()) shuffleIndex = 0
+    }
+
     fun playTrack(track: DeviceTrack, clearQueue: Boolean = false) {
         try {
             if (clearQueue) queue.clear()
+            if (clearQueue) {
+                queueRepeatSnapshot = emptyList()
+                queueRepeatIndex = -1
+            }
             mediaPlayer.reset()
             mediaPlayer.setDataSource(context, track.uri.toUri())
             mediaPlayer.prepare()
@@ -312,12 +379,53 @@ fun PlayerScreen(
             currentTrack = track
             currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
             isPlaying = true
+
+            // Si Shuffle está activado, ajustamos el índice sin rebarajar para mantener bidireccionalidad.
+            if (shuffleOn) {
+                shuffleIndex = shuffleOrder.indexOfFirst { it.id == track.id }
+                if (shuffleIndex < 0) {
+                    // Si por alguna razón la canción no está en la orden actual, reconstruimos con el track incluido.
+                    val base = visibleTracks.toMutableList()
+                    if (currentTrack != null && base.none { it.id == currentTrack!!.id }) {
+                        base.add(currentTrack!!)
+                    }
+                    shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
+                    shuffleIndex = shuffleOrder.indexOfFirst { it.id == track.id }
+                }
+            }
         } catch (_: Exception) {
         }
     }
 
     fun playPrev() {
         if (visibleTracks.isEmpty()) return
+        if (repeatMode == RepeatMode.ONE && currentTrack != null) {
+            playTrack(currentTrack!!, clearQueue = false)
+            return
+        }
+        if (!shuffleOn && repeatMode == RepeatMode.LIST &&
+            queueRepeatSnapshot.size > 1 && queueRepeatIndex >= 0
+        ) {
+            val prevIndex = if (queueRepeatIndex - 1 >= 0) queueRepeatIndex - 1 else queueRepeatSnapshot.lastIndex
+            val nextTrack = queueRepeatSnapshot[prevIndex]
+            // Si el tema se borró del teléfono, invalidamos la repetición de cola.
+            if (deviceTracks.none { it.id == nextTrack.id }) return
+            playTrack(nextTrack, clearQueue = false)
+            queueRepeatIndex = prevIndex
+            queue.clear()
+            queue.addAll(queueRepeatSnapshot.subList(queueRepeatIndex + 1, queueRepeatSnapshot.size))
+            return
+        }
+        if (shuffleOn && shuffleOrder.isNotEmpty() && shuffleIndex >= 0) {
+            val prevIndex = shuffleIndex - 1
+            if (prevIndex >= 0) {
+                playTrack(shuffleOrder[prevIndex], clearQueue = false)
+            } else if (repeatMode == RepeatMode.LIST && shuffleOrder.isNotEmpty()) {
+                playTrack(shuffleOrder.last(), clearQueue = false)
+            }
+            return
+        }
+
         val curId = currentTrack?.id ?: return
         val idx = visibleTracks.indexOfFirst { it.id == curId }
         val prevIndex = when {
@@ -325,12 +433,42 @@ fun PlayerScreen(
             idx <= 0 -> visibleTracks.lastIndex
             else -> idx - 1
         }
+        if (idx <= 0 && repeatMode != RepeatMode.LIST) return
         visibleTracks.getOrNull(prevIndex)?.let { track ->
-            playTrack(track)
+            playTrack(track, clearQueue = false)
         }
     }
 
     fun playNext() {
+        if (repeatMode == RepeatMode.ONE && currentTrack != null) {
+            playTrack(currentTrack!!, clearQueue = false)
+            return
+        }
+        if (!shuffleOn && repeatMode == RepeatMode.LIST &&
+            queueRepeatSnapshot.size > 1 && queueRepeatIndex >= 0
+        ) {
+            val nextIndex = queueRepeatIndex + 1
+            val wrappedIndex = if (nextIndex < queueRepeatSnapshot.size) nextIndex else 0
+            val nextTrack = queueRepeatSnapshot[wrappedIndex]
+            // Si el tema se borró del teléfono, invalidamos la repetición de cola.
+            if (deviceTracks.none { it.id == nextTrack.id }) return
+            playTrack(nextTrack, clearQueue = false)
+            queueRepeatIndex = wrappedIndex
+            queue.clear()
+            queue.addAll(queueRepeatSnapshot.subList(queueRepeatIndex + 1, queueRepeatSnapshot.size))
+            return
+        }
+        // Si Shuffle está activo, siempre usamos el orden aleatorio.
+        if (shuffleOn && shuffleOrder.isNotEmpty() && shuffleIndex >= 0) {
+            val nextIndex = shuffleIndex + 1
+            if (nextIndex < shuffleOrder.size) {
+                playTrack(shuffleOrder[nextIndex], clearQueue = false)
+            } else if (repeatMode == RepeatMode.LIST && shuffleOrder.isNotEmpty()) {
+                playTrack(shuffleOrder.first(), clearQueue = false)
+            }
+            return
+        }
+
         // 1) Si hay cola, consumimos lo primero encolado
         if (queue.isNotEmpty()) {
             val next = queue.removeAt(0)
@@ -338,14 +476,18 @@ fun PlayerScreen(
             return
         }
 
-        // 2) Si no hay cola, navegamos dentro de la lista actual (según filtro/playlist)
+        // 2) Si no hay cola y Shuffle está apagado, navegamos dentro de la lista actual (según filtro/playlist)
         if (visibleTracks.isEmpty()) return
         val curId = currentTrack?.id ?: return
         val idx = visibleTracks.indexOfFirst { it.id == curId }
-        val nextIndex = when {
-            idx < 0 || idx >= visibleTracks.lastIndex -> 0
-            else -> idx + 1
+        val canAdvance = idx >= 0 && idx < visibleTracks.lastIndex
+        if (!canAdvance) {
+            if (repeatMode == RepeatMode.LIST) {
+                visibleTracks.firstOrNull()?.let { playTrack(it, clearQueue = false) }
+            }
+            return
         }
+        val nextIndex = idx + 1
         visibleTracks.getOrNull(nextIndex)?.let { track ->
             playTrack(track, clearQueue = false)
         }
@@ -456,6 +598,11 @@ fun PlayerScreen(
                         val first = visibleTracks.first()
                         playTrack(first, clearQueue = true)
                         queue.addAll(visibleTracks.drop(1))
+                        if (!shuffleOn && repeatMode == RepeatMode.LIST) {
+                            // Cola completa = [cancion actual] + resto
+                            queueRepeatSnapshot = listOf(first) + queue.toList()
+                            queueRepeatIndex = 0
+                        }
                     },
                 )
 
@@ -513,7 +660,22 @@ fun PlayerScreen(
                             track = track,
                             isCurrent = currentTrack?.id == track.id,
                             onClick = { playTrack(track, clearQueue = true) },
-                            onQueue = { queue.add(track) },
+                                            onQueue = {
+                                                queue.add(track)
+                                                if (!shuffleOn && repeatMode == RepeatMode.LIST) {
+                                                    val ct = currentTrack
+                                                    if (ct != null) {
+                                                        if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
+                                                            // Empezamos a repetir la cola desde el inicio.
+                                                            queueRepeatSnapshot = listOf(ct) + queue.toList()
+                                                            queueRepeatIndex = 0
+                                                        } else {
+                                                            // La cola es la "parte pendiente"; mantenemos snapshot extendido.
+                                                            queueRepeatSnapshot = queueRepeatSnapshot + track
+                                                        }
+                                                    }
+                                                }
+                                            },
                             onToggleFavorite = { viewModel.toggleFavorite(track) },
                             onAddToPlaylist = {
                                 addToPlaylistDialogOpen = true
@@ -546,6 +708,9 @@ fun PlayerScreen(
                 track = currentTrack,
                 isPlaying = isPlaying,
                 position = position,
+                artwork = currentArtwork,
+                shuffleOn = shuffleOn,
+                repeatMode = repeatMode,
                 onTogglePlay = {
                     if (mediaPlayer.isPlaying) {
                         mediaPlayer.pause()
@@ -563,6 +728,8 @@ fun PlayerScreen(
                     if (dur > 0) mediaPlayer.seekTo((dur * newPos).toInt())
                 },
                 onOpenExpanded = { isExpanded = true },
+                onToggleShuffle = { onToggleShuffle() },
+                onToggleRepeat = { onCycleRepeatMode() },
             )
 
             // OVERLAY EXPANDIDO (boceto 2)
@@ -592,6 +759,10 @@ fun PlayerScreen(
                         val dur = mediaPlayer.duration
                         if (dur > 0) mediaPlayer.seekTo((dur * newPos).toInt())
                     },
+                    shuffleOn = shuffleOn,
+                    repeatMode = repeatMode,
+                    onToggleShuffle = { onToggleShuffle() },
+                    onToggleRepeat = { onCycleRepeatMode() },
                 )
             }
 
@@ -1264,11 +1435,16 @@ private fun MiniPlayerBar(
     track: DeviceTrack?,
     isPlaying: Boolean,
     position: Float,
+    artwork: Bitmap?,
+    shuffleOn: Boolean,
+    repeatMode: RepeatMode,
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onSeek: (Float) -> Unit,
     onOpenExpanded: () -> Unit,
+    onToggleShuffle: () -> Unit,
+    onToggleRepeat: () -> Unit,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -1294,7 +1470,16 @@ private fun MiniPlayerBar(
                         modifier = Modifier
                             .size(26.dp)
                             .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp)),
-                    )
+                    ) {
+                        if (artwork != null) {
+                            Image(
+                                bitmap = artwork.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.size(10.dp))
                     Text(
                         text = "${(track?.title ?: "Sin canción").toTitleCaseSimple()} | ${(track?.artist ?: "").toTitleCaseSimple()}",
@@ -1322,11 +1507,12 @@ private fun MiniPlayerBar(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { /* TODO volumen */ }) {
+                IconButton(onClick = onToggleShuffle) {
                     Icon(
                         imageVector = Icons.Outlined.Shuffle,
                         contentDescription = "Opciones",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        tint = if (shuffleOn) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1352,11 +1538,12 @@ private fun MiniPlayerBar(
                         )
                     }
                 }
-                IconButton(onClick = { /* TODO repeat */ }) {
+                IconButton(onClick = onToggleRepeat) {
                     Icon(
                         imageVector = Icons.Outlined.Loop,
                         contentDescription = "Repetir",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
                 }
             }
@@ -1378,6 +1565,10 @@ private fun ExpandedPlayerOverlay(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onSeek: (Float) -> Unit,
+    shuffleOn: Boolean,
+    repeatMode: RepeatMode,
+    onToggleShuffle: () -> Unit,
+    onToggleRepeat: () -> Unit,
 ) {
     Surface(
         modifier = modifier.background(bgBrush),
@@ -1483,11 +1674,12 @@ private fun ExpandedPlayerOverlay(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = { /* TODO shuffle */ }) {
+                        IconButton(onClick = onToggleShuffle) {
                             Icon(
                                 imageVector = Icons.Outlined.Shuffle,
                                 contentDescription = "Shuffle",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                tint = if (shuffleOn) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1513,11 +1705,12 @@ private fun ExpandedPlayerOverlay(
                                 )
                             }
                         }
-                        IconButton(onClick = { /* TODO repeat */ }) {
+                        IconButton(onClick = onToggleRepeat) {
                             Icon(
                                 imageVector = Icons.Outlined.Loop,
                                 contentDescription = "Repeat",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
                         }
                     }
@@ -1526,6 +1719,8 @@ private fun ExpandedPlayerOverlay(
         }
     }
 }
+
+private enum class RepeatMode { OFF, LIST, ONE }
 
 private enum class PlayerSection { Songs, Favorites, Playlist }
 
