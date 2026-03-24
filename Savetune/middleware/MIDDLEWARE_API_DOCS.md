@@ -38,6 +38,8 @@ En el frontend:
      - `GET {MIDDLEWARE_URL}/api/lyrics`
      - `GET {MIDDLEWARE_URL}/api/download`
      - `GET {MIDDLEWARE_URL}/api/download-auto`
+     - `GET {MIDDLEWARE_URL}/api/download-youtube-album`
+     - `GET {MIDDLEWARE_URL}/api/resolve-youtube-album`
 
 2. **Middleware → Backend Python**
    - El middleware reenvía la petición a:
@@ -46,6 +48,8 @@ En el frontend:
      - `GET {PY_BACKEND_URL}/api/lyrics`
      - `GET {PY_BACKEND_URL}/api/download`
      - `GET {PY_BACKEND_URL}/api/download-auto`
+     - `GET {PY_BACKEND_URL}/api/download-youtube-album`
+     - `GET {PY_BACKEND_URL}/api/resolve-youtube-album`
 
 3. **Respuestas**
    - Para endpoints JSON, el middleware:
@@ -367,6 +371,49 @@ En ese caso, el frontend debe consultar el estado del job y, cuando esté listo,
 ### 4.3.2 `GET /api/download-job/stream?jobId=...`
 - Si `status=ready`, devuelve un stream de audio.
 - Si aún no está listo, responde con JSON `425` (`NotReady`).
+
+---
+
+### 4.4 `GET /api/download-youtube-album` (nuevo)
+
+Descarga un álbum/playlist completo de YouTube y devuelve un `.zip` con todas las pistas.
+
+**Frontend → Middleware**
+- Método: `GET`
+- URL: `{MIDDLEWARE_URL}/api/download-youtube-album`
+- Query params:
+  - `playlistUrl` (recomendado), **o**
+  - `album` + `artist`
+
+Ejemplos:
+```text
+GET {MIDDLEWARE_URL}/api/download-youtube-album?playlistUrl=https://youtube.com/playlist?list=OLAK5...
+GET {MIDDLEWARE_URL}/api/download-youtube-album?album=Master%20of%20Puppets&artist=Metallica
+```
+
+**Middleware → Backend Python**
+- Reenvía los mismos params a `{PY_BACKEND_URL}/api/download-youtube-album`
+
+**Respuesta**
+- `200` stream ZIP (`application/zip`) + `Content-Disposition`
+- o JSON de error (`MissingMetadata`, `PlaylistNotFound`, `ServerBusy`, `QueueFull`, `AlbumDownloadError`, etc.)
+
+---
+
+### 4.5 `GET /api/resolve-youtube-album` (nuevo)
+
+Resuelve una playlist/álbum de YouTube sin descargar audio.
+
+**Frontend → Middleware**
+- Método: `GET`
+- URL: `{MIDDLEWARE_URL}/api/resolve-youtube-album`
+- Query params:
+  - `playlistUrl`, **o**
+  - `album` + `artist`
+
+**Respuesta**
+- `200` JSON con `resolvedPlaylistUrl` y `playlist.itemCount/title/...`
+- o JSON de error (`MissingMetadata`, `PlaylistNotFound`, `AlbumSearchError`, `PlaylistMetadataError`)
 
 ---
 

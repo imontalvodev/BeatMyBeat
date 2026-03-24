@@ -184,6 +184,78 @@ router.get('/download-auto', async (req, res, next) => {
   }
 });
 
+// GET /api/download-youtube-album
+router.get('/download-youtube-album', async (req, res, next) => {
+  try {
+    const { playlistUrl, album, artist } = req.query;
+
+    if (!playlistUrl && (!album || !artist)) {
+      return res.status(400).json({
+        success: false,
+        error: 'MissingMetadata',
+        message: 'Provide playlistUrl OR album and artist',
+      });
+    }
+
+    const url = new URL(`${PY_BACKEND_URL}/api/download-youtube-album`);
+    if (playlistUrl) url.searchParams.set('playlistUrl', playlistUrl);
+    if (album) url.searchParams.set('album', album);
+    if (artist) url.searchParams.set('artist', artist);
+
+    const upstream = await fetch(url);
+
+    const contentType = upstream.headers.get('content-type') || '';
+    if (!upstream.ok && contentType.includes('application/json')) {
+      const json = await upstream.text();
+      return res
+        .status(upstream.status)
+        .set('Content-Type', contentType)
+        .send(json);
+    }
+
+    const disposition = upstream.headers.get('content-disposition');
+    if (disposition) {
+      res.setHeader('Content-Disposition', disposition);
+    }
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/zip');
+
+    const nodeStream = Readable.fromWeb(upstream.body);
+    nodeStream.pipe(res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/resolve-youtube-album
+router.get('/resolve-youtube-album', async (req, res, next) => {
+  try {
+    const { playlistUrl, album, artist } = req.query;
+
+    if (!playlistUrl && (!album || !artist)) {
+      return res.status(400).json({
+        success: false,
+        error: 'MissingMetadata',
+        message: 'Provide playlistUrl OR album and artist',
+      });
+    }
+
+    const url = new URL(`${PY_BACKEND_URL}/api/resolve-youtube-album`);
+    if (playlistUrl) url.searchParams.set('playlistUrl', playlistUrl);
+    if (album) url.searchParams.set('album', album);
+    if (artist) url.searchParams.set('artist', artist);
+
+    const upstream = await fetch(url);
+    const body = await upstream.text();
+
+    res
+      .status(upstream.status)
+      .set('Content-Type', upstream.headers.get('content-type') || 'application/json')
+      .send(body);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/download-job?jobId=...
 router.get('/download-job', async (req, res, next) => {
   try {
