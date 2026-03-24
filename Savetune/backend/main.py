@@ -307,13 +307,12 @@ def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
         return None
 
     queries = [
-        # YouTube Music suele dar albums/official playlists mejores
-        f"ytmusicsearch10:{artist} {album} album",
-        f"ytmusicsearch10:{album} {artist}",
-        # Fallback clásico YouTube
-        f"ytsearch10:{artist} {album} full album",
-        f"ytsearch10:{artist} {album} album playlist",
-        f"ytsearch10:{album} {artist} topic album",
+        f"ytmusicsearch12:{artist} {album} album",
+        f"ytmusicsearch12:{album} {artist}",
+        f"ytsearch12:{artist} {album} album playlist",
+        f"ytsearch12:{artist} {album} official album playlist",
+        f"ytsearch12:{album} {artist} topic album",
+        f"ytsearch12:{artist} {album} full album",
     ]
 
     def _normalize_candidate_url(raw_url: str) -> str | None:
@@ -331,6 +330,30 @@ def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
             return f"https://www.youtube.com/watch?v={u}"
         return None
 
+    def _playlist_url_from_entry(entry: dict, base_url: str | None, candidate_type: str) -> str | None:
+        playlist_id = (entry.get("playlist_id") or "").strip()
+        if not playlist_id and candidate_type in ("playlist", "multi_video"):
+            maybe_id = (entry.get("id") or "").strip()
+            if maybe_id and len(maybe_id) > 11:
+                playlist_id = maybe_id
+
+        if playlist_id:
+            return f"https://www.youtube.com/playlist?list={playlist_id}"
+
+        for raw in (
+            base_url or "",
+            str(entry.get("url") or ""),
+            str(entry.get("webpage_url") or ""),
+            str(entry.get("original_url") or ""),
+        ):
+            pid = _extract_playlist_id(raw)
+            if pid:
+                return f"https://www.youtube.com/playlist?list={pid}"
+
+        return None
+
+    # 1) Reunir candidatos con puntuación (playlist explícita + posibles candidatos)
+    candidate_scores: dict[str, int] = {}
     for query in queries:
         opts = {
             "quiet": True,
@@ -349,7 +372,6 @@ def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
         if not entries:
             continue
 
-        # 1) Mejor caso: resultado tipo playlist/album o URL con list=
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -357,21 +379,41 @@ def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
             url = _normalize_candidate_url(entry.get("url") or entry.get("webpage_url") or "")
             title = (entry.get("title") or "").lower()
 
-            if not url:
+            candidate_playlist_url = _playlist_url_from_entry(entry, url, candidate_type)
+            if not candidate_playlist_url:
                 continue
-            if "list=" in url:
-                return url
-            if candidate_type in ("playlist", "multi_video"):
-                return url
-            if "album" in title and ("topic" in title or artist.lower() in title):
-                return url
 
-        # 2) Fallback: primer resultado utilizable
-        first = entries[0]
-        if isinstance(first, dict):
-            url = _normalize_candidate_url(first.get("url") or first.get("webpage_url") or "")
-            if url:
-                return url
+            score = 0
+            if candidate_playlist_url:
+                score += 5
+            if candidate_type in ("playlist", "multi_video"):
+                score += 3
+            if "album" in title:
+                score += 2
+            if artist.lower() in title:
+                score += 1
+            if album.lower() in title:
+                score += 1
+
+            resolved_candidate_url = candidate_playlist_url or url
+            if not resolved_candidate_url:
+                continue
+
+            prev = candidate_scores.get(resolved_candidate_url)
+            if prev is None or score > prev:
+                candidate_scores[resolved_candidate_url] = score
+
+    # 2) Validar los mejores candidatos con metadata real y exigir >= 2 items.
+    ranked_candidates = sorted(candidate_scores.items(), key=lambda it: it[1], reverse=True)
+    for url, _score in ranked_candidates[:10]:
+        try:
+            meta = _fetch_youtube_playlist_metadata(url)
+            item_count = int(meta.get("itemCount") or 0)
+            if item_count <= 1:
+                continue
+            return meta.get("url") or url
+        except Exception:
+            continue
 
     return None
 
@@ -440,120 +482,6 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
     if isinstance(info, dict):
         playlist_title = (info.get("title") or "").strip()
 
-    files: list[str] = []
-    for name in os.listdir(job_dir):
-        p = os.path.join(job_dir, name)
-        if not os.path.isfile(p):
-            continue
-        ext = os.path.splitext(name)[1].lower()
-        if ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
-            files.append(p)
-
-    if not files:
-        raise ValueError("No se descargó ningún audio de la playlist")
-
-    files.sort(key=lambda p: os.path.basename(p).lower())
-
-    zip_name = f"{_sanitize_filename(playlist_title, fallback='youtube-album')}.zip"
-    zip_path = os.path.join(job_dir, zip_name)
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for p in files:
-            zf.write(p, arcname=os.path.basename(p))
-
-    return zip_path, zip_name, "application/zip"
-
-
-def _sanitize_filename(name: str, fallback: str = "album") -> str:
-    raw = (name or "").strip()
-    if not raw:
-        raw = fallback
-    safe = re.sub(r"[\\/:*?\"<>|]+", "-", raw)
-    safe = re.sub(r"\s+", " ", safe).strip()[:180]
-    return safe or fallback
-
-
-def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
-    """
-    Intenta resolver una playlist/álbum de YouTube a partir de album+artist.
-    """
-    q = f"{album} {artist} full album playlist".strip()
-    search_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": True,
-        "skip_download": True,
-        "default_search": "ytsearch10",
-        "noplaylist": False,
-    }
-    with yt_dlp.YoutubeDL(search_opts) as ydl:
-        info = ydl.extract_info(q, download=False)
-
-    entries = info.get("entries") if isinstance(info, dict) else None
-    if not entries:
-        return None
-
-    # 1) prioridad a resultados que ya traen list=
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        url = (entry.get("url") or entry.get("webpage_url") or "").strip()
-        if "list=" in url:
-            if url.startswith("http"):
-                return url
-            if url.startswith("/watch"):
-                return f"https://www.youtube.com{url}"
-            if len(url) >= 10:
-                return f"https://www.youtube.com/watch?v={url}"
-
-    # 2) fallback al primer resultado usable
-    first = entries[0]
-    if isinstance(first, dict):
-        url = (first.get("url") or first.get("webpage_url") or "").strip()
-        if url:
-            if url.startswith("http"):
-                return url
-            if url.startswith("/watch"):
-                return f"https://www.youtube.com{url}"
-            return f"https://www.youtube.com/watch?v={url}"
-    return None
-
-
-def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[str, str, str]:
-    """
-    Descarga toda una playlist/álbum de YouTube y devuelve:
-    (zip_path, zip_filename, media_type)
-    """
-    out_tmpl = os.path.join(job_dir, "%(playlist_index)03d - %(title).180s.%(ext)s")
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_tmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "prefer_ffmpeg": True,
-        "keepvideo": False,
-        "noplaylist": False,
-        "writethumbnail": False,
-        "concurrent_fragment_downloads": 4,
-        "retries": 3,
-        "fragment_retries": 3,
-        "socket_timeout": 15,
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
-            {"key": "FFmpegMetadata"},
-        ],
-    }
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(playlist_url, download=True)
-
-    if not info:
-        raise ValueError("No se pudo obtener información de la playlist/álbum")
-
-    playlist_title = ""
-    if isinstance(info, dict):
-        playlist_title = (info.get("title") or "").strip()
-
-    # reunir audios descargados
     files: list[str] = []
     for name in os.listdir(job_dir):
         p = os.path.join(job_dir, name)
@@ -2104,6 +2032,7 @@ def api_download_youtube_album(
     direct_playlist_url = (playlistUrl or "").strip()
     album_name = (album or "").strip()
     artist_name = (artist or "").strip()
+    by_metadata_mode = not bool(direct_playlist_url)
 
     if not direct_playlist_url and (not album_name or not artist_name):
         return JSONResponse(
@@ -2137,6 +2066,26 @@ def api_download_youtube_album(
                     "message": "No se encontró playlist/álbum para ese album+artist",
                 },
             )
+
+    # Si el modo es album+artist, exigir que sea realmente una playlist/álbum con varios tracks.
+    # Evita caer en vídeos "full album" de una sola pista.
+    try:
+        meta = _fetch_youtube_playlist_metadata(resolved_playlist_url)
+    except Exception:
+        meta = {}
+
+    item_count = int(meta.get("itemCount") or 0)
+    if by_metadata_mode and item_count <= 1:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error": "PlaylistNotFound",
+                "message": "La búsqueda album+artist resolvió a un único vídeo, no a una playlist de pistas separadas. Usa playlistUrl directa.",
+                "resolvedUrl": resolved_playlist_url,
+                "itemCount": item_count,
+            },
+        )
 
     # Proteger el servidor: si no hay slot, encolar igual que descargas individuales
     acquired = _download_semaphore.acquire(blocking=False)
