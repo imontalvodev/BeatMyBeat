@@ -329,6 +329,11 @@ fun PlayerScreen(
         } else {
             shuffleOrder = emptyList()
             shuffleIndex = -1
+            // Al salir de random, limpiamos estados derivados para volver
+            // a navegación normal por lista desde la canción actual.
+            queue.clear()
+            queueRepeatSnapshot = emptyList()
+            queueRepeatIndex = -1
         }
     }
 
