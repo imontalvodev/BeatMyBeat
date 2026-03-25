@@ -234,8 +234,8 @@ def _netstat_connections_for_port(port: int) -> list[str]:
 
 
 def _connections_logger_loop() -> None:
-    local_ports = {3000, 4000}  # middle (3000) y back (4000) si se ejecuta todo local
-    # Para el backend, normalmente nos interesa 4000, pero dejamos 3000 para diagnosticar.
+    local_ports = {3001, 4001}  # middle (3001) y back (4001) si se ejecuta todo local
+    # Para el backend, normalmente nos interesa 4001, pero dejamos 3001 para diagnosticar.
     while True:
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
         # Registrar solo backend (4000) por defecto.

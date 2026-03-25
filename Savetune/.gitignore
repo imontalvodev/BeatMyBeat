@@ -3,3 +3,5 @@ backend/services/__pycache__/**
 backend/logs/**
 
 middleware/logs/**
+middleware/node_modules/**
+middleware/package-lock.json

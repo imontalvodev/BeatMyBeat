@@ -113,7 +113,7 @@ module.exports = app;
 
 // Permitir ejecutar en local con `node src/app.js`
 if (require.main === module) {
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 3001;
   const host = process.env.HOST || '0.0.0.0';
   app.listen(port, host, () => {
     // eslint-disable-next-line no-console
