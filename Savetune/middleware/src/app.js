@@ -114,8 +114,9 @@ module.exports = app;
 // Permitir ejecutar en local con `node src/app.js`
 if (require.main === module) {
   const port = process.env.PORT || 3000;
-  app.listen(port, () => {
+  const host = process.env.HOST || '0.0.0.0';
+  app.listen(port, host, () => {
     // eslint-disable-next-line no-console
-    console.log(`SaveTune backend listening on http://localhost:${port}`);
+    console.log(`SaveTune middleware listening on http://${host}:${port}`);
   });
 }
