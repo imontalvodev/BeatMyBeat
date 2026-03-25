@@ -180,7 +180,16 @@ router.get('/download-auto', async (req, res, next) => {
     if (album) url.searchParams.set('album', album);
     if (imageUrl) url.searchParams.set('imageUrl', imageUrl);
 
-    const upstream = await fetch(url);
+    let upstream;
+    try {
+      upstream = await fetch(url);
+    } catch (e) {
+      return res.status(502).json({
+        success: false,
+        error: 'UpstreamUnavailable',
+        message: `No se pudo conectar al backend Python (${PY_BACKEND_URL}). ${e?.message || e}`,
+      });
+    }
 
     // Si el backend Python responde con error JSON, lo reenviamos tal cual
     const contentType = upstream.headers.get('content-type') || '';
@@ -221,7 +230,16 @@ router.get('/download-youtube-album', async (req, res, next) => {
     const url = new URL(`${PY_BACKEND_URL}/api/download-youtube-album`);
     if (playlistUrl) url.searchParams.set('playlistUrl', playlistUrl);
 
-    const upstream = await fetch(url);
+    let upstream;
+    try {
+      upstream = await fetch(url);
+    } catch (e) {
+      return res.status(502).json({
+        success: false,
+        error: 'UpstreamUnavailable',
+        message: `No se pudo conectar al backend Python (${PY_BACKEND_URL}). ${e?.message || e}`,
+      });
+    }
 
     const contentType = upstream.headers.get('content-type') || '';
     if (!upstream.ok && contentType.includes('application/json')) {
@@ -260,7 +278,16 @@ router.get('/resolve-youtube-album', async (req, res, next) => {
     const url = new URL(`${PY_BACKEND_URL}/api/resolve-youtube-album`);
     if (playlistUrl) url.searchParams.set('playlistUrl', playlistUrl);
 
-    const upstream = await fetch(url);
+    let upstream;
+    try {
+      upstream = await fetch(url);
+    } catch (e) {
+      return res.status(502).json({
+        success: false,
+        error: 'UpstreamUnavailable',
+        message: `No se pudo conectar al backend Python (${PY_BACKEND_URL}). ${e?.message || e}`,
+      });
+    }
     const body = await upstream.text();
 
     res
