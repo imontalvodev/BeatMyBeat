@@ -92,6 +92,7 @@ GET_LOG_PATH = os.environ.get("SAVETUNE_GET_LOG", os.path.join(LOG_DIR, "get_req
 ERROR_LOG_PATH = os.environ.get("SAVETUNE_ERROR_LOG", os.path.join(LOG_DIR, "errors_4xx_5xx.log"))
 CONNECTION_LOG_PATH = os.environ.get("SAVETUNE_CONNECTION_LOG", os.path.join(LOG_DIR, "connections.log"))
 CONNECTION_POLL_INTERVAL_SECONDS = int(os.environ.get("SAVETUNE_CONNECTION_POLL_INTERVAL_SECONDS", "2"))
+BACKEND_PORT = int(os.environ.get("PORT", "4001"))
 
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -238,9 +239,9 @@ def _connections_logger_loop() -> None:
     # Para el backend, normalmente nos interesa 4001, pero dejamos 3001 para diagnosticar.
     while True:
         ts = time.strftime("%Y-%m-%d %H:%M:%S")
-        # Registrar solo backend (4000) por defecto.
-        lines = _netstat_connections_for_port(4000)
-        _conn_logger.info(f"---- {ts} port=4000 ----")
+        # Registrar solo backend (PORT) por defecto.
+        lines = _netstat_connections_for_port(BACKEND_PORT)
+        _conn_logger.info(f"---- {ts} port={BACKEND_PORT} ----")
         for ln in lines[:200]:
             _conn_logger.info(ln)
         time.sleep(CONNECTION_POLL_INTERVAL_SECONDS)

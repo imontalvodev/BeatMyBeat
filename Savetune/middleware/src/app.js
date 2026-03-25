@@ -57,11 +57,7 @@ const CONNECTION_POLL_INTERVAL_MS = Number(
 );
 setInterval(() => {
   const ts = new Date().toISOString();
-  const cmd =
-    process.platform === 'win32'
-      ? 'netstat -ano'
-      : 'ss -tanp || netstat -tanp || netstat -tan';
-  exec(cmd, { maxBuffer: 1024 * 1024 }, (err, stdout) => {
+  exec('netstat -ano', { maxBuffer: 1024 * 1024 }, (err, stdout) => {
     logLine(connLogStream, `---- ${ts} port=3000 ----`);
     if (!stdout) return;
     stdout
