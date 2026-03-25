@@ -10,6 +10,8 @@ import uuid
 import threading
 import queue as queue_module
 import time
+import logging
+import subprocess
 import zipfile
 from collections import deque
 from functools import lru_cache
@@ -18,7 +20,7 @@ from typing import Generator
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 
@@ -41,6 +43,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def _log_get_requests_middleware(request: Request, call_next):
+    """
+    Log de depuración:
+    1) todas las peticiones GET
+    2) errores (>= 400), incluyendo 404
+    """
+    if request.method != "GET":
+        return await call_next(request)
+
+    start = time.time()
+    try:
+        response = await call_next(request)
+    finally:
+        # Si call_next lanza, lo re-lanza FastAPI pero no registramos aquí
+        pass
+
+    elapsed_ms = int((time.time() - start) * 1000)
+    query_str = str(request.url.query) if request.url.query else ""
+    url_part = request.url.path + (("?" + query_str) if query_str else "")
+
+    _get_logger.info(f"{url_part} status={response.status_code} elapsed_ms={elapsed_ms}")
+    if response.status_code >= 400:
+        _error_logger.info(f"{url_part} status={response.status_code} elapsed_ms={elapsed_ms}")
+
+    return response
+
 # --- Descargas concurrentes + cola para multijugador ---
 # Objetivo: máximo de `MAX_CONCURRENT_DOWNLOADS` descargas en paralelo y,
 # si se supera, informar al frontend con una posición en cola.
@@ -55,6 +85,41 @@ YTDLP_RETRIES = int(os.environ.get("YTDLP_RETRIES", "5"))
 YTDLP_FRAGMENT_RETRIES = int(os.environ.get("YTDLP_FRAGMENT_RETRIES", "5"))
 YTDLP_HTTP_CHUNK_SIZE_BYTES = int(os.environ.get("YTDLP_HTTP_CHUNK_SIZE_BYTES", "10485760"))
 MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", "5242880"))
+
+# --- Logging (.log) para depuración ---
+LOG_DIR = os.environ.get("SAVETUNE_LOG_DIR", os.path.join(os.path.dirname(__file__), "logs"))
+GET_LOG_PATH = os.environ.get("SAVETUNE_GET_LOG", os.path.join(LOG_DIR, "get_requests.log"))
+ERROR_LOG_PATH = os.environ.get("SAVETUNE_ERROR_LOG", os.path.join(LOG_DIR, "errors_4xx_5xx.log"))
+CONNECTION_LOG_PATH = os.environ.get("SAVETUNE_CONNECTION_LOG", os.path.join(LOG_DIR, "connections.log"))
+CONNECTION_POLL_INTERVAL_SECONDS = int(os.environ.get("SAVETUNE_CONNECTION_POLL_INTERVAL_SECONDS", "2"))
+
+os.makedirs(LOG_DIR, exist_ok=True)
+
+_log_formatter = logging.Formatter("%(asctime)s %(message)s")
+
+_get_logger = logging.getLogger("savetune_get")
+_get_logger.setLevel(logging.INFO)
+_get_logger.propagate = False
+if not _get_logger.handlers:
+    _get_fh = logging.FileHandler(GET_LOG_PATH, encoding="utf-8")
+    _get_fh.setFormatter(_log_formatter)
+    _get_logger.addHandler(_get_fh)
+
+_error_logger = logging.getLogger("savetune_errors")
+_error_logger.setLevel(logging.INFO)
+_error_logger.propagate = False
+if not _error_logger.handlers:
+    _err_fh = logging.FileHandler(ERROR_LOG_PATH, encoding="utf-8")
+    _err_fh.setFormatter(_log_formatter)
+    _error_logger.addHandler(_err_fh)
+
+_conn_logger = logging.getLogger("savetune_connections")
+_conn_logger.setLevel(logging.INFO)
+_conn_logger.propagate = False
+if not _conn_logger.handlers:
+    _conn_fh = logging.FileHandler(CONNECTION_LOG_PATH, encoding="utf-8")
+    _conn_fh.setFormatter(_log_formatter)
+    _conn_logger.addHandler(_conn_fh)
 
 
 def _safe_rmtree(path: str | None) -> None:
@@ -139,6 +204,48 @@ _pending_job_ids = deque()  # en orden FIFO
 _download_jobs: dict[str, dict] = {}  # jobId -> info
 _workers_started = False
 _cleanup_started = False
+
+
+def _netstat_connections_for_port(port: int) -> list[str]:
+    """
+    Devuelve líneas de netstat relevantes para un puerto local concreto.
+    Usamos `netstat` para evitar dependencias extra (psutil) en Windows.
+    """
+    try:
+        # `findstr` reduce salida y acelera.
+        cmd = f'netstat -ano | findstr ":{port} "'
+        output = subprocess.check_output(cmd, shell=True, text=True, errors="ignore")
+        lines = [ln.strip() for ln in output.splitlines() if ln.strip()]
+        return lines
+    except Exception:
+        return []
+
+
+def _connections_logger_loop() -> None:
+    local_ports = {3000, 4000}  # middle (3000) y back (4000) si se ejecuta todo local
+    # Para el backend, normalmente nos interesa 4000, pero dejamos 3000 para diagnosticar.
+    while True:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        # Registrar solo backend (4000) por defecto.
+        lines = _netstat_connections_for_port(4000)
+        _conn_logger.info(f"---- {ts} port=4000 ----")
+        for ln in lines[:200]:
+            _conn_logger.info(ln)
+        time.sleep(CONNECTION_POLL_INTERVAL_SECONDS)
+
+
+_connections_logger_started = False
+
+
+def _ensure_connections_logger_started() -> None:
+    global _connections_logger_started
+    if _connections_logger_started:
+        return
+    _connections_logger_started = True
+    threading.Thread(target=_connections_logger_loop, daemon=True).start()
+
+
+_ensure_connections_logger_started()
 
 
 def _get_job_snapshot_position(job_id: str) -> int:
