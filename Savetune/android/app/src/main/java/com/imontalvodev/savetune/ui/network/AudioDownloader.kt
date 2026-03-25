@@ -144,6 +144,9 @@ object AudioDownloader {
             }
 
             if (extracted <= 0) return ZipDownloadResult(false, 0, "ZipWithoutAudio")
+            // El ZIP puede cambiar las carátulas embebidas de los MP3 existentes
+            // (mismos nombres -> misma id -> cache vieja).
+            ArtworkCache.clear()
             return ZipDownloadResult(true, extracted, null)
         }
 
@@ -220,6 +223,9 @@ object AudioDownloader {
             output.flush()
         }
 
+        // Si el usuario descarga otro álbum/canciones, las IDs pueden repetirse
+        // y ArtworkCache puede devolver una carátula vieja.
+        ArtworkCache.clear()
         return DownloadResult(true, outFile.name, null)
     }
 }

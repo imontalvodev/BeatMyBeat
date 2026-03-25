@@ -20,5 +20,9 @@ object ArtworkCache {
         if (bitmap == null) return
         cache.put(trackId, bitmap)
     }
+
+    fun clear() {
+        cache.evictAll()
+    }
 }
 
