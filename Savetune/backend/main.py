@@ -570,64 +570,12 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
         raise ValueError("No se pudo obtener información de la playlist/álbum")
 
     playlist_title = ""
-    playlist_cover_url: str | None = None
-    first_entry_cover_url: str | None = None
+    entries_list: list[dict] = []
     if isinstance(info, dict):
         playlist_title = (info.get("title") or "").strip()
-        playlist_cover_url = info.get("thumbnail") or None
-
-        entries = info.get("entries") or []
-        if isinstance(entries, list) and entries:
-            first = entries[0] if isinstance(entries[0], dict) else {}
-            if isinstance(first, dict):
-                first_entry_cover_url = first.get("thumbnail") or None
-                if not first_entry_cover_url:
-                    thumbs = first.get("thumbnails") or []
-                    if isinstance(thumbs, list) and thumbs:
-                        best = None
-                        best_w = -1
-                        for t in thumbs:
-                            if not isinstance(t, dict):
-                                continue
-                            w = t.get("width") or 0
-                            u = t.get("url")
-                            if u and w >= best_w:
-                                best = u
-                                best_w = w
-                        first_entry_cover_url = best
-
-        # A veces la carátula está en "thumbnails" (lista).
-        if not playlist_cover_url:
-            thumbs = info.get("thumbnails") or []
-            if isinstance(thumbs, list) and thumbs:
-                # coger la de mayor "width" si existe
-                best = None
-                best_w = -1
-                for t in thumbs:
-                    if not isinstance(t, dict):
-                        continue
-                    w = t.get("width") or 0
-                    url = t.get("url")
-                    if url and w >= best_w:
-                        best = url
-                        best_w = w
-                playlist_cover_url = best
-
-        # fallback: primer item
-        if not playlist_cover_url:
-            entries = info.get("entries") or []
-            if isinstance(entries, list) and entries:
-                first = entries[0]
-                if isinstance(first, dict):
-                    playlist_cover_url = first.get("thumbnail") or None
-
-    # Heurística: para "álbum" normalmente la miniatura del primer vídeo corresponde mejor
-    # que la miniatura del contenedor (playlist/canal), que a veces es un icono distinto.
-    effective_cover_url = first_entry_cover_url or playlist_cover_url
-
-    cover_art: tuple[bytes, str] | None = None
-    if effective_cover_url:
-        cover_art = _fetch_artwork_bytes(effective_cover_url)
+        raw_entries = info.get("entries") or []
+        if isinstance(raw_entries, list):
+            entries_list = [e for e in raw_entries if isinstance(e, dict)]
 
     files: list[str] = []
     for name in os.listdir(job_dir):
@@ -643,11 +591,78 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
 
     files.sort(key=lambda p: os.path.basename(p).lower())
 
-    # Embebemos la misma portada en todos los MP3 (es el caso típico: álbum completo).
-    if cover_art:
-        data, mime = cover_art
-        for p in files:
-            if os.path.splitext(p)[1].lower() == ".mp3":
+    # Embebemos portada y metadatos por pista para que el player muestre la imagen correcta
+    # de cada canción y la búsqueda de letras funcione con title/artist.
+    # Caché local para evitar descargar la misma imagen muchas veces.
+    artwork_cache: dict[str, tuple[bytes, str]] = {}
+
+    def _best_thumbnail_url(entry: dict) -> str | None:
+        t = entry.get("thumbnail")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+        thumbs = entry.get("thumbnails") or []
+        if isinstance(thumbs, list) and thumbs:
+            best = None
+            best_w = -1
+            for item in thumbs:
+                if not isinstance(item, dict):
+                    continue
+                url = item.get("url")
+                w = item.get("width") or 0
+                if isinstance(url, str) and url.startswith(("http://", "https://")) and w >= best_w:
+                    best = url
+                    best_w = w
+            return best
+        return None
+
+    def _get_artwork(url: str | None) -> tuple[bytes, str] | None:
+        if not url:
+            return None
+        if url in artwork_cache:
+            return artwork_cache[url]
+        art = _fetch_artwork_bytes(url)
+        if art:
+            artwork_cache[url] = art
+        return art
+
+    for idx, p in enumerate(files):
+        if os.path.splitext(p)[1].lower() != ".mp3":
+            continue
+        entry = entries_list[idx] if idx < len(entries_list) else None
+
+        # 1) Metadatos: mantener title/artist por pista (clave para letras)
+        if isinstance(entry, dict):
+            raw_t = (entry.get("title") or "").strip()
+            uploader = (entry.get("uploader") or "").strip()
+            track_title = raw_t or "track"
+            track_artist = uploader
+            if " - " in raw_t:
+                parts = raw_t.rsplit(" - ", 1)
+                if len(parts) == 2:
+                    left = parts[0].strip()
+                    right = parts[1].strip()
+                    if 2 <= len(right) <= 40:
+                        track_title = left
+                        track_artist = right
+
+            track_album = playlist_title or (entry.get("album") or "").strip()
+            try:
+                audio = MutagenFile(p, easy=True)
+                if audio is not None:
+                    audio["title"] = [track_title]
+                    if track_artist:
+                        audio["artist"] = [track_artist]
+                    if track_album:
+                        audio["album"] = [track_album]
+                    audio.save()
+            except Exception:
+                pass
+
+            # 2) Portada: miniatura propia de esa pista
+            thumb_url = _best_thumbnail_url(entry)
+            art = _get_artwork(thumb_url)
+            if art:
+                data, mime = art
                 _embed_cover_art_mp3_bytes(p, data, mime)
 
     zip_name = f"{_sanitize_filename(playlist_title, fallback='youtube-album')}.zip"
