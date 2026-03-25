@@ -56,6 +56,66 @@ YTDLP_FRAGMENT_RETRIES = int(os.environ.get("YTDLP_FRAGMENT_RETRIES", "5"))
 YTDLP_HTTP_CHUNK_SIZE_BYTES = int(os.environ.get("YTDLP_HTTP_CHUNK_SIZE_BYTES", "10485760"))
 MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", "5242880"))
 
+
+def _safe_rmtree(path: str | None) -> None:
+    if not path:
+        return
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _stream_file_bytes(
+    path_file: str,
+    *,
+    cleanup_dir: str | None = None,
+) -> Generator[bytes, None, None]:
+    """
+    Genera chunks desde un fichero para StreamingResponse y limpia recursos al final.
+    """
+    try:
+        with open(path_file, "rb") as f:
+            while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
+                yield chunk
+    finally:
+        _safe_rmtree(cleanup_dir)
+
+
+def _build_yt_dlp_audio_opts(
+    out_tmpl: str,
+    *,
+    noplaylist: bool,
+    default_search: str | None = None,
+    writethumbnail: bool = False,
+) -> dict:
+    """
+    Opciones base comunes para descargas de audio con yt-dlp.
+    Centraliza valores para reducir duplicación y evitar inconsistencias.
+    """
+    opts: dict = {
+        "format": "bestaudio/best",
+        "outtmpl": out_tmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "keepvideo": False,
+        "noplaylist": noplaylist,
+        "writethumbnail": writethumbnail,
+        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+        "retries": YTDLP_RETRIES,
+        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
+        "postprocessors": [
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
+            {"key": "FFmpegMetadata"},
+        ],
+    }
+    if default_search:
+        opts["default_search"] = default_search
+    return opts
+
 # --- Filtros para evitar "letra rara" cuando la canción no tiene vocals ---
 MIN_LYRICS_CHARS = int(os.environ.get("MIN_LYRICS_CHARS", "250"))
 MIN_LYRICS_LINES = int(os.environ.get("MIN_LYRICS_LINES", "6"))
@@ -109,25 +169,11 @@ def _download_youtube_audio_to_file(
     No limpia `job_dir`; lo hace el caller cuando sirva/termine el job.
     """
     out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_tmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "prefer_ffmpeg": True,
-        "keepvideo": False,
-        "noplaylist": True,
-        "writethumbnail": False,
-        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
-        "retries": YTDLP_RETRIES,
-        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
-        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
-        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
-            {"key": "FFmpegMetadata"},
-        ],
-    }
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=True,
+        writethumbnail=False,
+    )
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
@@ -211,26 +257,12 @@ def _download_auto_audio_to_file(
     """
     out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
 
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_tmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "prefer_ffmpeg": True,
-        "keepvideo": False,
-        "noplaylist": True,
-        "writethumbnail": False,
-        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
-        "retries": YTDLP_RETRIES,
-        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
-        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
-        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
-        "default_search": "ytsearch1",
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
-            {"key": "FFmpegMetadata"},
-        ],
-    }
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=True,
+        default_search="ytsearch1",
+        writethumbnail=False,
+    )
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(final_query, download=True)
@@ -525,25 +557,11 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
     (zip_path, zip_filename, media_type)
     """
     out_tmpl = os.path.join(job_dir, "%(playlist_index)03d - %(title).180s.%(ext)s")
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_tmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "prefer_ffmpeg": True,
-        "keepvideo": False,
-        "noplaylist": False,
-        "writethumbnail": False,
-        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
-        "retries": YTDLP_RETRIES,
-        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
-        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
-        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
-            {"key": "FFmpegMetadata"},
-        ],
-    }
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=False,
+        writethumbnail=False,
+    )
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(playlist_url, download=True)
@@ -1694,31 +1712,11 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
     # Directorio único por petición para evitar colisiones (WinError 32)
     job_dir = tempfile.mkdtemp(prefix="savetune_")
     out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_tmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "prefer_ffmpeg": True,
-        "keepvideo": False,
-        "noplaylist": True,
-        "writethumbnail": False,
-        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
-        "retries": YTDLP_RETRIES,
-        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
-        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
-        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            },
-            {
-                "key": "FFmpegMetadata",
-            },
-        ],
-    }
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=True,
+        writethumbnail=False,
+    )
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
@@ -1782,20 +1780,8 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         else "audio/webm"
     )
 
-    def stream_file() -> Generator[bytes, None, None]:
-        try:
-            with open(path_file, "rb") as f:
-                while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
-                    yield chunk
-        finally:
-            # Limpieza completa del job dir (audio + thumbnail/temp)
-            try:
-                shutil.rmtree(job_dir, ignore_errors=True)
-            except OSError:
-                pass
-
     filename = f"{title_safe}.{ext}"
-    return filename, stream_file(), media_type
+    return filename, _stream_file_bytes(path_file, cleanup_dir=job_dir), media_type
 
 
 @app.get("/api/download")
@@ -2080,23 +2066,12 @@ def api_download_auto(
             else "audio/webm"
         )
 
-        def stream_file() -> Generator[bytes, None, None]:
-            try:
-                with open(path_file, "rb") as f:
-                    while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
-                        yield chunk
-            finally:
-                try:
-                    shutil.rmtree(job_dir, ignore_errors=True)
-                except OSError:
-                    pass
-
         filename = f"{title_safe}.{ext}"
 
         print(f"✅ Descarga completada: {filename}")
 
         resp = StreamingResponse(
-            stream_file(),
+            _stream_file_bytes(path_file, cleanup_dir=job_dir),
             media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
@@ -2239,19 +2214,8 @@ def api_download_youtube_album(
             resolved_playlist_url, job_dir
         )
 
-        def stream_zip() -> Generator[bytes, None, None]:
-            try:
-                with open(zip_path, "rb") as f:
-                    while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
-                        yield chunk
-            finally:
-                try:
-                    shutil.rmtree(job_dir, ignore_errors=True)
-                except OSError:
-                    pass
-
         resp = StreamingResponse(
-            stream_zip(),
+            _stream_file_bytes(zip_path, cleanup_dir=job_dir),
             media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{zip_filename}"',
@@ -2429,19 +2393,10 @@ def api_download_job_stream(jobId: str = Query(..., alias="jobId")):
         )
 
     def stream_file() -> Generator[bytes, None, None]:
-        try:
-            with open(file_path, "rb") as f:
-                while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
-                    yield chunk
-        finally:
-            # Eliminar recursos del job al terminar el streaming.
-            try:
-                if job_dir:
-                    shutil.rmtree(job_dir, ignore_errors=True)
-            except OSError:
-                pass
-            with _downloads_lock:
-                _download_jobs.pop(jobId, None)
+        yield from _stream_file_bytes(file_path, cleanup_dir=job_dir)
+        # Quitar el job al terminar el streaming.
+        with _downloads_lock:
+            _download_jobs.pop(jobId, None)
 
     return StreamingResponse(
         stream_file(),
