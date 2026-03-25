@@ -55,7 +55,26 @@ object AudioDownloader {
 
         try {
             client.newCall(request).execute().use { res: Response ->
-                return@withContext handleResponse(context, res, title)
+                val saved = handleResponse(context, res, title)
+                if (saved.success) {
+                    // Pre-descargar letras para uso offline (si hay metadatos válidos).
+                    val t = title.trim()
+                    val a = artist.trim()
+                    val isUnknown = { s: String ->
+                        s.isBlank() ||
+                            s.equals("unknown", ignoreCase = true) ||
+                            s.equals("unknown artist", ignoreCase = true)
+                    }
+                    if (!isUnknown(t) && !isUnknown(a)) {
+                        runCatching {
+                            val lyr = MiddlewareApi.fetchLyrics(middlewareBaseUrl, t, a)
+                            if (lyr.success && lyr.lyrics.isNotBlank()) {
+                                LyricsCache.put(context, t, a, lyr.lyrics)
+                            }
+                        }
+                    }
+                }
+                return@withContext saved
             }
         } catch (e: Exception) {
             return@withContext DownloadResult(false, null, e.message)

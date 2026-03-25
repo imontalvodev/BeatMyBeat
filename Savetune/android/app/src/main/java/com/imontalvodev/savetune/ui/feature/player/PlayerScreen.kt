@@ -269,7 +269,7 @@ fun PlayerScreen(
         if (loaded != null) ArtworkCache.put(currentTrack!!.id, loaded)
     }
 
-    // Cargar letra cuando se abre el overlay o cambia la canción
+    // Letras: solo caché local (offline-first). Se rellenan al descargar.
     LaunchedEffect(currentTrack?.id) {
         val t = currentTrack ?: run {
             lyricsState = LyricsUiState.Empty("Selecciona una canción")
@@ -311,7 +311,7 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
 
-        // 1) Intentar caché local primero (offline-friendly)
+        // Intentar caché local (offline-friendly)
         val cached = withContext(Dispatchers.IO) {
             LyricsCache.get(context, title, artist)
         }
@@ -319,61 +319,7 @@ fun PlayerScreen(
             lyricsState = LyricsUiState.Ready(cached)
             return@LaunchedEffect
         }
-
-        // 2) Si no hay caché, intentar red (puede fallar si no hay internet)
-        lyricsState = LyricsUiState.Loading
-        val uriTitle = titleFromUri(t.uri)
-        val attempts = listOf(
-            title,
-            sanitizeTitle(title),
-            uriTitle,
-            sanitizeTitle(uriTitle),
-        )
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-
-        var res: com.imontalvodev.savetune.ui.network.LyricsResponse? = null
-        var usedTitle = title
-        for (candidate in attempts) {
-            val candidateRes = runCatching {
-                withContext(Dispatchers.IO) {
-                    MiddlewareApi.fetchLyrics(
-                        baseUrl = MIDDLEWARE_BASE_URL,
-                        title = candidate,
-                        artist = artist,
-                    )
-                }
-            }.getOrNull()
-            if (candidateRes != null && candidateRes.success && candidateRes.lyrics.isNotBlank()) {
-                res = candidateRes
-                usedTitle = candidate
-                break
-            }
-            if (res == null) res = candidateRes
-        }
-
-        if (res != null && res.success && res.lyrics.isNotBlank()) {
-            withContext(Dispatchers.IO) {
-                LyricsCache.put(context, title, artist, res.lyrics)
-                if (usedTitle != title) {
-                    LyricsCache.put(context, usedTitle, artist, res.lyrics)
-                }
-            }
-            lyricsState = LyricsUiState.Ready(res.lyrics)
-        } else {
-            val raw = res?.message ?: res?.error ?: "Sin conexión o letras no disponibles"
-            val pretty = when (res?.error) {
-                "LyricsNotFound" -> "No hay letra disponible para esta canción"
-                "MissingMetadata" -> "Sin metadatos para cargar letras"
-                else -> {
-                    if (raw.contains("title", ignoreCase = true) && raw.contains("artist", ignoreCase = true)) {
-                        "Sin metadatos para cargar letras"
-                    } else raw
-                }
-            }
-            lyricsState = LyricsUiState.Empty(pretty)
-        }
+        lyricsState = LyricsUiState.Empty("No hay letra disponible (descárgala con internet).")
     }
 
     val bgBrush = Brush.verticalGradient(colors = listOf(NeonBackgroundTop, NeonBackgroundBottom))

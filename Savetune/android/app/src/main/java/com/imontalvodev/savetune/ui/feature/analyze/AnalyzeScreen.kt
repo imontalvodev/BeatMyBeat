@@ -190,12 +190,33 @@ fun AnalyzeScreen(
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 } else {
-                                    startAutoDownloadInApp(
-                                        context = context,
-                                        title = songTitle,
-                                        artist = songArtist,
-                                        album = songAlbum,
-                                    )
+                                    Toast.makeText(
+                                        context,
+                                        "Descargando canción...",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                    scope.launch {
+                                        val res = AudioDownloader.downloadAutoToAppMusic(
+                                            context = context,
+                                            middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                            title = songTitle,
+                                            artist = songArtist,
+                                            album = songAlbum,
+                                        )
+                                        if (res.success) {
+                                            Toast.makeText(
+                                                context,
+                                                "Descargado: ${res.fileName}",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                "Error al descargar: ${res.error ?: "desconocido"}",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                    }
                                 }
                             } else {
                                 if (playlistUrl.isBlank()) {
@@ -251,104 +272,4 @@ private fun isYoutubePlaylistUrl(url: String): Boolean {
     return (u.contains("youtube.com") || u.contains("youtu.be") || u.contains("music.youtube.com")) &&
         u.contains("list=")
 }
-
-private fun startAutoDownloadInApp(
-    context: android.content.Context,
-    title: String,
-    artist: String,
-    album: String,
-) {
-    // Descarga en segundo plano utilizando OkHttp.
-    val base = MIDDLEWARE_BASE_URL.trimEnd('/')
-    val httpUrlBuilder = "$base/api/download-auto".toHttpUrlOrNull()?.newBuilder()
-        ?: return
-
-    if (title.isNotBlank()) httpUrlBuilder.addQueryParameter("title", title)
-    if (artist.isNotBlank()) httpUrlBuilder.addQueryParameter("artist", artist)
-    if (album.isNotBlank()) httpUrlBuilder.addQueryParameter("album", album)
-
-    val url = httpUrlBuilder.build()
-
-    val client = okhttp3.OkHttpClient.Builder()
-        // Descargas pueden tardar bastante (search + stream)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.MINUTES)
-        .writeTimeout(2, TimeUnit.MINUTES)
-        .callTimeout(7, TimeUnit.MINUTES)
-        .build()
-    val request = okhttp3.Request.Builder()
-        .url(url)
-        .get()
-        .build()
-
-    Thread {
-        try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    android.os.Handler(context.mainLooper).post {
-                        Toast.makeText(
-                            context,
-                            "Error al descargar: ${response.code}",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                    return@use
-                }
-
-                val contentType = response.header("Content-Type") ?: ""
-                if (contentType.contains("application/json")) {
-                    android.os.Handler(context.mainLooper).post {
-                        Toast.makeText(
-                            context,
-                            "No se pudo descargar la canción.",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                    return@use
-                }
-
-                val body = response.body ?: return@use
-                val inputStream = body.byteStream()
-
-                val dir = java.io.File(context.filesDir, ".music")
-                if (!dir.exists()) dir.mkdirs()
-
-                val fileNameFromHeader =
-                    response.header("Content-Disposition")
-                        ?.substringAfter("filename=\"")
-                        ?.substringBeforeLast("\"")
-                val safeName = fileNameFromHeader?.takeIf { it.isNotBlank() }
-                    ?: (title.ifBlank { "track" } + ".mp3")
-
-                val outFile = java.io.File(dir, safeName)
-                java.io.FileOutputStream(outFile).use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var bytes = inputStream.read(buffer)
-                    while (bytes >= 0) {
-                        if (bytes > 0) output.write(buffer, 0, bytes)
-                        bytes = inputStream.read(buffer)
-                    }
-                    output.flush()
-                }
-
-                android.os.Handler(context.mainLooper).post {
-                    Toast.makeText(
-                        context,
-                        "Descargado en: ${outFile.name}",
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            }
-        } catch (e: Exception) {
-            android.os.Handler(context.mainLooper).post {
-                Toast.makeText(
-                    context,
-                    "Error de red: ${e.message}",
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
-        }
-    }.start()
-}
-
 
