@@ -57,13 +57,14 @@ const CONNECTION_POLL_INTERVAL_MS = Number(
 );
 setInterval(() => {
   const ts = new Date().toISOString();
-  exec('netstat -ano | findstr ":3000"', { maxBuffer: 1024 * 1024 }, (err, stdout) => {
+  exec('netstat -ano', { maxBuffer: 1024 * 1024 }, (err, stdout) => {
     logLine(connLogStream, `---- ${ts} port=3000 ----`);
     if (!stdout) return;
     stdout
       .toString()
       .split(/\r?\n/)
       .filter(Boolean)
+      .filter((ln) => ln.includes(':3000'))
       .slice(0, 200)
       .forEach((ln) => logLine(connLogStream, ln.trim()));
   });

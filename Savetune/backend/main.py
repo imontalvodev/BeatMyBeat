@@ -212,10 +212,22 @@ def _netstat_connections_for_port(port: int) -> list[str]:
     Usamos `netstat` para evitar dependencias extra (psutil) en Windows.
     """
     try:
-        # `findstr` reduce salida y acelera.
-        cmd = f'netstat -ano | findstr ":{port} "'
-        output = subprocess.check_output(cmd, shell=True, text=True, errors="ignore")
-        lines = [ln.strip() for ln in output.splitlines() if ln.strip()]
+        # Evitar `findstr` para que funcione tanto en Windows como en Linux.
+        output = subprocess.check_output(
+            "netstat -ano",
+            shell=True,
+            text=True,
+            errors="ignore",
+        )
+        # Filtrar por puerto local sin depender de comandos del sistema.
+        port_token = f":{port} "
+        output_lines = output.splitlines()
+        lines = []
+        for ln in output_lines:
+            if not ln:
+                continue
+            if port_token in ln:
+                lines.append(ln.strip())
         return lines
     except Exception:
         return []
