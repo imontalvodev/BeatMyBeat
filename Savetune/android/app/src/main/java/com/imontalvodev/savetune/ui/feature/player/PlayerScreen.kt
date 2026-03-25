@@ -6,6 +6,9 @@ import android.media.AudioAttributes
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,6 +55,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -72,6 +77,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import java.io.File
 import java.net.URLDecoder
@@ -99,6 +105,31 @@ fun PlayerScreen(
     val favoriteIds = viewModel.favoriteIds.collectAsState().value
     val playlists = viewModel.playlists.collectAsState().value
     val context = LocalContext.current
+    val audioPermission = remember {
+        if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
+        else Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { granted ->
+            hasAudioPermission = granted
+            if (granted) {
+                viewModel.syncLibrary(auto = true)
+            } else {
+                Toast.makeText(
+                    context,
+                    "Permiso de música denegado. Solo verás descargas de Savetune.",
+                    Toast.LENGTH_LONG,
+                ).show()
+                viewModel.syncLibrary(auto = true)
+            }
+        },
+    )
 
     val mediaPlayer = remember { MediaPlayer() }
     val queue = remember { mutableStateListOf<DeviceTrack>() }
@@ -166,7 +197,13 @@ fun PlayerScreen(
     var playlistRenameNewName by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        viewModel.syncLibrary(auto = true)
+        val granted = ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
+        hasAudioPermission = granted
+        if (!granted) {
+            permissionLauncher.launch(audioPermission)
+        } else {
+            viewModel.syncLibrary(auto = true)
+        }
     }
 
     if (deviceTracks.isEmpty()) {
