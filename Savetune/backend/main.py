@@ -571,9 +571,30 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
 
     playlist_title = ""
     playlist_cover_url: str | None = None
+    first_entry_cover_url: str | None = None
     if isinstance(info, dict):
         playlist_title = (info.get("title") or "").strip()
         playlist_cover_url = info.get("thumbnail") or None
+
+        entries = info.get("entries") or []
+        if isinstance(entries, list) and entries:
+            first = entries[0] if isinstance(entries[0], dict) else {}
+            if isinstance(first, dict):
+                first_entry_cover_url = first.get("thumbnail") or None
+                if not first_entry_cover_url:
+                    thumbs = first.get("thumbnails") or []
+                    if isinstance(thumbs, list) and thumbs:
+                        best = None
+                        best_w = -1
+                        for t in thumbs:
+                            if not isinstance(t, dict):
+                                continue
+                            w = t.get("width") or 0
+                            u = t.get("url")
+                            if u and w >= best_w:
+                                best = u
+                                best_w = w
+                        first_entry_cover_url = best
 
         # A veces la carátula está en "thumbnails" (lista).
         if not playlist_cover_url:
@@ -600,9 +621,13 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
                 if isinstance(first, dict):
                     playlist_cover_url = first.get("thumbnail") or None
 
+    # Heurística: para "álbum" normalmente la miniatura del primer vídeo corresponde mejor
+    # que la miniatura del contenedor (playlist/canal), que a veces es un icono distinto.
+    effective_cover_url = first_entry_cover_url or playlist_cover_url
+
     cover_art: tuple[bytes, str] | None = None
-    if playlist_cover_url:
-        cover_art = _fetch_artwork_bytes(playlist_cover_url)
+    if effective_cover_url:
+        cover_art = _fetch_artwork_bytes(effective_cover_url)
 
     files: list[str] = []
     for name in os.listdir(job_dir):
