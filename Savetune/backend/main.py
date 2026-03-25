@@ -634,16 +634,31 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
         if isinstance(entry, dict):
             raw_t = (entry.get("title") or "").strip()
             uploader = (entry.get("uploader") or "").strip()
-            track_title = raw_t or "track"
+            # Mantener el mismo contrato de la app:
+            # - `artist` debe ser el uploader/canal
+            # - `title` debe ser el nombre de la canción (intentando limpiar prefijos tipo "Artist: Song")
             track_artist = uploader
-            if " - " in raw_t:
-                parts = raw_t.rsplit(" - ", 1)
-                if len(parts) == 2:
-                    left = parts[0].strip()
-                    right = parts[1].strip()
-                    if 2 <= len(right) <= 40:
-                        track_title = left
-                        track_artist = right
+            track_title = raw_t or "track"
+
+            uploader_l = track_artist.lower().strip()
+            raw_l = raw_t.lower()
+
+            # Caso "Artist: Song ..."
+            if ":" in raw_t:
+                left, right = raw_t.split(":", 1)
+                if left.strip().lower() == uploader_l and right.strip():
+                    track_title = right.strip()
+                    raw_l = track_title.lower()
+
+            # Caso "Artist - Song ..." o "Song - Artist ..."
+            if " - " in track_title:
+                a, b = track_title.rsplit(" - ", 1)
+                a_l = a.strip().lower()
+                b_l = b.strip().lower()
+                if a_l == uploader_l and b.strip():
+                    track_title = b.strip()
+                elif b_l == uploader_l and a.strip():
+                    track_title = a.strip()
 
             track_album = playlist_title or (entry.get("album") or "").strip()
             try:
