@@ -13,6 +13,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +66,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +74,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -93,6 +96,7 @@ import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
@@ -105,6 +109,7 @@ fun PlayerScreen(
     val favoriteIds = viewModel.favoriteIds.collectAsState().value
     val playlists = viewModel.playlists.collectAsState().value
     val context = LocalContext.current
+    val uiScope = rememberCoroutineScope()
     val audioPermission = remember {
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
         else Manifest.permission.READ_EXTERNAL_STORAGE
@@ -161,6 +166,20 @@ fun PlayerScreen(
     var shuffleIndex by remember { mutableStateOf(-1) }
 
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var selectedTrackIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    val selectionMode = selectedTrackIds.isNotEmpty()
+
+    fun toggleTrackSelection(trackId: Long) {
+        selectedTrackIds = if (selectedTrackIds.contains(trackId)) {
+            selectedTrackIds - trackId
+        } else {
+            selectedTrackIds + trackId
+        }
+    }
+
+    fun clearTrackSelection() {
+        selectedTrackIds = emptySet()
+    }
     LaunchedEffect(playlists) {
         if (playlists.isEmpty()) {
             selectedPlaylistId = null
@@ -177,16 +196,17 @@ fun PlayerScreen(
         queue.clear()
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
+        selectedTrackIds = emptySet()
     }
 
     var addToPlaylistDialogOpen by remember { mutableStateOf(false) }
-    var addToPlaylistTrack by remember { mutableStateOf<DeviceTrack?>(null) }
+    var addToPlaylistTracks by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
     var addToPlaylistExistingId by remember { mutableStateOf<Long?>(null) }
     var addToPlaylistNewName by remember { mutableStateOf("") }
     var addToPlaylistPickerExpanded by remember { mutableStateOf(false) }
 
     data class DuplicateConfirmState(
-        val trackId: Long,
+        val trackIds: List<Long>,
         val playlistId: Long,
     )
 
@@ -270,6 +290,7 @@ fun PlayerScreen(
     }
 
     // Letras: solo caché local (offline-first). Se rellenan al descargar.
+    var lyricsDownloading by remember { mutableStateOf(false) }
     LaunchedEffect(currentTrack?.id) {
         val t = currentTrack ?: run {
             lyricsState = LyricsUiState.Empty("Selecciona una canción")
@@ -277,29 +298,6 @@ fun PlayerScreen(
         }
         val title = t.title.trim()
         val artist = t.artist.trim()
-
-        fun sanitizeTitle(input: String): String {
-            return input
-                .replace(Regex("\\s*[\\(\\[].*?[\\)\\]]\\s*"), " ")
-                .replace(Regex("(?i)\\b(remastered|remaster|official|audio|video|lyrics|live)\\b"), " ")
-                .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-        }
-
-        fun titleFromUri(uri: String): String {
-            val rawName = runCatching {
-                val parsed = Uri.parse(uri)
-                val path = parsed.lastPathSegment ?: return@runCatching ""
-                URLDecoder.decode(path, "UTF-8")
-            }.getOrElse { "" }
-            if (rawName.isBlank()) return ""
-            return rawName
-                .replace(Regex("\\.[A-Za-z0-9]{2,5}$"), "")
-                .replace(Regex("_"), " ")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-        }
 
         fun isUnknown(s: String): Boolean =
             s.equals("unknown", ignoreCase = true) ||
@@ -319,8 +317,125 @@ fun PlayerScreen(
             lyricsState = LyricsUiState.Ready(cached)
             return@LaunchedEffect
         }
-        lyricsState = LyricsUiState.Empty("No hay letra disponible (descárgala con internet).")
+        lyricsState = LyricsUiState.Empty("Toca para descargar la letra (necesitas internet).")
     }
+
+    fun sanitizeTitle(input: String): String {
+        return input
+            .replace(Regex("\\s*[\\(\\[].*?[\\)\\]]\\s*"), " ")
+            .replace(Regex("(?i)\\b(remastered|remaster|official|audio|video|lyrics|live)\\b"), " ")
+            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    fun titleFromUri(uri: String): String {
+        val rawName = runCatching {
+            val parsed = Uri.parse(uri)
+            val path = parsed.lastPathSegment ?: return@runCatching ""
+            URLDecoder.decode(path, "UTF-8")
+        }.getOrElse { "" }
+        if (rawName.isBlank()) return ""
+        return rawName
+            .replace(Regex("\\.[A-Za-z0-9]{2,5}$"), "")
+            .replace(Regex("_"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    fun isUnknown(s: String): Boolean =
+        s.equals("unknown", ignoreCase = true) ||
+            s.equals("unknown artist", ignoreCase = true) ||
+            s.isBlank()
+
+    fun downloadLyricsIfNeeded(track: DeviceTrack) {
+        if (lyricsDownloading) return
+
+        val title = track.title.trim()
+        val artist = track.artist.trim()
+        if (isUnknown(title) || isUnknown(artist)) {
+            lyricsState = LyricsUiState.Empty("No hay letra disponible para esta canción")
+            return
+        }
+
+        lyricsDownloading = true
+        lyricsState = LyricsUiState.Loading
+
+        uiScope.launch {
+            try {
+                // 1) Cache por si ya se bajó en otro momento
+                val cached = withContext(Dispatchers.IO) {
+                    LyricsCache.get(context, title, artist)
+                }
+                if (!cached.isNullOrBlank()) {
+                    lyricsState = LyricsUiState.Ready(cached)
+                    return@launch
+                }
+
+                // 2) Fallback de título para mejorar tasa de acierto.
+                // Nota: Kotlin no permite "forward reference" fiable para funciones locales,
+                // así que calculamos el base URL inline.
+                val pythonBaseUrl = run {
+                    val m = MIDDLEWARE_BASE_URL.trimEnd('/')
+                    when {
+                        m.endsWith(":3000") -> m.removeSuffix(":3000") + ":4000"
+                        else -> "http://10.0.2.2:4000"
+                    }
+                }
+                val uriTitle = titleFromUri(track.uri)
+                val attempts = listOf(
+                    title,
+                    sanitizeTitle(title),
+                    uriTitle,
+                    sanitizeTitle(uriTitle),
+                )
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+
+                for (candidate in attempts) {
+                    val res = runCatching {
+                        withContext(Dispatchers.IO) {
+                            MiddlewareApi.fetchLyrics(
+                                baseUrl = MIDDLEWARE_BASE_URL,
+                                title = candidate,
+                                artist = artist,
+                            )
+                        }
+                    }.getOrNull()
+
+                    val finalRes = if (res != null && !res.success && res.error == "InvalidJson") {
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                MiddlewareApi.fetchLyrics(
+                                    baseUrl = pythonBaseUrl,
+                                    title = candidate,
+                                    artist = artist,
+                                )
+                            }
+                        }.getOrNull() ?: res
+                    } else {
+                        res
+                    }
+
+                    if (finalRes != null && finalRes.success && finalRes.lyrics.isNotBlank()) {
+                        withContext(Dispatchers.IO) {
+                            // Guardamos bajo el título/artista original para que el cache coincida.
+                            LyricsCache.put(context, title, artist, finalRes.lyrics)
+                        }
+                        lyricsState = LyricsUiState.Ready(finalRes.lyrics)
+                        return@launch
+                    }
+                }
+
+                lyricsState = LyricsUiState.Empty("No hay letra disponible para esta canción")
+            } finally {
+                lyricsDownloading = false
+            }
+        }
+    }
+
+    // (Helper eliminado: ya no se usa en el fallback de letras bajo demanda)
 
     val bgBrush = Brush.verticalGradient(colors = listOf(NeonBackgroundTop, NeonBackgroundBottom))
 
@@ -540,7 +655,11 @@ fun PlayerScreen(
         }
     }
 
-    fun deleteTrackFromDevice(track: DeviceTrack) {
+    fun deleteTrackFromDevice(
+        track: DeviceTrack,
+        syncAfter: Boolean = true,
+        showToast: Boolean = true,
+    ) {
         try {
             val uri = Uri.parse(track.uri)
             val deleted = when (uri.scheme) {
@@ -557,7 +676,9 @@ fun PlayerScreen(
             }
 
             if (!deleted) {
-                Toast.makeText(context, "No se pudo eliminar la canción.", Toast.LENGTH_SHORT).show()
+                if (showToast) {
+                    Toast.makeText(context, "No se pudo eliminar la canción.", Toast.LENGTH_SHORT).show()
+                }
                 return
             }
 
@@ -571,10 +692,16 @@ fun PlayerScreen(
                 lyricsState = LyricsUiState.Empty("Selecciona una canción")
             }
 
-            viewModel.syncLibrary(auto = true)
-            Toast.makeText(context, "Eliminado del teléfono.", Toast.LENGTH_SHORT).show()
+            if (syncAfter) {
+                viewModel.syncLibrary(auto = true)
+                if (showToast) {
+                    Toast.makeText(context, "Eliminado del teléfono.", Toast.LENGTH_SHORT).show()
+                }
+            }
         } catch (_: Exception) {
-            Toast.makeText(context, "Error eliminando la canción.", Toast.LENGTH_SHORT).show()
+            if (showToast) {
+                Toast.makeText(context, "Error eliminando la canción.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -637,6 +764,102 @@ fun PlayerScreen(
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
+
+                if (selectionMode) {
+                    val selectedTracksOrdered = visibleTracks.filter { selectedTrackIds.contains(it.id) }
+                    val count = selectedTracksOrdered.size
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.28f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                        ) {
+                            Text(
+                                text = "$count seleccionada(s)",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                ActionPillButton(
+                                    text = "Fav",
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        selectedTracksOrdered.forEach { viewModel.toggleFavorite(it) }
+                                        clearTrackSelection()
+                                    },
+                                )
+                                ActionPillButton(
+                                    text = "Eliminar",
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        selectedTracksOrdered.forEach {
+                                            deleteTrackFromDevice(it, syncAfter = false, showToast = false)
+                                        }
+                                        viewModel.syncLibrary(auto = true)
+                                        Toast.makeText(
+                                            context,
+                                            "Eliminadas $count canciones del teléfono.",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                        clearTrackSelection()
+                                    },
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                ActionPillButton(
+                                    text = "Cola",
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        queue.addAll(selectedTracksOrdered)
+                                        clearTrackSelection()
+                                    },
+                                )
+                                if (selectedSection == PlayerSection.Playlist && selectedPlaylistId != null) {
+                                    ActionPillButton(
+                                        text = "Quitar",
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
+                                            selectedTracksOrdered.forEach { tr ->
+                                                viewModel.removeSongFromPlaylist(
+                                                    trackId = tr.id,
+                                                    playlistId = selectedPlaylistId!!,
+                                                    removeAllOccurrences = true,
+                                                )
+                                            }
+                                            clearTrackSelection()
+                                        },
+                                    )
+                                } else {
+                                    ActionPillButton(
+                                        text = "Playlist",
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
+                                            addToPlaylistDialogOpen = true
+                                            addToPlaylistTracks = selectedTracksOrdered
+                                            addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
+                                            addToPlaylistNewName = ""
+                                            addToPlaylistPickerExpanded = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 PrimaryPillButton(
                     text = "PLAY ALL TRACKS",
@@ -706,7 +929,16 @@ fun PlayerScreen(
                         TrackRow(
                             track = track,
                             isCurrent = currentTrack?.id == track.id,
-                            onClick = { playTrack(track, clearQueue = true) },
+                            isSelected = selectedTrackIds.contains(track.id),
+                            showOverflowMenu = !selectionMode,
+                            onLongPress = { toggleTrackSelection(track.id) },
+                            onClick = {
+                                if (selectionMode) {
+                                    toggleTrackSelection(track.id)
+                                } else {
+                                    playTrack(track, clearQueue = true)
+                                }
+                            },
                                             onQueue = {
                                                 queue.add(track)
                                                 if (!shuffleOn && repeatMode == RepeatMode.LIST) {
@@ -726,7 +958,7 @@ fun PlayerScreen(
                             onToggleFavorite = { viewModel.toggleFavorite(track) },
                             onAddToPlaylist = {
                                 addToPlaylistDialogOpen = true
-                                addToPlaylistTrack = track
+                                addToPlaylistTracks = listOf(track)
                                 addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
                                 addToPlaylistNewName = " "
                             },
@@ -781,6 +1013,10 @@ fun PlayerScreen(
 
             // OVERLAY EXPANDIDO (boceto 2)
             if (isExpanded) {
+                val canDownloadLyrics =
+                    !lyricsDownloading &&
+                        currentTrack != null &&
+                        lyricsState is LyricsUiState.Empty
                 ExpandedPlayerOverlay(
                     modifier = Modifier.fillMaxSize(),
                     bgBrush = bgBrush,
@@ -810,12 +1046,16 @@ fun PlayerScreen(
                     repeatMode = repeatMode,
                     onToggleShuffle = { onToggleShuffle() },
                     onToggleRepeat = { onCycleRepeatMode() },
+                    canDownloadLyrics = canDownloadLyrics,
+                    onRequestLyricsDownload = {
+                        currentTrack?.let { downloadLyricsIfNeeded(it) }
+                    },
                 )
             }
 
             // DIALOG: Añadir a playlist (crear o seleccionar)
-            if (addToPlaylistDialogOpen && addToPlaylistTrack != null) {
-                val track = addToPlaylistTrack!!
+            if (addToPlaylistDialogOpen && addToPlaylistTracks.isNotEmpty()) {
+                val tracksToAdd = addToPlaylistTracks
                 val currentSelectedId = addToPlaylistExistingId
                     ?: selectedPlaylistId
                     ?: playlists.firstOrNull()?.id
@@ -824,6 +1064,8 @@ fun PlayerScreen(
                     onDismissRequest = {
                         addToPlaylistDialogOpen = false
                         addToPlaylistPickerExpanded = false
+                        addToPlaylistTracks = emptyList()
+                        duplicateDialog = null
                     },
                     title = { Text("Añadir a playlist") },
                     text = {
@@ -936,27 +1178,37 @@ fun PlayerScreen(
                                     chosenId
                                 }
 
-                                val res = viewModel.addToPlaylist(
-                                    track = track,
-                                    playlistId = targetPlaylistId,
-                                    allowDuplicate = false,
-                                )
-                                when (res) {
-                                    is PlayerViewModel.AddToPlaylistResult.Added -> {
-                                        selectedPlaylistId = targetPlaylistId
-                                        addToPlaylistDialogOpen = false
-                                        addToPlaylistTrack = null
-                                    }
+                                val duplicateIds = mutableListOf<Long>()
+                                var anyAdded = false
 
-                                    is PlayerViewModel.AddToPlaylistResult.AlreadyExists -> {
-                                        selectedPlaylistId = targetPlaylistId
-                                        addToPlaylistDialogOpen = false
-                                        addToPlaylistTrack = null
-                                        duplicateDialog = DuplicateConfirmState(
-                                            trackId = track.id,
-                                            playlistId = targetPlaylistId,
-                                        )
+                                tracksToAdd.forEach { track ->
+                                    val addRes = viewModel.addToPlaylist(
+                                        track = track,
+                                        playlistId = targetPlaylistId,
+                                        allowDuplicate = false,
+                                    )
+                                    when (addRes) {
+                                        is PlayerViewModel.AddToPlaylistResult.Added -> {
+                                            anyAdded = true
+                                        }
+
+                                        is PlayerViewModel.AddToPlaylistResult.AlreadyExists -> {
+                                            duplicateIds.add(track.id)
+                                        }
                                     }
+                                }
+
+                                selectedPlaylistId = targetPlaylistId
+                                addToPlaylistDialogOpen = false
+                                addToPlaylistTracks = emptyList()
+
+                                if (duplicateIds.isNotEmpty()) {
+                                    duplicateDialog = DuplicateConfirmState(
+                                        trackIds = duplicateIds.distinct(),
+                                        playlistId = targetPlaylistId,
+                                    )
+                                } else if (anyAdded) {
+                                    clearTrackSelection()
                                 }
                             }
                         ) {
@@ -967,7 +1219,8 @@ fun PlayerScreen(
                         TextButton(
                             onClick = {
                                 addToPlaylistDialogOpen = false
-                                addToPlaylistTrack = null
+                                addToPlaylistTracks = emptyList()
+                                duplicateDialog = null
                             }
                         ) {
                             Text("Cancelar")
@@ -979,37 +1232,44 @@ fun PlayerScreen(
             // DIALOG: confirmación duplicado en playlist
             if (duplicateDialog != null) {
                 val d = duplicateDialog!!
-                val track = deviceTracks.firstOrNull { it.id == d.trackId }
-                if (track != null) {
-                    AlertDialog(
-                        onDismissRequest = { duplicateDialog = null },
-                        title = { Text("Duplicado detectado") },
-                        text = {
-                            Text("La canción ya existe en esta playlist. ¿Quieres duplicarla?")
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
+                val count = d.trackIds.distinct().size
+                AlertDialog(
+                    onDismissRequest = { duplicateDialog = null },
+                    title = { Text("Duplicados detectados") },
+                    text = {
+                        Text(
+                            "Hay $count canción(es) ya existentes en la playlist. ¿Quieres duplicarlas todas?"
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                d.trackIds.distinct().forEach { tid ->
+                                    val track = deviceTracks.firstOrNull { it.id == tid } ?: return@forEach
                                     viewModel.addToPlaylist(
                                         track = track,
                                         playlistId = d.playlistId,
                                         allowDuplicate = true,
                                     )
-                                    duplicateDialog = null
-                                },
-                            ) {
-                                Text("Duplicar")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { duplicateDialog = null }) {
-                                Text("No duplicar")
-                            }
-                        },
-                    )
-                } else {
-                    duplicateDialog = null
-                }
+                                }
+                                duplicateDialog = null
+                                clearTrackSelection()
+                            },
+                        ) {
+                            Text("Duplicar")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                duplicateDialog = null
+                                clearTrackSelection()
+                            },
+                        ) {
+                            Text("No duplicar")
+                        }
+                    },
+                )
             }
 
             // DIALOG: eliminar playlist
@@ -1106,6 +1366,9 @@ fun PlayerScreen(
 private fun TrackRow(
     track: DeviceTrack,
     isCurrent: Boolean,
+    isSelected: Boolean,
+    showOverflowMenu: Boolean,
+    onLongPress: () -> Unit,
     onClick: () -> Unit,
     onQueue: () -> Unit,
     onToggleFavorite: () -> Unit,
@@ -1119,15 +1382,23 @@ private fun TrackRow(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-            else Color.Black.copy(alpha = 0.35f),
+            containerColor = when {
+                isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                isCurrent -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                else -> Color.Black.copy(alpha = 0.35f)
+            },
         ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onClick() }
-                .padding(12.dp),
+                .padding(12.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = { onLongPress() },
+                        onTap = { onClick() },
+                    )
+                },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -1154,16 +1425,18 @@ private fun TrackRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            TrackOverflowMenu(
-                onQueue = onQueue,
-                onToggleFavorite = onToggleFavorite,
-                onAddToPlaylist = onAddToPlaylist,
-                onHide = { /* TODO */ },
-                onDeleteFromDevice = onDeleteFromDevice,
-                isFavorite = isFavorite,
-                showRemoveFromPlaylist = showRemoveFromPlaylist,
-                onRemoveFromPlaylist = onRemoveFromPlaylist,
-            )
+            if (showOverflowMenu) {
+                TrackOverflowMenu(
+                    onQueue = onQueue,
+                    onToggleFavorite = onToggleFavorite,
+                    onAddToPlaylist = onAddToPlaylist,
+                    onHide = { /* TODO */ },
+                    onDeleteFromDevice = onDeleteFromDevice,
+                    isFavorite = isFavorite,
+                    showRemoveFromPlaylist = showRemoveFromPlaylist,
+                    onRemoveFromPlaylist = onRemoveFromPlaylist,
+                )
+            }
         }
     }
 }
@@ -1453,6 +1726,33 @@ private fun PlaylistPickerBar(
 }
 
 @Composable
+private fun ActionPillButton(
+    text: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = modifier
+            .height(36.dp)
+            .clickable(enabled = enabled) { onClick() },
+        shape = RoundedCornerShape(999.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (enabled) Color.Black.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.18f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
 private fun PrimaryPillButton(
     text: String,
     onClick: () -> Unit,
@@ -1616,6 +1916,8 @@ private fun ExpandedPlayerOverlay(
     repeatMode: RepeatMode,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
+    canDownloadLyrics: Boolean,
+    onRequestLyricsDownload: () -> Unit,
 ) {
     Surface(
         modifier = modifier.background(bgBrush),
@@ -1681,7 +1983,11 @@ private fun ExpandedPlayerOverlay(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .clickable(
+                        enabled = canDownloadLyrics,
+                        onClick = onRequestLyricsDownload,
+                    ),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.30f)),
             ) {

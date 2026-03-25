@@ -343,6 +343,10 @@ def _embed_cover_art_mp3(path_file: str, image_url: str | None) -> None:
     if not art:
         return
     data, mime = art
+    _embed_cover_art_mp3_bytes(path_file, data, mime)
+
+
+def _embed_cover_art_mp3_bytes(path_file: str, data: bytes, mime: str) -> None:
     try:
         try:
             tags = ID3(path_file)
@@ -548,8 +552,39 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
         raise ValueError("No se pudo obtener información de la playlist/álbum")
 
     playlist_title = ""
+    playlist_cover_url: str | None = None
     if isinstance(info, dict):
         playlist_title = (info.get("title") or "").strip()
+        playlist_cover_url = info.get("thumbnail") or None
+
+        # A veces la carátula está en "thumbnails" (lista).
+        if not playlist_cover_url:
+            thumbs = info.get("thumbnails") or []
+            if isinstance(thumbs, list) and thumbs:
+                # coger la de mayor "width" si existe
+                best = None
+                best_w = -1
+                for t in thumbs:
+                    if not isinstance(t, dict):
+                        continue
+                    w = t.get("width") or 0
+                    url = t.get("url")
+                    if url and w >= best_w:
+                        best = url
+                        best_w = w
+                playlist_cover_url = best
+
+        # fallback: primer item
+        if not playlist_cover_url:
+            entries = info.get("entries") or []
+            if isinstance(entries, list) and entries:
+                first = entries[0]
+                if isinstance(first, dict):
+                    playlist_cover_url = first.get("thumbnail") or None
+
+    cover_art: tuple[bytes, str] | None = None
+    if playlist_cover_url:
+        cover_art = _fetch_artwork_bytes(playlist_cover_url)
 
     files: list[str] = []
     for name in os.listdir(job_dir):
@@ -564,6 +599,13 @@ def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[
         raise ValueError("No se descargó ningún audio de la playlist")
 
     files.sort(key=lambda p: os.path.basename(p).lower())
+
+    # Embebemos la misma portada en todos los MP3 (es el caso típico: álbum completo).
+    if cover_art:
+        data, mime = cover_art
+        for p in files:
+            if os.path.splitext(p)[1].lower() == ".mp3":
+                _embed_cover_art_mp3_bytes(p, data, mime)
 
     zip_name = f"{_sanitize_filename(playlist_title, fallback='youtube-album')}.zip"
     zip_path = os.path.join(job_dir, zip_name)
