@@ -2450,7 +2450,7 @@ def api_download_job_stream(jobId: str = Query(..., alias="jobId")):
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 4000))
+    port = int(os.environ.get("PORT", 4001))
     print(f"\n🚀 Iniciando SaveTune Backend en puerto {port}...")
     print(f"📝 Panel de pruebas: http://localhost:{port}/")
     print(f"🔧 Scraper: Selenium (sin necesidad de Spotify API)")
