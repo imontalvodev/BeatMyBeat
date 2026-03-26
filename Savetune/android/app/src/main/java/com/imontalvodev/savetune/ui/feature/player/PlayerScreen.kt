@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +57,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -93,12 +95,15 @@ import com.imontalvodev.savetune.ui.network.ArtworkCache
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
+import com.imontalvodev.savetune.service.PlaybackService
 import com.imontalvodev.savetune.service.SavetuneForegroundService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.random.Random
 
 @Composable
@@ -137,6 +142,9 @@ fun PlayerScreen(
         },
     )
 
+    // Reproducción real se delega a `PlaybackService` (MediaSession) para poder controlarla
+    // desde notificación y lockscreen. El MediaPlayer local queda solo para evitar crashes
+    // en previews, pero no se usa para iniciar playback.
     val mediaPlayer = remember { MediaPlayer() }
     val queue = remember { mutableStateListOf<DeviceTrack>() }
     DisposableEffect(Unit) {
@@ -144,7 +152,6 @@ fun PlayerScreen(
         onDispose {
             mediaPlayer.reset()
             mediaPlayer.release()
-            SavetuneForegroundService.stopPlayback(context)
         }
     }
 
@@ -158,6 +165,12 @@ fun PlayerScreen(
     var selectedSection by remember { mutableStateOf(PlayerSection.Songs) }
     var isExpanded by remember { mutableStateOf(false) }
     var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
+
+    // Si el usuario está viendo el overlay expandido (letra),
+    // el botón Atrás debe cerrar el overlay en vez de navegar fuera del player.
+    BackHandler(enabled = isExpanded) {
+        isExpanded = false
+    }
 
     var shuffleOn by remember { mutableStateOf(false) }
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
@@ -252,14 +265,17 @@ fun PlayerScreen(
         return
     }
 
-    // Actualizar progreso mientras se reproduce
-    LaunchedEffect(currentTrack, isPlaying) {
-        while (isActive && isPlaying && mediaPlayer.isPlaying) {
-            val dur = mediaPlayer.duration
-            if (dur > 0) {
-                position = mediaPlayer.currentPosition.toFloat() / dur.toFloat()
+    // Sincronizar estado de playback real desde PlaybackService
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val snap = PlaybackService.getSnapshot()
+            isPlaying = snap.isPlaying
+            if (snap.durationMs > 0) {
+                position = snap.positionMs.toFloat() / snap.durationMs.toFloat()
+            } else if (!snap.isPlaying) {
+                position = 0f
             }
-            delay(500)
+            delay(300)
         }
     }
 
@@ -527,21 +543,29 @@ fun PlayerScreen(
                 queueRepeatSnapshot = emptyList()
                 queueRepeatIndex = -1
             }
-            mediaPlayer.reset()
-            mediaPlayer.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build()
-            )
-            mediaPlayer.setDataSource(context, track.uri.toUri())
-            mediaPlayer.prepare()
-            mediaPlayer.start()
-            mediaPlayer.setVolume(1f, 1f)
-            SavetuneForegroundService.startPlayback(
+            // Montar cola visible actual para que el servicio pueda controlar prev/next.
+            val baseList = visibleTracks
+            val idxInVisible = baseList.indexOfFirst { it.id == track.id }.let { if (it < 0) 0 else it }
+
+            val arr = JSONArray()
+            baseList.forEach { t ->
+                val o = JSONObject()
+                o.put("uri", t.uri)
+                o.put("title", t.title)
+                o.put("artist", t.artist)
+                arr.put(o)
+            }
+
+            PlaybackService.startWithQueue(
                 context = context,
-                title = track.title,
-                subtitle = track.artist,
+                queueJson = arr.toString(),
+                index = idxInVisible,
+                shuffle = shuffleOn,
+                repeat = when (repeatMode) {
+                    RepeatMode.ONE -> "one"
+                    RepeatMode.LIST -> "list"
+                    else -> "off"
+                },
             )
             currentTrack = track
             currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
@@ -999,26 +1023,24 @@ fun PlayerScreen(
                 shuffleOn = shuffleOn,
                 repeatMode = repeatMode,
                 onTogglePlay = {
-                    if (mediaPlayer.isPlaying) {
-                        mediaPlayer.pause()
+                    currentTrack ?: return@MiniPlayerBar
+                    if (isPlaying) {
+                        context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PAUSE))
                         isPlaying = false
-                        SavetuneForegroundService.stopPlayback(context)
-                    } else if (currentTrack != null) {
-                        mediaPlayer.start()
+                    } else {
+                        context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PLAY))
                         isPlaying = true
-                        SavetuneForegroundService.startPlayback(
-                            context = context,
-                            title = currentTrack!!.title,
-                            subtitle = currentTrack!!.artist,
-                        )
                     }
                 },
                 onPrev = { playPrev() },
                 onNext = { playNext() },
                 onSeek = { newPos ->
                     position = newPos
-                    val dur = mediaPlayer.duration
-                    if (dur > 0) mediaPlayer.seekTo((dur * newPos).toInt())
+                    val snap = PlaybackService.getSnapshot()
+                    val dur = snap.durationMs
+                    if (dur > 0) {
+                        PlaybackService.seekTo(context, (dur * newPos).toInt())
+                    }
                 },
                 onOpenExpanded = { isExpanded = true },
                 onToggleShuffle = { onToggleShuffle() },
@@ -1041,26 +1063,24 @@ fun PlayerScreen(
                     position = position,
                     onClose = { isExpanded = false },
                     onTogglePlay = {
-                        if (mediaPlayer.isPlaying) {
-                            mediaPlayer.pause()
+                        currentTrack ?: return@ExpandedPlayerOverlay
+                        if (isPlaying) {
+                            context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PAUSE))
                             isPlaying = false
-                            SavetuneForegroundService.stopPlayback(context)
-                        } else if (currentTrack != null) {
-                            mediaPlayer.start()
+                        } else {
+                            context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PLAY))
                             isPlaying = true
-                            SavetuneForegroundService.startPlayback(
-                                context = context,
-                                title = currentTrack!!.title,
-                                subtitle = currentTrack!!.artist,
-                            )
                         }
                     },
                     onPrev = { playPrev() },
                     onNext = { playNext() },
                     onSeek = { newPos ->
                         position = newPos
-                        val dur = mediaPlayer.duration
-                        if (dur > 0) mediaPlayer.seekTo((dur * newPos).toInt())
+                        val snap = PlaybackService.getSnapshot()
+                        val dur = snap.durationMs
+                        if (dur > 0) {
+                            PlaybackService.seekTo(context, (dur * newPos).toInt())
+                        }
                     },
                     shuffleOn = shuffleOn,
                     repeatMode = repeatMode,
