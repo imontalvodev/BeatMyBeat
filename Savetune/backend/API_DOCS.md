@@ -21,6 +21,10 @@ El backend está pensado para correr en `http://localhost:4000` en desarrollo (v
   - `allow_origins=["*"]`
   - `allow_methods=["*"]`
   - `allow_headers=["*"]`
+- **Letras (proveedor híbrido)**:
+  - `LYRICS_PROVIDER=hybrid|ovh|legacy` (por defecto `hybrid`)
+  - `LYRICS_OVH_BASE_URL` (por defecto `https://api.lyrics.ovh`, compatible con instancia auto-host)
+  - `LYRICS_OVH_TIMEOUT_SECONDS` (por defecto `8`)
 
 Desde el frontend se puede hacer `fetch` directamente al backend sin configuración especial de CORS.
 

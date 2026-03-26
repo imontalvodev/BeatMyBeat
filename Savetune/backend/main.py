@@ -1887,7 +1887,7 @@ def api_search_youtube(
     }
 
     try:
-        print(f"🔍 Buscando en YouTube: {final_query}")
+        print(f"[YT_SEARCH] Buscando en YouTube: {final_query}")
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(final_query, download=False)
 
@@ -1908,7 +1908,7 @@ def api_search_youtube(
         return {"success": True, "video": video}
 
     except Exception as e:
-        print(f"❌ Error buscando en YouTube: {e}")
+        print(f"[YT_SEARCH_ERROR] Error buscando en YouTube: {e}")
         return JSONResponse(
             status_code=500,
             content={
@@ -1972,7 +1972,7 @@ def api_search_song_suggestions(
     }
 
     try:
-        print(f"🔎 Sugerencias canción YouTube: {final_query} (limit={safe_limit})")
+        print(f"[SONG_SUGGESTIONS] YouTube query: {final_query} (limit={safe_limit})")
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(final_query, download=False)
 
@@ -2009,7 +2009,7 @@ def api_search_song_suggestions(
         return {"success": True, "results": out}
 
     except Exception as e:
-        print(f"❌ Error en sugerencias de canción: {e}")
+        print(f"[SONG_SUGGESTIONS_ERROR] Error en sugerencias de canción: {e}")
         return JSONResponse(
             status_code=500,
             content={
@@ -2040,21 +2040,42 @@ def api_lyrics(
     safe_title = title.strip()
 
     provider = LYRICS_PROVIDER if LYRICS_PROVIDER in {"hybrid", "ovh", "legacy"} else "hybrid"
+    started = time.time()
     last_error: dict | None = None
+    fallback_reason = ""
 
     if provider in {"hybrid", "ovh"}:
         ovh_result = _get_lyrics_from_ovh(safe_artist, safe_title)
         if ovh_result.get("success"):
+            elapsed_ms = int((time.time() - started) * 1000)
+            _get_logger.info(
+                f"/api/lyrics provider={provider} source=lyrics.ovh fallback=no elapsed_ms={elapsed_ms}"
+            )
             return ovh_result
         last_error = ovh_result
+        fallback_reason = ovh_result.get("message", "unknown")
         if provider == "ovh":
+            elapsed_ms = int((time.time() - started) * 1000)
+            _get_logger.info(
+                f"/api/lyrics provider={provider} source=none fallback=no status=404 reason={fallback_reason} elapsed_ms={elapsed_ms}"
+            )
             return JSONResponse(status_code=404, content=ovh_result)
 
     letras_result = _get_lyrics_from_letras(safe_artist, safe_title)
     if letras_result.get("success"):
+        elapsed_ms = int((time.time() - started) * 1000)
+        reason_log = fallback_reason or "n/a"
+        _get_logger.info(
+            f"/api/lyrics provider={provider} source=letras.com fallback=yes reason={reason_log} elapsed_ms={elapsed_ms}"
+        )
         return letras_result
 
     if provider == "hybrid" and last_error:
+        elapsed_ms = int((time.time() - started) * 1000)
+        reason_log = fallback_reason or "unknown"
+        _get_logger.info(
+            f"/api/lyrics provider={provider} source=none fallback=yes status=404 reason={reason_log} elapsed_ms={elapsed_ms}"
+        )
         return JSONResponse(
             status_code=404,
             content={
@@ -2064,6 +2085,10 @@ def api_lyrics(
             },
         )
 
+    elapsed_ms = int((time.time() - started) * 1000)
+    _get_logger.info(
+        f"/api/lyrics provider={provider} source=none fallback=no status=404 elapsed_ms={elapsed_ms}"
+    )
     return JSONResponse(status_code=404, content=letras_result)
 
 
@@ -2209,7 +2234,7 @@ def api_download(videoId: str = Query(..., alias="videoId")):
         with _downloads_lock:
             _active_downloads = max(0, _active_downloads - 1)
         _download_semaphore.release()
-        print(f"❌ Error descargando: {e}")
+        print(f"[DOWNLOAD_ERROR] Error descargando: {e}")
         return JSONResponse(
             status_code=503,
             content={
@@ -2446,7 +2471,7 @@ def api_download_auto(
         return resp
 
     except Exception as e:
-        print(f"❌ Error en descarga automática: {e}")
+        print(f"[AUTO_DOWNLOAD_ERROR] Error en descarga automática: {e}")
         # Limpieza si falló antes de crear el stream
         try:
             shutil.rmtree(job_dir, ignore_errors=True)

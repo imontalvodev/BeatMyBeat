@@ -258,6 +258,7 @@ GET {MIDDLEWARE_URL}/api/lyrics?title=In%20The%20End&artist=Linkin%20Park
 - El backend Python usa proveedor híbrido de letras:
   - primero `lyrics.ovh`
   - fallback en `letras.com` si falla/no encuentra.
+- El switch entre API pública y auto-host se hace en backend por variable de entorno (`LYRICS_OVH_BASE_URL`), sin cambios en el middleware ni en Android.
 
 Uso típico desde frontend:
 
