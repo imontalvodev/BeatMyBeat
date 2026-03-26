@@ -4,7 +4,6 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.imontalvodev.savetune.notifications.SavetuneNotification
-import com.imontalvodev.savetune.service.SavetuneForegroundService
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -38,7 +37,7 @@ object AudioDownloader {
         val safeTitle = title.trim()
         val safeArtist = artist.trim()
         val notificationTitle = if (safeTitle.isNotBlank()) "Descargando: $safeTitle" else "Descargando canción"
-        SavetuneForegroundService.startDownload(
+        SavetuneNotification.showDownloadInProgress(
             context = context,
             title = notificationTitle,
             subtitle = safeArtist,
@@ -108,7 +107,7 @@ object AudioDownloader {
                 return@withContext DownloadResult(false, null, e.message)
             }
         } finally {
-            SavetuneForegroundService.stopDownload(context)
+            // no-op: dejamos que la notificación en curso sea reemplazada por completada/error.
         }
     }
 
@@ -118,7 +117,7 @@ object AudioDownloader {
         playlistUrl: String,
     ): ZipDownloadResult = withContext(Dispatchers.IO) {
         val notifTitle = "Descargando playlist de YouTube"
-        SavetuneForegroundService.startDownload(
+        SavetuneNotification.showDownloadInProgress(
             context = context,
             title = notifTitle,
             subtitle = playlistUrl.take(40),
@@ -260,7 +259,7 @@ object AudioDownloader {
                 return@withContext ZipDownloadResult(false, 0, e.message)
             }
         } finally {
-            SavetuneForegroundService.stopDownload(context)
+            // no-op: dejamos que la notificación en curso sea reemplazada por completada/error.
         }
     }
 

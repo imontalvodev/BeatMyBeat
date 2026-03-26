@@ -11,12 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +34,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.AudioDownloader
+import com.imontalvodev.savetune.ui.network.MiddlewareApi
+import com.imontalvodev.savetune.ui.network.SongSuggestion
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundTop
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
@@ -37,9 +43,9 @@ import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
 import com.imontalvodev.savetune.ui.theme.SavetuneThemeMode
 import com.imontalvodev.savetune.ui.theme.ModeChip
 import com.imontalvodev.savetune.ui.theme.PrimaryButton
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AnalyzeScreen(
@@ -65,6 +71,11 @@ fun AnalyzeScreen(
     var songTitle by remember { mutableStateOf("") }
     var songArtist by remember { mutableStateOf("") }
     var songAlbum by remember { mutableStateOf("") }
+    var searchingSuggestions by remember { mutableStateOf(false) }
+    var suggestionError by remember { mutableStateOf<String?>(null) }
+    var suggestions by remember { mutableStateOf<List<SongSuggestion>>(emptyList()) }
+    var selectedSuggestion by remember { mutableStateOf<SongSuggestion?>(null) }
+    var downloadingSuggestion by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -78,6 +89,7 @@ fun AnalyzeScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.Top,
         ) {
@@ -187,14 +199,26 @@ fun AnalyzeScreen(
                                     // En caso de descarga real, usamos notificaciones.
                                 } else {
                                     scope.launch {
-                                        val res = AudioDownloader.downloadAutoToAppMusic(
-                                            context = context,
-                                            middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                            title = songTitle,
-                                            artist = songArtist,
-                                            album = songAlbum,
-                                        )
-                                        // El feedback de progreso/completado se maneja con notificaciones.
+                                        searchingSuggestions = true
+                                        suggestionError = null
+                                        suggestions = emptyList()
+                                        val res = withContext(Dispatchers.IO) {
+                                            MiddlewareApi.fetchSongSuggestions(
+                                                baseUrl = MIDDLEWARE_BASE_URL,
+                                                query = songTitle.trim(),
+                                                limit = 10,
+                                            )
+                                        }
+                                        searchingSuggestions = false
+                                        if (res.success) {
+                                            val capped = res.results.take(10)
+                                            suggestions = capped
+                                            if (capped.isEmpty()) {
+                                                suggestionError = "No se encontraron resultados para esa búsqueda."
+                                            }
+                                        } else {
+                                            suggestionError = res.message ?: res.error ?: "No se pudo buscar."
+                                        }
                                     }
                                 }
                             } else {
@@ -219,9 +243,114 @@ fun AnalyzeScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
+
+                    if (mode == "song") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        when {
+                            searchingSuggestions -> {
+                                Text(
+                                    text = "Buscando canciones...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                                )
+                            }
+
+                            suggestionError != null -> {
+                                Text(
+                                    text = suggestionError!!,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+
+                            suggestions.isNotEmpty() -> {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        text = "Resultados",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    suggestions.forEach { suggestion ->
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable(enabled = !downloadingSuggestion) {
+                                                    selectedSuggestion = suggestion
+                                                },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                            ),
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                            ) {
+                                                Text(
+                                                    text = suggestion.title.ifBlank { "Sin título" },
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                                Text(
+                                                    text = suggestion.artist.ifBlank { "Artista desconocido" },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    if (selectedSuggestion != null) {
+        val suggestion = selectedSuggestion!!
+        AlertDialog(
+            onDismissRequest = {
+                if (!downloadingSuggestion) selectedSuggestion = null
+            },
+            title = { Text("Descargar canción") },
+            text = {
+                Text(
+                    "¿Quieres descargar \"${suggestion.title}\" de ${suggestion.artist}?",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !downloadingSuggestion,
+                    onClick = {
+                        scope.launch {
+                            downloadingSuggestion = true
+                            AudioDownloader.downloadAutoToAppMusic(
+                                context = context,
+                                middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                title = suggestion.title,
+                                artist = suggestion.artist,
+                                album = "",
+                            )
+                            downloadingSuggestion = false
+                            selectedSuggestion = null
+                        }
+                    },
+                ) {
+                    Text(if (downloadingSuggestion) "Descargando..." else "Sí, descargar")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !downloadingSuggestion,
+                    onClick = { selectedSuggestion = null },
+                ) {
+                    Text("Cancelar")
+                }
+            },
+        )
     }
 }
 

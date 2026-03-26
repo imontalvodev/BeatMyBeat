@@ -38,6 +38,18 @@ data class PlaylistResponse(
     val message: String?,
 )
 
+data class SongSuggestion(
+    val title: String,
+    val artist: String,
+)
+
+data class SongSuggestionsResponse(
+    val success: Boolean,
+    val results: List<SongSuggestion>,
+    val error: String?,
+    val message: String?,
+)
+
 object MiddlewareApi {
     private val client: OkHttpClient = OkHttpClient.Builder()
         // Playlist/lyrics pueden tardar (Spotify + scraper / letras.com)
@@ -130,6 +142,48 @@ object MiddlewareApi {
                 success = json.optBoolean("success", false),
                 playlist = playlist,
                 songs = songs,
+                error = json.opt("error")?.toString(),
+                message = json.opt("message")?.toString(),
+            )
+        }
+    }
+
+    fun fetchSongSuggestions(baseUrl: String, query: String, limit: Int = 10): SongSuggestionsResponse {
+        val url = baseUrl.trimEnd('/').toHttpUrl().newBuilder()
+            .addPathSegments("api/search-song-suggestions")
+            .addQueryParameter("query", query)
+            .addQueryParameter("limit", limit.toString())
+            .build()
+
+        val req = Request.Builder().url(url).get().build()
+        client.newCall(req).execute().use { res ->
+            val body = res.body?.string().orEmpty()
+            val json = runCatching { JSONObject(body) }.getOrNull()
+            if (json == null) {
+                return SongSuggestionsResponse(
+                    success = false,
+                    results = emptyList(),
+                    error = "InvalidJson",
+                    message = "Invalid JSON from server",
+                )
+            }
+
+            val arr = json.optJSONArray("results") ?: JSONArray()
+            val results = buildList {
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    add(
+                        SongSuggestion(
+                            title = item.optString("title", "").trim(),
+                            artist = item.optString("artist", "").trim(),
+                        ),
+                    )
+                }
+            }
+
+            return SongSuggestionsResponse(
+                success = json.optBoolean("success", false),
+                results = results,
                 error = json.opt("error")?.toString(),
                 message = json.opt("message")?.toString(),
             )

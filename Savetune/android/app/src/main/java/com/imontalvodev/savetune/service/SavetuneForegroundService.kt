@@ -53,27 +53,33 @@ class SavetuneForegroundService : Service() {
     private fun updateForeground() {
         SavetuneNotification.ensureChannels(this)
 
-        if (playbackRunning) {
-            startForeground(
-                SavetuneNotification.PLAYBACK_NOTIFICATION_ID,
-                SavetuneNotification.buildPlaybackNotification(
-                    context = this,
-                    title = playbackTitle,
-                    subtitle = playbackSubtitle,
-                ),
-            )
-            return
-        }
+        try {
+            if (playbackRunning) {
+                startForeground(
+                    SavetuneNotification.PLAYBACK_NOTIFICATION_ID,
+                    SavetuneNotification.buildPlaybackNotification(
+                        context = this,
+                        title = playbackTitle,
+                        subtitle = playbackSubtitle,
+                    ),
+                )
+                return
+            }
 
-        if (downloadRunning) {
-            startForeground(
-                SavetuneNotification.DOWNLOAD_NOTIFICATION_ID,
-                SavetuneNotification.buildDownloadInProgressNotification(
-                    context = this,
-                    title = downloadTitle,
-                    subtitle = downloadSubtitle,
-                ),
-            )
+            if (downloadRunning) {
+                startForeground(
+                    SavetuneNotification.DOWNLOAD_NOTIFICATION_ID,
+                    SavetuneNotification.buildDownloadInProgressNotification(
+                        context = this,
+                        title = downloadTitle,
+                        subtitle = downloadSubtitle,
+                    ),
+                )
+            }
+        } catch (_: Exception) {
+            // En algunos estados (Android 12+) puede bloquear el startForeground;
+            // evitamos crash y dejamos la app seguir.
+            stopSelf()
         }
     }
 
@@ -103,7 +109,7 @@ class SavetuneForegroundService : Service() {
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_SUBTITLE, subtitle)
             }
-            ContextCompat.startForegroundService(context, intent)
+            runCatching { ContextCompat.startForegroundService(context, intent) }
         }
 
         fun stopDownload(context: android.content.Context) {
@@ -119,7 +125,7 @@ class SavetuneForegroundService : Service() {
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_SUBTITLE, subtitle)
             }
-            ContextCompat.startForegroundService(context, intent)
+            runCatching { ContextCompat.startForegroundService(context, intent) }
         }
 
         fun stopPlayback(context: android.content.Context) {
