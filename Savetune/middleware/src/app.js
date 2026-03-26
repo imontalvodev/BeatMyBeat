@@ -93,6 +93,13 @@ app.use(express.json());
 
 // Routes
 app.use('/api', apiRoutes);
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'NotFound',
+    message: `Endpoint not found: ${req.method} ${req.originalUrl}`,
+  });
+});
 
 // Health check
 app.get('/health', (req, res) => {

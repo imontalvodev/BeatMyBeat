@@ -89,6 +89,46 @@ router.get('/search-youtube', async (req, res, next) => {
   }
 });
 
+// GET /api/search-song-suggestions?query=...&limit=...
+router.get('/search-song-suggestions', async (req, res, next) => {
+  try {
+    const { query, limit } = req.query;
+
+    if (!query || !String(query).trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'MissingQuery',
+        message: 'Please provide query',
+      });
+    }
+
+    const url = new URL(`${PY_BACKEND_URL}/api/search-song-suggestions`);
+    url.searchParams.set('query', String(query).trim());
+    if (limit !== undefined && String(limit).trim() !== '') {
+      url.searchParams.set('limit', String(limit).trim());
+    }
+
+    let upstream;
+    try {
+      upstream = await fetch(url);
+    } catch (e) {
+      return res.status(502).json({
+        success: false,
+        error: 'UpstreamUnavailable',
+        message: `No se pudo conectar al backend Python (${PY_BACKEND_URL}). ${e?.message || e}`,
+      });
+    }
+
+    const body = await upstream.text();
+    return res
+      .status(upstream.status)
+      .set('Content-Type', upstream.headers.get('content-type') || 'application/json')
+      .send(body);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/lyrics?title=...&artist=...
 router.get('/lyrics', async (req, res, next) => {
   try {

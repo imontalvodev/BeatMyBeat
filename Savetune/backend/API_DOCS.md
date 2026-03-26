@@ -4,6 +4,7 @@ Backend en Python con FastAPI. Expone endpoints para:
 - **Salud del servicio**
 - **Lectura de playlists de Spotify**
 - **Búsqueda de vídeos en YouTube**
+- **Sugerencias de canciones (búsqueda flexible)**
 - **Descarga de audio desde YouTube (por `videoId` o búsqueda automática)**
 - **Descarga de álbum/playlist de YouTube en ZIP**
 - **Resolución de álbum/playlist de YouTube (sin descargar)**
@@ -195,7 +196,64 @@ Si no se encuentra nada:
 
 ---
 
-## 4. `GET /api/download`
+## 4. `GET /api/search-song-suggestions`
+
+**Descripción**: Búsqueda flexible de canciones cuando el usuario no recuerda exactamente título/artista.
+Devuelve una lista de sugerencias con formato simple:
+- `title`
+- `artist`
+
+**Request**
+- Método: `GET`
+- URL: `/api/search-song-suggestions`
+- Query params:
+  - `query` (obligatorio): texto libre de búsqueda.
+  - `limit` (opcional): número máximo de resultados (`1..30`, por defecto `10`).
+
+Ejemplos:
+
+```text
+GET /api/search-song-suggestions?query=metalica%20one
+GET /api/search-song-suggestions?query=linkin%20numb&limit=15
+```
+
+**Response 200 – JSON (éxito)**
+
+```json
+{
+  "success": true,
+  "results": [
+    { "title": "One", "artist": "Metallica" },
+    { "title": "Numb", "artist": "Linkin Park" }
+  ]
+}
+```
+
+**Errores**
+
+- **400 – Falta `query`**
+
+```json
+{
+  "success": false,
+  "error": "MissingQuery",
+  "message": "Please provide query"
+}
+```
+
+- **500 – Error interno en la búsqueda**
+
+```json
+{
+  "success": false,
+  "error": "SongSearchError",
+  "message": "mensaje de error interno"
+}
+```
+
+---
+
+## 5. `GET /api/download`
 
 **Descripción**: Descarga el audio de un vídeo de YouTube a partir de su `videoId`. Devuelve un **stream de audio** (no JSON).
 
@@ -267,7 +325,7 @@ a.remove();
 
 ---
 
-## 5. `GET /api/download-auto`
+## 6. `GET /api/download-auto`
 
 **Descripción**: Endpoint **nuevo** que:
 1. Construye una búsqueda en YouTube a partir de metadatos de la canción (o una query libre).
@@ -353,7 +411,7 @@ a.remove();
 
 ---
 
-## 6. Cola de descargas (limitado a 5 simultáneas)
+## 7. Cola de descargas (limitado a 5 simultáneas)
 
 Por protección del servidor, el backend limita descargas concurrentes (por defecto `5`). Cuando no hay slots disponibles, los endpoints:
 - `GET /api/download`
@@ -391,7 +449,7 @@ En ese caso, el frontend debe consultar el job y luego descargar el stream:
 
 ---
 
-## 7. `GET /api/resolve-youtube-album`
+## 8. `GET /api/resolve-youtube-album`
 
 **Descripción**: Resuelve un álbum/playlist de YouTube y devuelve metadata (sin descargar audio).
 Por ahora se usa **solo** con `playlistUrl` directa.
@@ -425,7 +483,7 @@ Por ahora se usa **solo** con `playlistUrl` directa.
 
 ---
 
-## 8. `GET /api/download-youtube-album`
+## 9. `GET /api/download-youtube-album`
 
 **Descripción**: Descarga un álbum/playlist de YouTube completo y devuelve un archivo `.zip` con todas las pistas en audio.
 Por ahora se usa **solo** con `playlistUrl` directa.
@@ -455,11 +513,11 @@ GET /api/download-youtube-album?playlistUrl=https://youtube.com/playlist?list=OL
 
 ---
 
-## 9. Consideraciones de integración desde frontend
+## 10. Consideraciones de integración desde frontend
 
 - **Base URL configurable**: se recomienda tener una variable de entorno o configuración (`BACKEND_URL`) para que el frontend no asuma `localhost:4000` en producción.
 - **Manejo de errores**:
-  - Todos los endpoints JSON (`/health`, `/api/playlist`, `/api/search-youtube`) devuelven un campo `success` y `error`/`message` en caso de fallo.
+  - Todos los endpoints JSON (`/health`, `/api/playlist`, `/api/search-youtube`, `/api/search-song-suggestions`) devuelven un campo `success` y `error`/`message` en caso de fallo.
   - Los endpoints de descarga (`/api/download`, `/api/download-auto`) devuelven JSON de error cuando algo va mal (`status` 4xx/5xx), por lo que conviene:
     - Si se llama con `fetch`, revisar `res.ok` antes de tratarlo como blob.
     - Si se llama abriendo una pestaña/descarga directa, el navegador mostrará el JSON como texto en caso de error.

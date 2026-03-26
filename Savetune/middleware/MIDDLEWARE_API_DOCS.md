@@ -35,6 +35,7 @@ En el frontend:
    - El frontend llama a rutas como:
      - `GET {MIDDLEWARE_URL}/api/playlist`
      - `GET {MIDDLEWARE_URL}/api/search-youtube`
+     - `GET {MIDDLEWARE_URL}/api/search-song-suggestions`
      - `GET {MIDDLEWARE_URL}/api/lyrics`
      - `GET {MIDDLEWARE_URL}/api/download`
      - `GET {MIDDLEWARE_URL}/api/download-auto`
@@ -45,6 +46,7 @@ En el frontend:
    - El middleware reenvía la petición a:
      - `GET {PY_BACKEND_URL}/api/playlist`
      - `GET {PY_BACKEND_URL}/api/search-youtube`
+     - `GET {PY_BACKEND_URL}/api/search-song-suggestions`
      - `GET {PY_BACKEND_URL}/api/lyrics`
      - `GET {PY_BACKEND_URL}/api/download`
      - `GET {PY_BACKEND_URL}/api/download-auto`
@@ -160,7 +162,59 @@ const data = await res.json(); // data.video.id, data.video.title, etc.
 
 ---
 
-### 3.3 `GET /api/lyrics` (nuevo)
+### 3.3 `GET /api/search-song-suggestions` (nuevo)
+
+Este endpoint expone búsqueda flexible de canciones para ayudar cuando el usuario
+no recuerda título/artista exactos.
+
+**Frontend → Middleware**
+
+- Método: `GET`
+- URL: `{MIDDLEWARE_URL}/api/search-song-suggestions`
+- Query params:
+  - `query` (obligatorio)
+  - `limit` (opcional)
+
+Ejemplo:
+
+```text
+GET {MIDDLEWARE_URL}/api/search-song-suggestions?query=metalica%20one&limit=10
+```
+
+**Middleware → Backend Python**
+
+- Método: `GET`
+- URL: `{PY_BACKEND_URL}/api/search-song-suggestions` con los mismos query params.
+
+**Validación en middleware**
+
+- Si falta `query`, el middleware responde:
+
+```json
+{
+  "success": false,
+  "error": "MissingQuery",
+  "message": "Please provide query"
+}
+```
+
+**Respuesta al frontend**
+
+- Reenvía tal cual el JSON del backend Python:
+  - `success`
+  - `results: [{ title, artist }, ...]`
+
+Uso típico desde frontend:
+
+```ts
+const params = new URLSearchParams({ query: userInput, limit: "10" });
+const res = await fetch(`${MIDDLEWARE_URL}/api/search-song-suggestions?${params.toString()}`);
+const data = await res.json(); // data.results => [{title, artist}, ...]
+```
+
+---
+
+### 3.4 `GET /api/lyrics` (nuevo)
 
 Este endpoint expone letras de canciones hacia el frontend, proxyeando el endpoint del backend Python:
 - Backend Python: `GET {PY_BACKEND_URL}/api/lyrics`

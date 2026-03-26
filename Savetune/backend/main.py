@@ -1857,6 +1857,107 @@ def api_search_youtube(
         )
 
 
+def _guess_artist_from_title(title: str, uploader: str) -> tuple[str, str]:
+    """
+    Intenta inferir artista/título si yt-dlp no trae `artist`.
+    Formato típico: "Artist - Song".
+    """
+    safe_title = (title or "").strip()
+    safe_uploader = (uploader or "").strip()
+
+    if " - " in safe_title:
+        left, right = safe_title.split(" - ", 1)
+        left = left.strip()
+        right = right.strip()
+        if left and right:
+            return left, right
+
+    if safe_uploader:
+        return safe_uploader, safe_title
+
+    return "Unknown Artist", safe_title
+
+
+@app.get("/api/search-song-suggestions")
+def api_search_song_suggestions(
+    query: str | None = Query(None, alias="query"),
+    limit: int = Query(10, alias="limit"),
+):
+    """
+    Búsqueda flexible de canciones (cuando el usuario no recuerda título/artista exactos).
+    Devuelve múltiples resultados con formato simple:
+    - title
+    - artist
+    """
+    final_query = (query or "").strip()
+    if not final_query:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "MissingQuery",
+                "message": "Please provide query",
+            },
+        )
+
+    safe_limit = max(1, min(int(limit), 30))
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": False,
+        "default_search": f"ytsearch{safe_limit}",
+        "noplaylist": True,
+    }
+
+    try:
+        print(f"🔎 Sugerencias canción YouTube: {final_query} (limit={safe_limit})")
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(final_query, download=False)
+
+        entries = info.get("entries", []) if isinstance(info, dict) else []
+        out = []
+        seen = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            raw_title = (entry.get("title") or "").strip()
+            if not raw_title:
+                continue
+            raw_artist = (entry.get("artist") or "").strip()
+            uploader = (entry.get("uploader") or "").strip()
+            if raw_artist:
+                artist_name = raw_artist
+                title_name = raw_title
+            else:
+                artist_name, title_name = _guess_artist_from_title(raw_title, uploader)
+
+            key = (title_name.lower(), artist_name.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {
+                    "title": title_name,
+                    "artist": artist_name,
+                }
+            )
+            if len(out) >= safe_limit:
+                break
+
+        return {"success": True, "results": out}
+
+    except Exception as e:
+        print(f"❌ Error en sugerencias de canción: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": "SongSearchError",
+                "message": str(e),
+            },
+        )
+
+
 @app.get("/api/lyrics")
 def api_lyrics(
     title: str = Query(..., alias="title"),
