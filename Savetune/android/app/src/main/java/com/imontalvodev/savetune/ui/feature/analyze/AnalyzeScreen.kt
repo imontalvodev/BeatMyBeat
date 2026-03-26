@@ -1,6 +1,5 @@
 package com.imontalvodev.savetune.ui.feature.analyze
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -184,17 +183,9 @@ fun AnalyzeScreen(
                         onClick = {
                             if (mode == "song") {
                                 if (songTitle.isBlank() && songArtist.isBlank() && songAlbum.isBlank()) {
-                                    Toast.makeText(
-                                        context,
-                                        "Introduce al menos el título o el artista.",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
+                                    // Mantener feedback por pantalla (y no notificación) en validaciones rápidas.
+                                    // En caso de descarga real, usamos notificaciones.
                                 } else {
-                                    Toast.makeText(
-                                        context,
-                                        "Descargando canción...",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
                                     scope.launch {
                                         val res = AudioDownloader.downloadAutoToAppMusic(
                                             context = context,
@@ -203,55 +194,22 @@ fun AnalyzeScreen(
                                             artist = songArtist,
                                             album = songAlbum,
                                         )
-                                        if (res.success) {
-                                            Toast.makeText(
-                                                context,
-                                                "Descargado: ${res.fileName}",
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        } else {
-                                            Toast.makeText(
-                                                context,
-                                                "Error al descargar: ${res.error ?: "desconocido"}",
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
+                                        // El feedback de progreso/completado se maneja con notificaciones.
                                     }
                                 }
                             } else {
                                 if (playlistUrl.isBlank()) {
-                                    Toast.makeText(
-                                        context,
-                                        "Pega un enlace de playlist.",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
+                                    // Validación rápida sin notificación.
                                 } else {
                                     val normalizedUrl = playlistUrl.trim()
                                     if (isYoutubePlaylistUrl(normalizedUrl)) {
-                                        Toast.makeText(
-                                            context,
-                                            "Descargando playlist de YouTube...",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
                                         scope.launch {
                                             val result = AudioDownloader.downloadYoutubeAlbumZipToAppMusic(
                                                 context = context,
                                                 middlewareBaseUrl = MIDDLEWARE_BASE_URL,
                                                 playlistUrl = normalizedUrl,
                                             )
-                                            if (result.success) {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Playlist descargada: ${result.extractedFiles} pistas",
-                                                    Toast.LENGTH_LONG,
-                                                ).show()
-                                            } else {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Error playlist YouTube: ${result.error ?: "desconocido"}",
-                                                    Toast.LENGTH_LONG,
-                                                ).show()
-                                            }
+                                            // El feedback de progreso/completado se maneja con notificaciones.
                                         }
                                     } else {
                                         onOpenPlaylist(normalizedUrl)

@@ -1,7 +1,11 @@
 package com.imontalvodev.savetune
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -29,6 +33,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
+import androidx.core.content.ContextCompat
 import com.imontalvodev.savetune.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.savetune.ui.feature.playlist.PlaylistScreen
 import com.imontalvodev.savetune.ui.feature.player.PlayerScreen
@@ -39,9 +44,22 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // No hacemos nada: si deniega, simplemente no se verán notificaciones.
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Android 13+ requiere permiso runtime para notificaciones.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val permission = Manifest.permission.POST_NOTIFICATIONS
+            val granted = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+            if (!granted) notificationPermissionLauncher.launch(permission)
+        }
+
         setContent {
             val themeModeState = rememberSavetuneThemeModeState()
             SavetuneTheme(themeMode = themeModeState.value) {

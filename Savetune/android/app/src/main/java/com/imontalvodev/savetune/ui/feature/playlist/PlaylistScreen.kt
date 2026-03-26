@@ -2,7 +2,6 @@ package com.imontalvodev.savetune.ui.feature.playlist
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -113,11 +112,6 @@ fun PlaylistScreen(
                 onPrimaryClick = {
                     if (tracks.isEmpty() || downloading) return@PlaylistHeader
                     downloading = true
-                    Toast.makeText(
-                        context,
-                        "Descargando ${tracks.size} canciones...",
-                        Toast.LENGTH_SHORT,
-                    ).show()
                     scope.launch {
                         try {
                             for (t in tracks) {
@@ -130,16 +124,11 @@ fun PlaylistScreen(
                                     imageUrl = t.imageUrl,
                                 )
                             }
-                            Toast.makeText(context, "Descargas listas.", Toast.LENGTH_SHORT).show()
                             downloading = false
                             onOpenPlayer()
                         } catch (e: Exception) {
                             downloading = false
-                            Toast.makeText(
-                                context,
-                                "Error al descargar: ${e.message}",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                            // El feedback de error se gestiona desde notificaciones (AudioDownloader).
                         }
                     }
                 },
@@ -154,7 +143,6 @@ fun PlaylistScreen(
                     TrackRow(track = track, onPlay = {
                         if (downloading) return@TrackRow
                         downloading = true
-                        Toast.makeText(context, "Descargando: ${track.title}", Toast.LENGTH_SHORT).show()
                         scope.launch {
                             try {
                                 AudioDownloader.downloadAutoToAppMusic(
@@ -169,7 +157,7 @@ fun PlaylistScreen(
                                 onOpenPlayer()
                             } catch (e: Exception) {
                                 downloading = false
-                                Toast.makeText(context, "No se pudo descargar.", Toast.LENGTH_SHORT).show()
+                                // El feedback de error se gestiona desde notificaciones (AudioDownloader).
                             }
                         }
                     })

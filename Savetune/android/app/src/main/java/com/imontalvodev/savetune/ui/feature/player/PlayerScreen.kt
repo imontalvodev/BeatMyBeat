@@ -93,6 +93,7 @@ import com.imontalvodev.savetune.ui.network.ArtworkCache
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
+import com.imontalvodev.savetune.service.SavetuneForegroundService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -143,6 +144,7 @@ fun PlayerScreen(
         onDispose {
             mediaPlayer.reset()
             mediaPlayer.release()
+            SavetuneForegroundService.stopPlayback(context)
         }
     }
 
@@ -536,6 +538,11 @@ fun PlayerScreen(
             mediaPlayer.prepare()
             mediaPlayer.start()
             mediaPlayer.setVolume(1f, 1f)
+            SavetuneForegroundService.startPlayback(
+                context = context,
+                title = track.title,
+                subtitle = track.artist,
+            )
             currentTrack = track
             currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
             isPlaying = true
@@ -690,6 +697,7 @@ fun PlayerScreen(
                 currentArtwork = null
                 position = 0f
                 lyricsState = LyricsUiState.Empty("Selecciona una canción")
+                SavetuneForegroundService.stopPlayback(context)
             }
 
             if (syncAfter) {
@@ -994,9 +1002,15 @@ fun PlayerScreen(
                     if (mediaPlayer.isPlaying) {
                         mediaPlayer.pause()
                         isPlaying = false
+                        SavetuneForegroundService.stopPlayback(context)
                     } else if (currentTrack != null) {
                         mediaPlayer.start()
                         isPlaying = true
+                        SavetuneForegroundService.startPlayback(
+                            context = context,
+                            title = currentTrack!!.title,
+                            subtitle = currentTrack!!.artist,
+                        )
                     }
                 },
                 onPrev = { playPrev() },
@@ -1030,9 +1044,15 @@ fun PlayerScreen(
                         if (mediaPlayer.isPlaying) {
                             mediaPlayer.pause()
                             isPlaying = false
+                            SavetuneForegroundService.stopPlayback(context)
                         } else if (currentTrack != null) {
                             mediaPlayer.start()
                             isPlaying = true
+                            SavetuneForegroundService.startPlayback(
+                                context = context,
+                                title = currentTrack!!.title,
+                                subtitle = currentTrack!!.artist,
+                            )
                         }
                     },
                     onPrev = { playPrev() },
