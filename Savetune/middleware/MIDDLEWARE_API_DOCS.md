@@ -255,6 +255,9 @@ GET {MIDDLEWARE_URL}/api/lyrics?title=In%20The%20End&artist=Linkin%20Park
 - Reenvía tal cual el JSON del backend Python (ver contrato en `backend/API_DOCS.md`):
   - `success`, `source`, `sourceUrl`, `lyrics` (y campos de apoyo `pageTitle`, `pageArtist`)
   - o error `LyricsNotFound` con status `404`.
+- El backend Python usa proveedor híbrido de letras:
+  - primero `lyrics.ovh`
+  - fallback en `letras.com` si falla/no encuentra.
 
 Uso típico desde frontend:
 

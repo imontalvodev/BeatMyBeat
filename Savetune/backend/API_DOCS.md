@@ -5,6 +5,7 @@ Backend en Python con FastAPI. Expone endpoints para:
 - **Lectura de playlists de Spotify**
 - **Búsqueda de vídeos en YouTube**
 - **Sugerencias de canciones (búsqueda flexible)**
+- **Letras de canciones (lyrics.ovh + fallback)**
 - **Descarga de audio desde YouTube (por `videoId` o búsqueda automática)**
 - **Descarga de álbum/playlist de YouTube en ZIP**
 - **Resolución de álbum/playlist de YouTube (sin descargar)**
@@ -253,7 +254,69 @@ GET /api/search-song-suggestions?query=linkin%20numb&limit=15
 
 ---
 
-## 5. `GET /api/download`
+## 5. `GET /api/lyrics`
+
+**Descripción**: Obtiene letra de una canción usando estrategia híbrida:
+1. Intenta `lyrics.ovh` (rápido, API pública).
+2. Si falla o no encuentra, usa fallback por scraping en letras.com.
+
+El contrato se mantiene estable para el frontend.
+
+**Request**
+- Método: `GET`
+- URL: `/api/lyrics`
+- Query params:
+  - `title` (obligatorio)
+  - `artist` (obligatorio)
+
+Ejemplo:
+
+```text
+GET /api/lyrics?title=In%20The%20End&artist=Linkin%20Park
+```
+
+**Response 200 – JSON (éxito)**
+
+```json
+{
+  "success": true,
+  "source": "lyrics.ovh",
+  "sourceUrl": "https://lyrics.ovh",
+  "lyrics": "It starts with one thing...",
+  "pageTitle": "In The End",
+  "pageArtist": "Linkin Park"
+}
+```
+
+`source` puede ser:
+- `lyrics.ovh`
+- `letras.com` (si entró el fallback)
+
+**Errores**
+
+- **400 – Falta metadata**
+
+```json
+{
+  "success": false,
+  "error": "MissingMetadata",
+  "message": "Please provide title and artist"
+}
+```
+
+- **404 – No se encontró letra en ningún proveedor**
+
+```json
+{
+  "success": false,
+  "error": "LyricsNotFound",
+  "message": "No lyrics found"
+}
+```
+
+---
+
+## 6. `GET /api/download`
 
 **Descripción**: Descarga el audio de un vídeo de YouTube a partir de su `videoId`. Devuelve un **stream de audio** (no JSON).
 
@@ -325,7 +388,7 @@ a.remove();
 
 ---
 
-## 6. `GET /api/download-auto`
+## 7. `GET /api/download-auto`
 
 **Descripción**: Endpoint **nuevo** que:
 1. Construye una búsqueda en YouTube a partir de metadatos de la canción (o una query libre).
@@ -411,7 +474,7 @@ a.remove();
 
 ---
 
-## 7. Cola de descargas (limitado a 5 simultáneas)
+## 8. Cola de descargas (limitado a 5 simultáneas)
 
 Por protección del servidor, el backend limita descargas concurrentes (por defecto `5`). Cuando no hay slots disponibles, los endpoints:
 - `GET /api/download`
@@ -449,7 +512,7 @@ En ese caso, el frontend debe consultar el job y luego descargar el stream:
 
 ---
 
-## 8. `GET /api/resolve-youtube-album`
+## 9. `GET /api/resolve-youtube-album`
 
 **Descripción**: Resuelve un álbum/playlist de YouTube y devuelve metadata (sin descargar audio).
 Por ahora se usa **solo** con `playlistUrl` directa.
@@ -483,7 +546,7 @@ Por ahora se usa **solo** con `playlistUrl` directa.
 
 ---
 
-## 9. `GET /api/download-youtube-album`
+## 10. `GET /api/download-youtube-album`
 
 **Descripción**: Descarga un álbum/playlist de YouTube completo y devuelve un archivo `.zip` con todas las pistas en audio.
 Por ahora se usa **solo** con `playlistUrl` directa.
@@ -513,11 +576,11 @@ GET /api/download-youtube-album?playlistUrl=https://youtube.com/playlist?list=OL
 
 ---
 
-## 10. Consideraciones de integración desde frontend
+## 11. Consideraciones de integración desde frontend
 
 - **Base URL configurable**: se recomienda tener una variable de entorno o configuración (`BACKEND_URL`) para que el frontend no asuma `localhost:4000` en producción.
 - **Manejo de errores**:
-  - Todos los endpoints JSON (`/health`, `/api/playlist`, `/api/search-youtube`, `/api/search-song-suggestions`) devuelven un campo `success` y `error`/`message` en caso de fallo.
+  - Todos los endpoints JSON (`/health`, `/api/playlist`, `/api/search-youtube`, `/api/search-song-suggestions`, `/api/lyrics`) devuelven un campo `success` y `error`/`message` en caso de fallo.
   - Los endpoints de descarga (`/api/download`, `/api/download-auto`) devuelven JSON de error cuando algo va mal (`status` 4xx/5xx), por lo que conviene:
     - Si se llama con `fetch`, revisar `res.ok` antes de tratarlo como blob.
     - Si se llama abriendo una pestaña/descarga directa, el navegador mostrará el JSON como texto en caso de error.

@@ -196,6 +196,9 @@ NO_LYRICS_TEXT_MARKERS = [
     "letra instrumental",
     "sin vocals",
 ]
+LYRICS_PROVIDER = (os.environ.get("LYRICS_PROVIDER", "hybrid") or "hybrid").strip().lower()
+LYRICS_OVH_BASE_URL = (os.environ.get("LYRICS_OVH_BASE_URL", "https://api.lyrics.ovh") or "https://api.lyrics.ovh").strip().rstrip("/")
+LYRICS_OVH_TIMEOUT_SECONDS = int(os.environ.get("LYRICS_OVH_TIMEOUT_SECONDS", "8"))
 _download_semaphore = threading.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 _downloads_lock = threading.Lock()
 _active_downloads = 0  # descargas en fase "yt-dlp/ffmpeg" (no streaming)
@@ -1417,6 +1420,65 @@ def _get_lyrics_from_letras(artist: str, title: str) -> dict:
     }
 
 
+def _get_lyrics_from_ovh(artist: str, title: str) -> dict:
+    """
+    Intenta obtener letras desde lyrics.ovh.
+    Mantiene el mismo contrato que consume el frontend.
+    """
+    artist_clean = (artist or "").strip()
+    title_clean = (title or "").strip()
+    if not artist_clean or not title_clean:
+        return {
+            "success": False,
+            "error": "MissingMetadata",
+            "message": "Please provide title and artist",
+        }
+
+    try:
+        encoded_artist = requests.utils.quote(artist_clean, safe="")
+        encoded_title = requests.utils.quote(title_clean, safe="")
+        url = f"{LYRICS_OVH_BASE_URL}/v1/{encoded_artist}/{encoded_title}"
+        resp = requests.get(url, timeout=LYRICS_OVH_TIMEOUT_SECONDS)
+
+        if resp.status_code == 404:
+            return {
+                "success": False,
+                "error": "LyricsNotFound",
+                "message": "No lyrics found in lyrics.ovh",
+            }
+
+        if resp.status_code >= 400:
+            return {
+                "success": False,
+                "error": "LyricsProviderError",
+                "message": f"lyrics.ovh HTTP {resp.status_code}",
+            }
+
+        payload = resp.json()
+        lyrics_text = (payload.get("lyrics") or "").strip() if isinstance(payload, dict) else ""
+        if not lyrics_text:
+            return {
+                "success": False,
+                "error": "LyricsNotFound",
+                "message": "No lyrics payload in lyrics.ovh response",
+            }
+
+        return {
+            "success": True,
+            "source": "lyrics.ovh",
+            "sourceUrl": "https://lyrics.ovh",
+            "lyrics": lyrics_text,
+            "pageTitle": title_clean,
+            "pageArtist": artist_clean,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": "LyricsProviderError",
+            "message": f"lyrics.ovh request failed: {e}",
+        }
+
+
 def _fetch_playlist_via_api(url: str) -> dict | None:
     """Obtiene la playlist vía Spotify Web API. Mismo formato que el scraper."""
     api = SpotifyWebAPI()
@@ -1963,9 +2025,7 @@ def api_lyrics(
     title: str = Query(..., alias="title"),
     artist: str = Query(..., alias="artist"),
 ):
-    """
-    Obtiene letras desde letras.com (scraping).
-    """
+    """Obtiene letras con proveedor híbrido (lyrics.ovh + fallback scraper)."""
     if not title or not title.strip() or not artist or not artist.strip():
         return JSONResponse(
             status_code=400,
@@ -1976,11 +2036,35 @@ def api_lyrics(
             },
         )
 
-    result = _get_lyrics_from_letras(artist.strip(), title.strip())
-    if result.get("success"):
-        return result
+    safe_artist = artist.strip()
+    safe_title = title.strip()
 
-    return JSONResponse(status_code=404, content=result)
+    provider = LYRICS_PROVIDER if LYRICS_PROVIDER in {"hybrid", "ovh", "legacy"} else "hybrid"
+    last_error: dict | None = None
+
+    if provider in {"hybrid", "ovh"}:
+        ovh_result = _get_lyrics_from_ovh(safe_artist, safe_title)
+        if ovh_result.get("success"):
+            return ovh_result
+        last_error = ovh_result
+        if provider == "ovh":
+            return JSONResponse(status_code=404, content=ovh_result)
+
+    letras_result = _get_lyrics_from_letras(safe_artist, safe_title)
+    if letras_result.get("success"):
+        return letras_result
+
+    if provider == "hybrid" and last_error:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error": "LyricsNotFound",
+                "message": f"lyrics.ovh: {last_error.get('message', 'unknown')} | letras.com: {letras_result.get('message', 'unknown')}",
+            },
+        )
+
+    return JSONResponse(status_code=404, content=letras_result)
 
 
 def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, None], str]:
