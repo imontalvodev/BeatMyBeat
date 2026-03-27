@@ -216,6 +216,10 @@ def _netstat_connections_for_port(port: int) -> list[str]:
     Usamos `netstat` para evitar dependencias extra (psutil) en Windows.
     """
     try:
+        # En algunas imágenes Docker slim no existe `netstat`.
+        # Si no está disponible, desactivamos este muestreo silenciosamente.
+        if shutil.which("netstat") is None:
+            return []
         # Evitar `findstr` para que funcione tanto en Windows como en Linux.
         output = subprocess.check_output(
             "netstat -ano",
