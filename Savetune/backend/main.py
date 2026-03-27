@@ -3,12 +3,24 @@
 import os
 import tempfile
 import re
+import json
+import unicodedata
+import shutil
+import uuid
+import threading
+import queue as queue_module
+import time
+import logging
+import subprocess
+import zipfile
+from collections import deque
+from functools import lru_cache
 from typing import Generator
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 
@@ -16,6 +28,9 @@ from services.spotify import SpotifyPlaylistScraper
 from services.spotify_api import SpotifyWebAPI
 import yt_dlp
 from mutagen import File as MutagenFile
+from mutagen.id3 import APIC, ID3, ID3NoHeaderError
+import requests
+from bs4 import BeautifulSoup
 
 
 app = FastAPI(title="SaveTune Python Backend")
@@ -29,6 +44,904 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def _log_get_requests_middleware(request: Request, call_next):
+    """
+    Log de depuración:
+    1) todas las peticiones GET
+    2) errores (>= 400), incluyendo 404
+    """
+    if request.method != "GET":
+        return await call_next(request)
+
+    start = time.time()
+    try:
+        response = await call_next(request)
+    finally:
+        # Si call_next lanza, lo re-lanza FastAPI pero no registramos aquí
+        pass
+
+    elapsed_ms = int((time.time() - start) * 1000)
+    query_str = str(request.url.query) if request.url.query else ""
+    url_part = request.url.path + (("?" + query_str) if query_str else "")
+
+    _get_logger.info(f"{url_part} status={response.status_code} elapsed_ms={elapsed_ms}")
+    if response.status_code >= 400:
+        _error_logger.info(f"{url_part} status={response.status_code} elapsed_ms={elapsed_ms}")
+
+    return response
+
+# --- Descargas concurrentes + cola para multijugador ---
+# Objetivo: máximo de `MAX_CONCURRENT_DOWNLOADS` descargas en paralelo y,
+# si se supera, informar al frontend con una posición en cola.
+MAX_CONCURRENT_DOWNLOADS = int(os.environ.get("MAX_CONCURRENT_DOWNLOADS", "5"))
+MAX_DOWNLOAD_QUEUE_SIZE = int(os.environ.get("MAX_DOWNLOAD_QUEUE_SIZE", "200"))
+DOWNLOAD_JOB_TTL_SECONDS = int(os.environ.get("DOWNLOAD_JOB_TTL_SECONDS", "1800"))
+DOWNLOAD_JOB_CLEANUP_INTERVAL_SECONDS = int(os.environ.get("DOWNLOAD_JOB_CLEANUP_INTERVAL_SECONDS", "60"))
+STREAM_CHUNK_SIZE_BYTES = int(os.environ.get("STREAM_CHUNK_SIZE_BYTES", "262144"))
+YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS = int(os.environ.get("YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS", "8"))
+YTDLP_SOCKET_TIMEOUT_SECONDS = int(os.environ.get("YTDLP_SOCKET_TIMEOUT_SECONDS", "20"))
+YTDLP_RETRIES = int(os.environ.get("YTDLP_RETRIES", "5"))
+YTDLP_FRAGMENT_RETRIES = int(os.environ.get("YTDLP_FRAGMENT_RETRIES", "5"))
+YTDLP_HTTP_CHUNK_SIZE_BYTES = int(os.environ.get("YTDLP_HTTP_CHUNK_SIZE_BYTES", "10485760"))
+MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", "5242880"))
+
+# --- Logging (.log) para depuración ---
+LOG_DIR = os.environ.get("SAVETUNE_LOG_DIR", os.path.join(os.path.dirname(__file__), "logs"))
+GET_LOG_PATH = os.environ.get("SAVETUNE_GET_LOG", os.path.join(LOG_DIR, "get_requests.log"))
+ERROR_LOG_PATH = os.environ.get("SAVETUNE_ERROR_LOG", os.path.join(LOG_DIR, "errors_4xx_5xx.log"))
+CONNECTION_LOG_PATH = os.environ.get("SAVETUNE_CONNECTION_LOG", os.path.join(LOG_DIR, "connections.log"))
+CONNECTION_POLL_INTERVAL_SECONDS = int(os.environ.get("SAVETUNE_CONNECTION_POLL_INTERVAL_SECONDS", "2"))
+BACKEND_PORT = int(os.environ.get("PORT", "4001"))
+
+os.makedirs(LOG_DIR, exist_ok=True)
+
+_log_formatter = logging.Formatter("%(asctime)s %(message)s")
+
+_get_logger = logging.getLogger("savetune_get")
+_get_logger.setLevel(logging.INFO)
+_get_logger.propagate = False
+if not _get_logger.handlers:
+    _get_fh = logging.FileHandler(GET_LOG_PATH, encoding="utf-8")
+    _get_fh.setFormatter(_log_formatter)
+    _get_logger.addHandler(_get_fh)
+
+_error_logger = logging.getLogger("savetune_errors")
+_error_logger.setLevel(logging.INFO)
+_error_logger.propagate = False
+if not _error_logger.handlers:
+    _err_fh = logging.FileHandler(ERROR_LOG_PATH, encoding="utf-8")
+    _err_fh.setFormatter(_log_formatter)
+    _error_logger.addHandler(_err_fh)
+
+_conn_logger = logging.getLogger("savetune_connections")
+_conn_logger.setLevel(logging.INFO)
+_conn_logger.propagate = False
+if not _conn_logger.handlers:
+    _conn_fh = logging.FileHandler(CONNECTION_LOG_PATH, encoding="utf-8")
+    _conn_fh.setFormatter(_log_formatter)
+    _conn_logger.addHandler(_conn_fh)
+
+
+def _safe_rmtree(path: str | None) -> None:
+    if not path:
+        return
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _stream_file_bytes(
+    path_file: str,
+    *,
+    cleanup_dir: str | None = None,
+) -> Generator[bytes, None, None]:
+    """
+    Genera chunks desde un fichero para StreamingResponse y limpia recursos al final.
+    """
+    try:
+        with open(path_file, "rb") as f:
+            while chunk := f.read(STREAM_CHUNK_SIZE_BYTES):
+                yield chunk
+    finally:
+        _safe_rmtree(cleanup_dir)
+
+
+def _build_yt_dlp_audio_opts(
+    out_tmpl: str,
+    *,
+    noplaylist: bool,
+    default_search: str | None = None,
+    writethumbnail: bool = False,
+) -> dict:
+    """
+    Opciones base comunes para descargas de audio con yt-dlp.
+    Centraliza valores para reducir duplicación y evitar inconsistencias.
+    """
+    opts: dict = {
+        "format": "bestaudio/best",
+        "outtmpl": out_tmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "prefer_ffmpeg": True,
+        "keepvideo": False,
+        "noplaylist": noplaylist,
+        "writethumbnail": writethumbnail,
+        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+        "retries": YTDLP_RETRIES,
+        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
+        "postprocessors": [
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
+            {"key": "FFmpegMetadata"},
+        ],
+    }
+    if default_search:
+        opts["default_search"] = default_search
+    return opts
+
+# --- Filtros para evitar "letra rara" cuando la canción no tiene vocals ---
+MIN_LYRICS_CHARS = int(os.environ.get("MIN_LYRICS_CHARS", "250"))
+MIN_LYRICS_LINES = int(os.environ.get("MIN_LYRICS_LINES", "6"))
+MIN_LYRICS_SCORE = int(os.environ.get("MIN_LYRICS_SCORE", "3"))
+
+NO_LYRICS_TEXT_MARKERS = [
+    "instrumental",
+    "sin letra",
+    "no tiene letra",
+    "no hay letra",
+    "solo instrumental",
+    "letra instrumental",
+    "sin vocals",
+]
+LYRICS_PROVIDER = (os.environ.get("LYRICS_PROVIDER", "hybrid") or "hybrid").strip().lower()
+LYRICS_OVH_BASE_URL = (os.environ.get("LYRICS_OVH_BASE_URL", "https://api.lyrics.ovh") or "https://api.lyrics.ovh").strip().rstrip("/")
+LYRICS_OVH_TIMEOUT_SECONDS = int(os.environ.get("LYRICS_OVH_TIMEOUT_SECONDS", "8"))
+_download_semaphore = threading.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+_downloads_lock = threading.Lock()
+_active_downloads = 0  # descargas en fase "yt-dlp/ffmpeg" (no streaming)
+
+_download_job_queue = queue_module.Queue()
+_pending_job_ids = deque()  # en orden FIFO
+_download_jobs: dict[str, dict] = {}  # jobId -> info
+_workers_started = False
+_cleanup_started = False
+
+
+def _netstat_connections_for_port(port: int) -> list[str]:
+    """
+    Devuelve líneas de netstat relevantes para un puerto local concreto.
+    Usamos `netstat` para evitar dependencias extra (psutil) en Windows.
+    """
+    try:
+        # Evitar `findstr` para que funcione tanto en Windows como en Linux.
+        output = subprocess.check_output(
+            "netstat -ano",
+            shell=True,
+            text=True,
+            errors="ignore",
+        )
+        # Filtrar por puerto local sin depender de comandos del sistema.
+        port_token = f":{port} "
+        output_lines = output.splitlines()
+        lines = []
+        for ln in output_lines:
+            if not ln:
+                continue
+            if port_token in ln:
+                lines.append(ln.strip())
+        return lines
+    except Exception:
+        return []
+
+
+def _connections_logger_loop() -> None:
+    local_ports = {3001, 4001}  # middle (3001) y back (4001) si se ejecuta todo local
+    # Para el backend, normalmente nos interesa 4001, pero dejamos 3001 para diagnosticar.
+    while True:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        # Registrar solo backend (PORT) por defecto.
+        lines = _netstat_connections_for_port(BACKEND_PORT)
+        _conn_logger.info(f"---- {ts} port={BACKEND_PORT} ----")
+        for ln in lines[:200]:
+            _conn_logger.info(ln)
+        time.sleep(CONNECTION_POLL_INTERVAL_SECONDS)
+
+
+_connections_logger_started = False
+
+
+def _ensure_connections_logger_started() -> None:
+    global _connections_logger_started
+    if _connections_logger_started:
+        return
+    _connections_logger_started = True
+    threading.Thread(target=_connections_logger_loop, daemon=True).start()
+
+
+_ensure_connections_logger_started()
+
+
+def _get_job_snapshot_position(job_id: str) -> int:
+    """
+    Posición aproximada en la cola: número de trabajos (incluyendo activos) que
+    van antes que este job. Se recalcula sobre `_pending_job_ids`.
+    """
+    with _downloads_lock:
+        try:
+            idx = list(_pending_job_ids).index(job_id)
+        except ValueError:
+            idx = -1
+        # activos + trabajos en pending antes de este + este mismo
+        return _active_downloads + (idx if idx >= 0 else 0) + 1
+
+
+def _download_youtube_audio_to_file(
+    video_url: str,
+    job_dir: str,
+    *,
+    spotify_title: str | None = None,
+    spotify_artist: str | None = None,
+    spotify_album: str | None = None,
+    force_spotify_metadata: bool = False,
+) -> tuple[str, str, str, str]:
+    """
+    Descarga audio a disco y devuelve (file_path, filename, media_type, ext).
+    No limpia `job_dir`; lo hace el caller cuando sirva/termine el job.
+    """
+    out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=True,
+        writethumbnail=False,
+    )
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(video_url, download=True)
+
+    if not info:
+        raise ValueError("No se pudo obtener información del vídeo")
+
+    video_id = info.get("id") or "unknown"
+    raw_title = info.get("title") or "audio"
+    title_safe = raw_title.replace("/", "-").replace("\\", "-")[:200]
+
+    # Buscar el archivo descargado
+    path_file = ""
+    for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
+        candidate = os.path.join(job_dir, f"audio_{video_id}{ext}")
+        if os.path.isfile(candidate):
+            path_file = candidate
+            break
+
+    if not path_file:
+        for f in os.listdir(job_dir):
+            if f.startswith(f"audio_{video_id}"):
+                path_file = os.path.join(job_dir, f)
+                break
+
+    if not path_file:
+        raise ValueError("No se encontró el archivo de audio descargado")
+
+    ext = os.path.splitext(path_file)[1].lstrip(".")
+
+    # Enriquecer metadatos ID3
+    if ext == "mp3":
+        if force_spotify_metadata:
+            track_title = spotify_title or raw_title
+            track_artist = spotify_artist or info.get("artist") or info.get("uploader") or ""
+            track_album = spotify_album or info.get("album") or ""
+        else:
+            track_title = raw_title
+            track_artist = info.get("artist") or info.get("uploader") or ""
+            track_album = info.get("album") or ""
+
+            if " - " in raw_title and not track_artist:
+                parts = raw_title.rsplit(" - ", 1)
+                if len(parts) == 2:
+                    left, right = parts[0].strip(), parts[1].strip()
+                    if 2 <= len(right) <= 40:
+                        track_title, track_artist = left, right
+
+        audio = MutagenFile(path_file, easy=True)
+        if audio is not None:
+            audio["title"] = [track_title]
+            if track_artist:
+                audio["artist"] = [track_artist]
+            if track_album:
+                audio["album"] = [track_album]
+            audio.save()
+
+    media_type = (
+        "audio/mpeg"
+        if ext == "mp3"
+        else "audio/mp4"
+        if ext in ("m4a", "mp4")
+        else "audio/webm"
+    )
+
+    filename = f"{title_safe}.{ext}"
+    return path_file, filename, media_type, ext
+
+
+def _download_auto_audio_to_file(
+    final_query: str,
+    job_dir: str,
+    *,
+    spotify_title: str | None = None,
+    spotify_artist: str | None = None,
+    spotify_album: str | None = None,
+    spotify_image_url: str | None = None,
+) -> tuple[str, str, str, str]:
+    """
+    Variante de descarga automática (ytsearch1) que devuelve el audio a disco.
+    """
+    out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
+
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=True,
+        default_search="ytsearch1",
+        writethumbnail=False,
+    )
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(final_query, download=True)
+
+    if not info:
+        raise ValueError("No se pudo obtener información del vídeo")
+
+    video_info = info["entries"][0] if "entries" in info and info["entries"] else info
+
+    video_id = (video_info.get("id") or "unknown") if isinstance(video_info, dict) else "unknown"
+    raw_title = (video_info.get("title") or "audio") if isinstance(video_info, dict) else "audio"
+    title_safe = raw_title.replace("/", "-").replace("\\", "-")[:200]
+
+    path_file = ""
+    for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
+        candidate = os.path.join(job_dir, f"audio_{video_id}{ext}")
+        if os.path.isfile(candidate):
+            path_file = candidate
+            break
+
+    if not path_file:
+        for f in os.listdir(job_dir):
+            if f.startswith(f"audio_{video_id}"):
+                path_file = os.path.join(job_dir, f)
+                break
+
+    if not path_file:
+        raise ValueError("No se encontró el archivo de audio descargado")
+
+    ext = os.path.splitext(path_file)[1].lstrip(".")
+
+    if ext == "mp3":
+        track_title = spotify_title or raw_title
+        track_artist = spotify_artist or (
+            video_info.get("artist") if isinstance(video_info, dict) else ""
+        ) or (video_info.get("uploader") if isinstance(video_info, dict) else "") or ""
+        track_album = spotify_album or (video_info.get("album") if isinstance(video_info, dict) else "") or ""
+
+        if " - " in raw_title and not track_artist:
+            parts_split = raw_title.rsplit(" - ", 1)
+            if len(parts_split) == 2:
+                left, right = parts_split[0].strip(), parts_split[1].strip()
+                if 2 <= len(right) <= 40:
+                    track_title, track_artist = left, right
+
+        audio = MutagenFile(path_file, easy=True)
+        if audio is not None:
+            audio["title"] = [track_title]
+            if track_artist:
+                audio["artist"] = [track_artist]
+            if track_album:
+                audio["album"] = [track_album]
+            audio.save()
+        fallback_thumb = video_info.get("thumbnail") if isinstance(video_info, dict) else None
+        cover_url = _pick_cover_url(spotify_image_url, fallback_thumb)
+        _embed_cover_art_mp3(path_file, cover_url)
+
+    media_type = (
+        "audio/mpeg"
+        if ext == "mp3"
+        else "audio/mp4"
+        if ext in ("m4a", "mp4")
+        else "audio/webm"
+    )
+
+    filename = f"{title_safe}.{ext}"
+    return path_file, filename, media_type, ext
+
+
+def _sanitize_filename(name: str, fallback: str = "album") -> str:
+    raw = (name or "").strip()
+    if not raw:
+        raw = fallback
+    safe = re.sub(r"[\\/:*?\"<>|]+", "-", raw)
+    safe = re.sub(r"\s+", " ", safe).strip()[:180]
+    return safe or fallback
+
+
+def _fetch_artwork_bytes(image_url: str | None) -> tuple[bytes, str] | None:
+    url = (image_url or "").strip()
+    if not url or not url.startswith(("http://", "https://")):
+        return None
+    try:
+        resp = requests.get(url, timeout=10, stream=True)
+        resp.raise_for_status()
+        mime = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip().lower()
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_ARTWORK_BYTES:
+                return None
+            chunks.append(chunk)
+        data = b"".join(chunks)
+        if not data:
+            return None
+        if mime not in ("image/jpeg", "image/jpg", "image/png", "image/webp"):
+            mime = "image/jpeg"
+        if mime == "image/jpg":
+            mime = "image/jpeg"
+        return data, mime
+    except Exception:
+        return None
+
+
+def _embed_cover_art_mp3(path_file: str, image_url: str | None) -> None:
+    art = _fetch_artwork_bytes(image_url)
+    if not art:
+        return
+    data, mime = art
+    _embed_cover_art_mp3_bytes(path_file, data, mime)
+
+
+def _embed_cover_art_mp3_bytes(path_file: str, data: bytes, mime: str) -> None:
+    try:
+        try:
+            tags = ID3(path_file)
+        except ID3NoHeaderError:
+            tags = ID3()
+        tags.delall("APIC")
+        tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=data))
+        tags.save(path_file, v2_version=3)
+    except Exception:
+        pass
+
+
+def _pick_cover_url(primary_url: str | None, fallback_url: str | None) -> str | None:
+    primary = (primary_url or "").strip()
+    if primary.startswith(("http://", "https://")):
+        return primary
+    fallback = (fallback_url or "").strip()
+    if fallback.startswith(("http://", "https://")):
+        return fallback
+    return None
+
+
+def _resolve_playlist_url_from_album(album: str, artist: str) -> str | None:
+    """
+    Intenta resolver una playlist/álbum de YouTube a partir de album+artist.
+    """
+    album = (album or "").strip()
+    artist = (artist or "").strip()
+    if not album or not artist:
+        return None
+
+    queries = [
+        f"ytmusicsearch12:{artist} {album} album",
+        f"ytmusicsearch12:{album} {artist}",
+        f"ytsearch12:{artist} {album} album playlist",
+        f"ytsearch12:{artist} {album} official album playlist",
+        f"ytsearch12:{album} {artist} topic album",
+        f"ytsearch12:{artist} {album} full album",
+    ]
+
+    def _normalize_candidate_url(raw_url: str) -> str | None:
+        u = (raw_url or "").strip()
+        if not u:
+            return None
+        if u.startswith("http"):
+            return u
+        if u.startswith("/watch"):
+            return f"https://www.youtube.com{u}"
+        if u.startswith("watch?"):
+            return f"https://www.youtube.com/{u}"
+        # A veces devuelve solo id
+        if len(u) >= 10 and not u.startswith("ytsearch"):
+            return f"https://www.youtube.com/watch?v={u}"
+        return None
+
+    def _playlist_url_from_entry(entry: dict, base_url: str | None, candidate_type: str) -> str | None:
+        playlist_id = (entry.get("playlist_id") or "").strip()
+        if not playlist_id and candidate_type in ("playlist", "multi_video"):
+            maybe_id = (entry.get("id") or "").strip()
+            if maybe_id and len(maybe_id) > 11:
+                playlist_id = maybe_id
+
+        if playlist_id:
+            return f"https://www.youtube.com/playlist?list={playlist_id}"
+
+        for raw in (
+            base_url or "",
+            str(entry.get("url") or ""),
+            str(entry.get("webpage_url") or ""),
+            str(entry.get("original_url") or ""),
+        ):
+            pid = _extract_playlist_id(raw)
+            if pid:
+                return f"https://www.youtube.com/playlist?list={pid}"
+
+        return None
+
+    # 1) Reunir candidatos con puntuación (playlist explícita + posibles candidatos)
+    candidate_scores: dict[str, int] = {}
+    for query in queries:
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "skip_download": True,
+            "noplaylist": False,
+        }
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(query, download=False)
+        except Exception:
+            continue
+
+        entries = info.get("entries") if isinstance(info, dict) else None
+        if not entries:
+            continue
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            candidate_type = (entry.get("_type") or "").lower()
+            url = _normalize_candidate_url(entry.get("url") or entry.get("webpage_url") or "")
+            title = (entry.get("title") or "").lower()
+
+            candidate_playlist_url = _playlist_url_from_entry(entry, url, candidate_type)
+            if not candidate_playlist_url:
+                continue
+
+            score = 0
+            if candidate_playlist_url:
+                score += 5
+            if candidate_type in ("playlist", "multi_video"):
+                score += 3
+            if "album" in title:
+                score += 2
+            if artist.lower() in title:
+                score += 1
+            if album.lower() in title:
+                score += 1
+
+            resolved_candidate_url = candidate_playlist_url or url
+            if not resolved_candidate_url:
+                continue
+
+            prev = candidate_scores.get(resolved_candidate_url)
+            if prev is None or score > prev:
+                candidate_scores[resolved_candidate_url] = score
+
+    # 2) Validar los mejores candidatos con metadata real y exigir >= 2 items.
+    ranked_candidates = sorted(candidate_scores.items(), key=lambda it: it[1], reverse=True)
+    for url, _score in ranked_candidates[:10]:
+        try:
+            meta = _fetch_youtube_playlist_metadata(url)
+            item_count = int(meta.get("itemCount") or 0)
+            if item_count <= 1:
+                continue
+            return meta.get("url") or url
+        except Exception:
+            continue
+
+    return None
+
+
+def _fetch_youtube_playlist_metadata(playlist_url: str) -> dict:
+    """
+    Devuelve metadata ligera de una playlist/álbum de YouTube sin descargar audio.
+    """
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "skip_download": True,
+        "noplaylist": False,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(playlist_url, download=False)
+
+    if not info or not isinstance(info, dict):
+        raise ValueError("No se pudo obtener metadata de la playlist")
+
+    entries = info.get("entries") or []
+    item_count = len(entries) if isinstance(entries, list) else 0
+
+    return {
+        "title": info.get("title") or "",
+        "id": info.get("id") or "",
+        "url": info.get("webpage_url") or playlist_url,
+        "uploader": info.get("uploader") or "",
+        "itemCount": item_count,
+    }
+
+
+def _download_youtube_playlist_to_zip(playlist_url: str, job_dir: str) -> tuple[str, str, str]:
+    """
+    Descarga toda una playlist/álbum de YouTube y devuelve:
+    (zip_path, zip_filename, media_type)
+    """
+    out_tmpl = os.path.join(job_dir, "%(playlist_index)03d - %(title).180s.%(ext)s")
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=False,
+        writethumbnail=False,
+    )
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(playlist_url, download=True)
+
+    if not info:
+        raise ValueError("No se pudo obtener información de la playlist/álbum")
+
+    playlist_title = ""
+    entries_list: list[dict] = []
+    if isinstance(info, dict):
+        playlist_title = (info.get("title") or "").strip()
+        raw_entries = info.get("entries") or []
+        if isinstance(raw_entries, list):
+            entries_list = [e for e in raw_entries if isinstance(e, dict)]
+
+    files: list[str] = []
+    for name in os.listdir(job_dir):
+        p = os.path.join(job_dir, name)
+        if not os.path.isfile(p):
+            continue
+        ext = os.path.splitext(name)[1].lower()
+        if ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
+            files.append(p)
+
+    if not files:
+        raise ValueError("No se descargó ningún audio de la playlist")
+
+    files.sort(key=lambda p: os.path.basename(p).lower())
+
+    # Embebemos portada y metadatos por pista para que el player muestre la imagen correcta
+    # de cada canción y la búsqueda de letras funcione con title/artist.
+    # Caché local para evitar descargar la misma imagen muchas veces.
+    artwork_cache: dict[str, tuple[bytes, str]] = {}
+
+    def _best_thumbnail_url(entry: dict) -> str | None:
+        t = entry.get("thumbnail")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+        thumbs = entry.get("thumbnails") or []
+        if isinstance(thumbs, list) and thumbs:
+            best = None
+            best_w = -1
+            for item in thumbs:
+                if not isinstance(item, dict):
+                    continue
+                url = item.get("url")
+                w = item.get("width") or 0
+                if isinstance(url, str) and url.startswith(("http://", "https://")) and w >= best_w:
+                    best = url
+                    best_w = w
+            return best
+        return None
+
+    def _get_artwork(url: str | None) -> tuple[bytes, str] | None:
+        if not url:
+            return None
+        if url in artwork_cache:
+            return artwork_cache[url]
+        art = _fetch_artwork_bytes(url)
+        if art:
+            artwork_cache[url] = art
+        return art
+
+    for idx, p in enumerate(files):
+        if os.path.splitext(p)[1].lower() != ".mp3":
+            continue
+        entry = entries_list[idx] if idx < len(entries_list) else None
+
+        # 1) Metadatos: mantener title/artist por pista (clave para letras)
+        if isinstance(entry, dict):
+            raw_t = (entry.get("title") or "").strip()
+            uploader = (entry.get("uploader") or "").strip()
+            # Mantener el mismo contrato de la app:
+            # - `artist` debe ser el uploader/canal
+            # - `title` debe ser el nombre de la canción (intentando limpiar prefijos tipo "Artist: Song")
+            track_artist = uploader
+            track_title = raw_t or "track"
+
+            uploader_l = track_artist.lower().strip()
+            raw_l = raw_t.lower()
+
+            # Caso "Artist: Song ..."
+            if ":" in raw_t:
+                left, right = raw_t.split(":", 1)
+                if left.strip().lower() == uploader_l and right.strip():
+                    track_title = right.strip()
+                    raw_l = track_title.lower()
+
+            # Caso "Artist - Song ..." o "Song - Artist ..."
+            if " - " in track_title:
+                a, b = track_title.rsplit(" - ", 1)
+                a_l = a.strip().lower()
+                b_l = b.strip().lower()
+                if a_l == uploader_l and b.strip():
+                    track_title = b.strip()
+                elif b_l == uploader_l and a.strip():
+                    track_title = a.strip()
+
+            track_album = playlist_title or (entry.get("album") or "").strip()
+            try:
+                audio = MutagenFile(p, easy=True)
+                if audio is not None:
+                    audio["title"] = [track_title]
+                    if track_artist:
+                        audio["artist"] = [track_artist]
+                    if track_album:
+                        audio["album"] = [track_album]
+                    audio.save()
+            except Exception:
+                pass
+
+            # 2) Portada: miniatura propia de esa pista
+            thumb_url = _best_thumbnail_url(entry)
+            art = _get_artwork(thumb_url)
+            if art:
+                data, mime = art
+                _embed_cover_art_mp3_bytes(p, data, mime)
+
+    zip_name = f"{_sanitize_filename(playlist_title, fallback='youtube-album')}.zip"
+    zip_path = os.path.join(job_dir, zip_name)
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in files:
+            zf.write(p, arcname=os.path.basename(p))
+
+    return zip_path, zip_name, "application/zip"
+
+
+def _download_job_worker():
+    """
+    Worker FIFO: cada job descarga a disco y queda listo para streaming.
+    """
+    global _active_downloads
+    while True:
+        job_id = _download_job_queue.get()
+        if not job_id:
+            continue
+
+        job = _download_jobs.get(job_id)
+        if not job:
+            _download_job_queue.task_done()
+            continue
+
+        try:
+            # Reservar un slot de descarga (yt-dlp/ffmpeg). Se libera al terminar de descargar.
+            _download_semaphore.acquire()
+            with _downloads_lock:
+                _active_downloads += 1
+                # sacar de pending (si está)
+                try:
+                    # pending mantiene FIFO; debería estar por delante pero no asumimos.
+                    if job_id in _pending_job_ids:
+                        _pending_job_ids.remove(job_id)
+                except ValueError:
+                    pass
+                job["status"] = "processing"
+                job["startedAt"] = int(time.time())
+
+            job_dir = tempfile.mkdtemp(prefix="savetune_job_")
+            job["job_dir"] = job_dir
+
+            job_type = job.get("type")
+            if job_type == "download":
+                video_url = f"https://www.youtube.com/watch?v={job['videoId']}"
+                file_path, filename, media_type, _ = _download_youtube_audio_to_file(
+                    video_url,
+                    job_dir,
+                    force_spotify_metadata=False,
+                )
+            elif job_type == "download-auto":
+                final_query = job.get("final_query")
+                file_path, filename, media_type, _ = _download_auto_audio_to_file(
+                    final_query,
+                    job_dir,
+                    spotify_title=job.get("title"),
+                    spotify_artist=job.get("artist"),
+                    spotify_album=job.get("album"),
+                    spotify_image_url=job.get("imageUrl"),
+                )
+            else:
+                raise ValueError(f"Unknown job type: {job_type}")
+
+            with _downloads_lock:
+                job["status"] = "ready"
+                job["file_path"] = file_path
+                job["filename"] = filename
+                job["media_type"] = media_type
+                job["readyAt"] = int(time.time())
+
+        except Exception as e:
+            with _downloads_lock:
+                job["status"] = "error"
+                job["error"] = str(e)
+                job["errorAt"] = int(time.time())
+
+            # Evitar fugas de disco si el job falla (cleanup del job_dir si existe)
+            try:
+                jd = job.get("job_dir")
+                if jd and os.path.isdir(jd):
+                    shutil.rmtree(jd, ignore_errors=True)
+            except Exception:
+                pass
+        finally:
+            with _downloads_lock:
+                _active_downloads = max(0, _active_downloads - 1)
+            _download_semaphore.release()
+            _download_job_queue.task_done()
+
+
+def _ensure_workers_started():
+    global _workers_started
+    if _workers_started:
+        return
+    _workers_started = True
+    for _ in range(MAX_CONCURRENT_DOWNLOADS):
+        t = threading.Thread(target=_download_job_worker, daemon=True)
+        t.start()
+
+    # Lanzar cleanup para evitar crecimiento sin fin de `_download_jobs`
+    global _cleanup_started
+    if _cleanup_started:
+        return
+    _cleanup_started = True
+
+    def _job_cleanup_loop():
+        while True:
+            time.sleep(DOWNLOAD_JOB_CLEANUP_INTERVAL_SECONDS)
+            now = int(time.time())
+            to_delete: list[tuple[str, str]] = []
+            with _downloads_lock:
+                for job_id, job in list(_download_jobs.items()):
+                    created_at = job.get("createdAt") or job.get("startedAt") or job.get("readyAt") or job.get("errorAt") or 0
+                    status = job.get("status")
+                    if status in ("queued", "processing", "ready", "error") and created_at:
+                        if now - int(created_at) > DOWNLOAD_JOB_TTL_SECONDS:
+                            job_dir = job.get("job_dir") or ""
+                            to_delete.append((job_id, job_dir))
+                            # Si sigue pendiente, sacarlo del FIFO para que no altere posiciones
+                            try:
+                                if job_id in _pending_job_ids:
+                                    _pending_job_ids.remove(job_id)
+                            except ValueError:
+                                pass
+
+                for job_id, _job_dir in to_delete:
+                    _download_jobs.pop(job_id, None)
+
+            # Borrar fuera del lock (reduce el tiempo bloqueando el estado global)
+            for _job_id, job_dir in to_delete:
+                if job_dir and os.path.isdir(job_dir):
+                    try:
+                        shutil.rmtree(job_dir, ignore_errors=True)
+                    except OSError:
+                        pass
+
+    threading.Thread(target=_job_cleanup_loop, daemon=True).start()
+
+
 def _extract_playlist_id(url: str) -> str | None:
     """Extrae el ID de la playlist desde una URL"""
     if "playlist/" in url:
@@ -36,6 +949,534 @@ def _extract_playlist_id(url: str) -> str | None:
         if m:
             return m.group(1)
     return None
+
+
+def _strip_accents(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s)
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
+
+def _slugify_letras(s: str) -> str:
+    """
+    Convierte texto a slug estilo letras.com.
+    Ej: "Creep (Acoustic)" -> "creep-acoustic"
+    """
+    s = (s or "").strip().lower()
+    s = _strip_accents(s)
+    # Normalizaciones comunes
+    s = s.replace("&", " and ")
+    s = re.sub(r"\b(feat|ft)\.?\b", "", s, flags=re.I)
+    s = re.sub(r"[\[\]\(\)\{\}]", " ", s)  # quita paréntesis/llaves
+    s = re.sub(r"[\"'“”‘’`´]", "", s)
+    s = re.sub(r"[^a-z0-9]+", "-", s)  # todo lo no alfanumérico a '-'
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    return s
+
+
+def _candidate_title_variants(title: str) -> list[str]:
+    t = (title or "").strip()
+    if not t:
+        return []
+
+    # Quitar contenido entre paréntesis (versiones, remasters, etc.)
+    no_paren = re.sub(r"\s*[\(\[].*?[\)\]]\s*", " ", t).strip()
+
+    # Quitar sufijos comunes
+    no_suffix = re.sub(
+        r"\s*-\s*(remaster(ed)?(\s*\d{4})?|radio edit|edit|mono|stereo|live|acoustic|demo|official.*)$",
+        "",
+        t,
+        flags=re.I,
+    ).strip()
+
+    # Prioridad: variantes "limpias" primero, y el título original al final.
+    # Esto evita quedarnos con páginas tipo "(Demo)" cuando también existe la versión normal.
+    variants: list[str] = []
+    for cand in (no_paren, no_suffix, t):
+        if cand and cand.strip():
+            variants.append(cand.strip())
+
+    # Deduplicar preservando orden
+    out: list[str] = []
+    seen = set()
+    for v in variants:
+        key = v.lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(v)
+    return out
+
+
+def _letras_candidate_urls(artist: str, title: str) -> list[str]:
+    artist_slug = _slugify_letras(artist)
+    if not artist_slug:
+        return []
+
+    urls: list[str] = []
+    for t in _candidate_title_variants(title):
+        title_slug = _slugify_letras(t)
+        if not title_slug:
+            continue
+        urls.append(f"https://m.letras.com/{artist_slug}/{title_slug}/")
+        urls.append(f"https://www.letras.com/{artist_slug}/{title_slug}/")
+
+    # Deduplicar preservando orden
+    out: list[str] = []
+    seen = set()
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def _extract_lyrics_from_jsonld(soup: BeautifulSoup) -> str | None:
+    scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
+    for sc in scripts:
+        raw = sc.string or sc.get_text(strip=True) or ""
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+
+        # JSON-LD puede venir como lista o dict
+        nodes = data if isinstance(data, list) else [data]
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            lyrics = node.get("lyrics")
+            if isinstance(lyrics, dict):
+                text = lyrics.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+            if isinstance(lyrics, str) and lyrics.strip():
+                return lyrics.strip()
+    return None
+
+
+def _normalize_lyrics_text(text: str) -> str:
+    # Mantener saltos de línea “bonitos”
+    text = re.sub(r"\r\n?", "\n", text or "")
+    # Colapsar demasiadas líneas vacías
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
+def _page_canonical_url(soup: BeautifulSoup) -> str:
+    link = soup.find("link", attrs={"rel": "canonical"})
+    href = link.get("href") if link else ""
+    return href or ""
+
+
+def _extract_lyrics_from_known_letras_containers(soup: BeautifulSoup) -> str | None:
+    """
+    Letras.com suele renderizar la letra dentro de contenedores concretos, por ejemplo:
+    - div.lyric-original  (muy común; el que enseñas en la captura)
+    - div.lyric-cnt / div#lyrics / article div.lyric (variantes)
+
+    Aquí construimos la letra a partir de <p> y <br> para preservar saltos.
+    """
+    selectors = [
+        "div.lyric-original",
+        "div.lyric-cnt",
+        "div#lyrics",
+        "article div.lyric",
+        "article div.lyric-original",
+    ]
+
+    for sel in selectors:
+        node = soup.select_one(sel)
+        if not node:
+            continue
+
+        # Si hay <p>, usar esos como líneas/estrofas
+        ps = node.find_all("p")
+        if ps:
+            parts: list[str] = []
+            for p in ps:
+                txt = p.get_text("\n", strip=True)
+                if txt:
+                    parts.append(txt)
+                else:
+                    parts.append("")
+            out = "\n\n".join(parts)
+            out = _normalize_lyrics_text(out)
+            if len(out) >= 80 and out.count("\n") >= 3:
+                return out
+
+        # Si no hay <p>, respetar <br> usando separador \n
+        txt = node.get_text("\n", strip=True)
+        txt = _normalize_lyrics_text(txt)
+        if len(txt) >= 80 and txt.count("\n") >= 3:
+            return txt
+
+    return None
+
+
+def _extract_lyrics_from_dom(soup: BeautifulSoup) -> str | None:
+    """
+    Fallback heurístico: intenta encontrar el bloque de letra como el texto más largo
+    dentro de contenedores cuyo class/id sugiere 'lyric/letra'.
+    """
+    # Primero: contenedores conocidos de letras.com
+    known = _extract_lyrics_from_known_letras_containers(soup)
+    if known:
+        return known
+
+    candidates: list[str] = []
+
+    # 1) Contenedores obvios por class/id
+    for tag in soup.find_all(["div", "section", "article"]):
+        attrs = " ".join(
+            [
+                " ".join(tag.get("class", []) or []),
+                tag.get("id") or "",
+                tag.get("data-testid") or "",
+            ]
+        ).lower()
+        if not attrs:
+            continue
+        if ("lyric" in attrs) or ("lyrics" in attrs) or ("letra" in attrs):
+            txt = tag.get_text("\n", strip=True)
+            if txt and len(txt) >= 200:
+                candidates.append(txt)
+
+    # 2) Evitar el "body completo" (mete menús, CTAs, etc.).
+    # Si no hay candidatos razonables, preferimos fallar para que el caller pruebe otra URL.
+    if not candidates:
+        return None
+
+    best = max(candidates, key=lambda t: len(t), default="")
+    if not best or len(best) < 200:
+        return None
+
+    # Recorte: cortar a partir de "Written by:" si existe
+    cut_markers = ["Written by:", "Escrita por:", "Composicao:", "Composição:", "Written-by:"]
+    low = best.lower()
+    for m in cut_markers:
+        idx = low.find(m.lower())
+        if idx != -1:
+            best = best[:idx].strip()
+            break
+
+    # Quitar ruido típico de navegación/acciones
+    noise_lines = {
+        "lyrics",
+        "meaning",
+        "translations",
+        "letra",
+        "traducción",
+        "restoreapply",
+        "clear selection",
+        "join the community",
+        "most popular",
+        "most played",
+        "related playlists",
+        "agregar a favoritos",
+        "agregar a playlist",
+        "tamaño de la fuente",
+        "acordes",
+        "imprimir",
+        "corregir",
+        "desplazamiento automático",
+        "anotaciones",
+        "habilitadas",
+        "deshabilitadas",
+    }
+    lines = [ln.strip() for ln in best.splitlines()]
+    cleaned: list[str] = []
+    for ln in lines:
+        if not ln:
+            cleaned.append("")
+            continue
+        if ln.lower() in noise_lines:
+            continue
+        cleaned.append(ln)
+
+    out = "\n".join(cleaned)
+    out = _normalize_lyrics_text(out)
+
+    # Heurística final: asegurarnos de que sea "poesía" (varias líneas)
+    if out.count("\n") < 3:
+        return None
+    return out
+
+
+def _page_song_artist(soup: BeautifulSoup) -> tuple[str, str]:
+    """
+    Obtiene (song_title, artist_name) desde encabezados visibles.
+    En letras.com suele ser h1 = canción, h2 = artista.
+    """
+    h1 = soup.find("h1")
+    h2 = soup.find("h2")
+    song = h1.get_text(" ", strip=True) if h1 else ""
+    artist = h2.get_text(" ", strip=True) if h2 else ""
+    return song, artist
+
+
+def _score_letras_candidate(
+    requested_title: str, requested_artist: str, page_title: str, page_artist: str
+) -> int:
+    """
+    Puntúa una página candidata para escoger la mejor cuando hay variantes
+    (demo, acústica, etc.).
+    """
+    req_base = _slugify_letras(re.sub(r"\s*[\(\[].*?[\)\]]\s*", " ", requested_title).strip())
+    page_slug = _slugify_letras(page_title)
+
+    score = 0
+
+    if page_slug == req_base:
+        score += 5
+    elif req_base and page_slug.startswith(req_base):
+        score += 2
+    elif req_base and req_base in page_slug:
+        score += 1
+
+    # Coincidencia de artista (suave: en letras puede venir sin "The", etc.)
+    req_artist = _slugify_letras(requested_artist)
+    page_artist_slug = _slugify_letras(page_artist)
+    if req_artist and page_artist_slug == req_artist:
+        score += 2
+    elif req_artist and req_artist in page_artist_slug:
+        score += 1
+
+    # Penalizar "demo" si el usuario no lo pidió explícitamente
+    req_has_demo = bool(re.search(r"\bdemo\b", requested_title, flags=re.I))
+    page_has_demo = bool(re.search(r"\bdemo\b", page_title, flags=re.I))
+    if page_has_demo and not req_has_demo:
+        score -= 4
+
+    return score
+
+
+def _is_demo_title(page_title: str) -> bool:
+    return bool(re.search(r"\bdemo\b", page_title or "", flags=re.I))
+
+
+def _discover_song_urls_from_artist_page(artist_slug: str, title_base_slug: str) -> list[str]:
+    """
+    Fallback: muchas canciones tienen URL numérica (ej: /linkin-park/23091/).
+    Para evitar quedarnos con versiones "demo", consultamos la página del artista
+    y extraemos enlaces que parezcan canciones del artista.
+    """
+    if not artist_slug:
+        return []
+
+    candidates: list[str] = []
+    for base in (f"https://www.letras.com/{artist_slug}/", f"https://m.letras.com/{artist_slug}/"):
+        try:
+            status, html = _fetch_letras_page(base)
+            if status != 200 or not html:
+                continue
+            soup = BeautifulSoup(html, "html.parser")
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                text = a.get_text(" ", strip=True) or ""
+                if not href.startswith("http"):
+                    # normalizar a absoluto
+                    if href.startswith("/"):
+                        href = "https://www.letras.com" + href
+                    else:
+                        continue
+
+                # Solo enlaces del propio artista
+                if f"/{artist_slug}/" not in href:
+                    continue
+
+                text_slug = _slugify_letras(text)
+
+                # Coincidencia fuerte por texto del enlace (normalmente es el título de la canción)
+                if title_base_slug and text_slug == title_base_slug:
+                    candidates.append(href)
+                    continue
+
+                # Coincidencia por slug del título en el href (si lo tiene)
+                if title_base_slug and title_base_slug in href:
+                    candidates.append(href)
+                    continue
+
+                # Enlaces numéricos SOLO si el texto parece el título buscado (o lo contiene)
+                if re.search(rf"/{re.escape(artist_slug)}/\d+/?$", href):
+                    if title_base_slug and (title_base_slug in text_slug or text_slug in title_base_slug):
+                        candidates.append(href)
+
+        except Exception:
+            continue
+
+    # Deduplicar preservando orden
+    out: list[str] = []
+    seen = set()
+    for u in candidates:
+        u = u.split("#", 1)[0]
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    # No necesitamos muchos: con 10-15 suele bastar y reduce latencia muchísimo.
+    return out[:15]
+
+
+@lru_cache(maxsize=512)
+def _fetch_letras_page(url: str) -> tuple[int, str]:
+    # Session global simple para keep-alive (mejora latencia en múltiples requests)
+    global _LETRAS_SESSION  # type: ignore[name-defined]
+    try:
+        sess = _LETRAS_SESSION  # type: ignore[name-defined]
+    except Exception:
+        sess = requests.Session()
+        _LETRAS_SESSION = sess  # type: ignore[name-defined]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+    }
+    resp = sess.get(url, headers=headers, timeout=10, allow_redirects=True)
+    return resp.status_code, resp.text
+
+
+@lru_cache(maxsize=256)
+def _get_lyrics_from_letras(artist: str, title: str) -> dict:
+    urls = _letras_candidate_urls(artist, title)
+    if not urls:
+        return {"success": False, "error": "MissingMetadata", "message": "artist y title son obligatorios"}
+
+    # Fallback: añadir URLs descubiertas desde la página del artista (incluye IDs numéricos)
+    artist_slug = _slugify_letras(artist)
+    title_base_slug = _slugify_letras(re.sub(r"\s*[\(\[].*?[\)\]]\s*", " ", title).strip())
+    discovered = _discover_song_urls_from_artist_page(artist_slug, title_base_slug)
+    for u in discovered:
+        if u not in urls:
+            urls.append(u)
+
+    last_error = ""
+    best: dict | None = None
+    best_score = -10_000
+    for url in urls:
+        try:
+            status, html = _fetch_letras_page(url)
+            if status != 200 or not html:
+                last_error = f"HTTP {status}"
+                continue
+
+            soup = BeautifulSoup(html, "html.parser")
+            page_title, page_artist = _page_song_artist(soup)
+            canonical = _page_canonical_url(soup)
+
+            lyrics = _extract_lyrics_from_jsonld(soup)
+            if not lyrics:
+                lyrics = _extract_lyrics_from_dom(soup)
+
+            if lyrics:
+                # Si es demo y no la pidieron, no aceptarla como único resultado
+                if _is_demo_title(page_title) and not re.search(r"\bdemo\b", title, flags=re.I):
+                    last_error = "DemoVariantSkipped"
+                    continue
+
+                normalized = _normalize_lyrics_text(lyrics)
+                lines_count = normalized.count("\n") + 1 if normalized else 0
+
+                # Filtros: longitud mínima y marcadores de "sin letra"
+                lowered = (normalized or "").lower()
+                if (
+                    (len(normalized) < MIN_LYRICS_CHARS)
+                    or (lines_count < MIN_LYRICS_LINES)
+                    or any(marker in lowered for marker in NO_LYRICS_TEXT_MARKERS)
+                    or any(marker in (page_title or "").lower() for marker in NO_LYRICS_TEXT_MARKERS)
+                ):
+                    last_error = "LyricsFilteredLowQuality"
+                    continue
+
+                candidate = {
+                    "success": True,
+                    "source": "letras.com",
+                    "sourceUrl": canonical or url,
+                    "lyrics": normalized,
+                    "pageTitle": page_title,
+                    "pageArtist": page_artist,
+                }
+                score = _score_letras_candidate(title, artist, page_title, page_artist)
+                if score > best_score:
+                    best_score = score
+                    best = candidate
+                # Si es match perfecto, podemos cortar
+                if best_score >= 7:
+                    break
+
+            last_error = "NoLyricsExtracted"
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    if best and best_score >= MIN_LYRICS_SCORE:
+        return best
+
+    return {
+        "success": False,
+        "error": "LyricsNotFound",
+        "message": f"No se encontraron letras en letras.com ({last_error})",
+        "triedUrls": urls[:10],
+    }
+
+
+def _get_lyrics_from_ovh(artist: str, title: str) -> dict:
+    """
+    Intenta obtener letras desde lyrics.ovh.
+    Mantiene el mismo contrato que consume el frontend.
+    """
+    artist_clean = (artist or "").strip()
+    title_clean = (title or "").strip()
+    if not artist_clean or not title_clean:
+        return {
+            "success": False,
+            "error": "MissingMetadata",
+            "message": "Please provide title and artist",
+        }
+
+    try:
+        encoded_artist = requests.utils.quote(artist_clean, safe="")
+        encoded_title = requests.utils.quote(title_clean, safe="")
+        url = f"{LYRICS_OVH_BASE_URL}/v1/{encoded_artist}/{encoded_title}"
+        resp = requests.get(url, timeout=LYRICS_OVH_TIMEOUT_SECONDS)
+
+        if resp.status_code == 404:
+            return {
+                "success": False,
+                "error": "LyricsNotFound",
+                "message": "No lyrics found in lyrics.ovh",
+            }
+
+        if resp.status_code >= 400:
+            return {
+                "success": False,
+                "error": "LyricsProviderError",
+                "message": f"lyrics.ovh HTTP {resp.status_code}",
+            }
+
+        payload = resp.json()
+        lyrics_text = (payload.get("lyrics") or "").strip() if isinstance(payload, dict) else ""
+        if not lyrics_text:
+            return {
+                "success": False,
+                "error": "LyricsNotFound",
+                "message": "No lyrics payload in lyrics.ovh response",
+            }
+
+        return {
+            "success": True,
+            "source": "lyrics.ovh",
+            "sourceUrl": "https://lyrics.ovh",
+            "lyrics": lyrics_text,
+            "pageTitle": title_clean,
+            "pageArtist": artist_clean,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": "LyricsProviderError",
+            "message": f"lyrics.ovh request failed: {e}",
+        }
 
 
 def _fetch_playlist_via_api(url: str) -> dict | None:
@@ -173,6 +1614,16 @@ def index():
             <pre id="search-output"></pre>
         </div>
 
+        <div class="card">
+            <h2>/api/lyrics</h2>
+            <label>Título</label>
+            <input id="lyrics-title" type="text" placeholder="Photograph" />
+            <label>Artista</label>
+            <input id="lyrics-artist" type="text" placeholder="Ed Sheeran" />
+            <button onclick="callLyrics()">Obtener letra</button>
+            <pre id="lyrics-output"></pre>
+        </div>
+
         <div class="card" style="border: 2px solid #22d3ee;">
             <h2>🆕 /api/download-auto <span class="highlight">NUEVO</span></h2>
             <p class="small">Busca y descarga automáticamente sin necesidad de videoId</p>
@@ -200,6 +1651,21 @@ def index():
             <button onclick="callDownload()">Descargar Audio</button>
         </div>
 
+        <div class="card" style="border: 2px solid #22d3ee;">
+            <h2>🆕 /api/resolve-youtube-album + /api/download-youtube-album</h2>
+            <p class="small">Resuelve metadata sin descargar o descarga ZIP completo de álbum/playlist</p>
+            <label>Playlist URL (opcional)</label>
+            <input id="album-playlist-url" type="text" placeholder="https://youtube.com/playlist?list=..." />
+            <p class="small" style="margin:0.5rem 0;">o busca por metadatos</p>
+            <label>Álbum</label>
+            <input id="album-name" type="text" placeholder="Master of Puppets" />
+            <label>Artista</label>
+            <input id="album-artist" type="text" placeholder="Metallica" />
+            <button onclick="callResolveYouTubeAlbum()">🔎 Resolver (sin descargar)</button>
+            <button onclick="callDownloadYouTubeAlbum()">📦 Descargar álbum ZIP</button>
+            <pre id="album-resolve-output"></pre>
+        </div>
+
         <script>
             async function callHealth() {
                 const res = await fetch('/health');
@@ -223,6 +1689,18 @@ def index():
                 const res = await fetch('/api/search-youtube?query=' + encodeURIComponent(q));
                 const json = await res.json();
                 document.getElementById('search-output').textContent = JSON.stringify(json, null, 2);
+            }
+            async function callLyrics() {
+                const title = document.getElementById('lyrics-title').value.trim();
+                const artist = document.getElementById('lyrics-artist').value.trim();
+                if (!title || !artist) return;
+                const res = await fetch('/api/lyrics?title=' + encodeURIComponent(title) + '&artist=' + encodeURIComponent(artist));
+                const text = await res.text();
+                try {
+                    document.getElementById('lyrics-output').textContent = JSON.stringify(JSON.parse(text), null, 2);
+                } catch {
+                    document.getElementById('lyrics-output').textContent = text;
+                }
             }
             async function callDownload() {
                 const id = document.getElementById('yt-id').value.trim();
@@ -265,6 +1743,45 @@ def index():
                 
                 const a = document.createElement('a');
                 a.href = '/api/download-auto?query=' + encodeURIComponent(query);
+                a.download = '';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+            function buildAlbumParams() {
+                const playlistUrl = document.getElementById('album-playlist-url').value.trim();
+                const album = document.getElementById('album-name').value.trim();
+                const artist = document.getElementById('album-artist').value.trim();
+
+                const params = new URLSearchParams();
+                if (playlistUrl) {
+                    params.set('playlistUrl', playlistUrl);
+                } else {
+                    if (!album || !artist) {
+                        alert('Ingresa playlistUrl o ambos album + artist');
+                        return null;
+                    }
+                    params.set('album', album);
+                    params.set('artist', artist);
+                }
+                return params;
+            }
+            async function callResolveYouTubeAlbum() {
+                const params = buildAlbumParams();
+                if (!params) return;
+                const res = await fetch('/api/resolve-youtube-album?' + params.toString());
+                const text = await res.text();
+                try {
+                    document.getElementById('album-resolve-output').textContent = JSON.stringify(JSON.parse(text), null, 2);
+                } catch {
+                    document.getElementById('album-resolve-output').textContent = text;
+                }
+            }
+            async function callDownloadYouTubeAlbum() {
+                const params = buildAlbumParams();
+                if (!params) return;
+                const a = document.createElement('a');
+                a.href = '/api/download-youtube-album?' + params.toString();
                 a.download = '';
                 document.body.appendChild(a);
                 a.click();
@@ -370,7 +1887,7 @@ def api_search_youtube(
     }
 
     try:
-        print(f"🔍 Buscando en YouTube: {final_query}")
+        print(f"[YT_SEARCH] Buscando en YouTube: {final_query}")
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(final_query, download=False)
 
@@ -391,7 +1908,7 @@ def api_search_youtube(
         return {"success": True, "video": video}
 
     except Exception as e:
-        print(f"❌ Error buscando en YouTube: {e}")
+        print(f"[YT_SEARCH_ERROR] Error buscando en YouTube: {e}")
         return JSONResponse(
             status_code=500,
             content={
@@ -402,32 +1919,189 @@ def api_search_youtube(
         )
 
 
-def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, None], str]:
-    """Descarga audio de YouTube y devuelve (filename, stream, media_type)"""
-    tmp_dir = tempfile.gettempdir()
-    out_tmpl = os.path.join(tmp_dir, "savetune_%(id)s.%(ext)s")
+def _guess_artist_from_title(title: str, uploader: str) -> tuple[str, str]:
+    """
+    Intenta inferir artista/título si yt-dlp no trae `artist`.
+    Formato típico: "Artist - Song".
+    """
+    safe_title = (title or "").strip()
+    safe_uploader = (uploader or "").strip()
+
+    if " - " in safe_title:
+        left, right = safe_title.split(" - ", 1)
+        left = left.strip()
+        right = right.strip()
+        if left and right:
+            return left, right
+
+    if safe_uploader:
+        return safe_uploader, safe_title
+
+    return "Unknown Artist", safe_title
+
+
+@app.get("/api/search-song-suggestions")
+def api_search_song_suggestions(
+    query: str | None = Query(None, alias="query"),
+    limit: int = Query(10, alias="limit"),
+):
+    """
+    Búsqueda flexible de canciones (cuando el usuario no recuerda título/artista exactos).
+    Devuelve múltiples resultados con formato simple:
+    - title
+    - artist
+    """
+    final_query = (query or "").strip()
+    if not final_query:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "MissingQuery",
+                "message": "Please provide query",
+            },
+        )
+
+    safe_limit = max(1, min(int(limit), 30))
     opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_tmpl,
         "quiet": True,
         "no_warnings": True,
-        "prefer_ffmpeg": True,
-        "keepvideo": False,
-        "writethumbnail": True,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            },
-            {
-                "key": "FFmpegMetadata",
-            },
-            {
-                "key": "EmbedThumbnail",
-            },
-        ],
+        "extract_flat": False,
+        "default_search": f"ytsearch{safe_limit}",
+        "noplaylist": True,
     }
+
+    try:
+        print(f"[SONG_SUGGESTIONS] YouTube query: {final_query} (limit={safe_limit})")
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(final_query, download=False)
+
+        entries = info.get("entries", []) if isinstance(info, dict) else []
+        out = []
+        seen = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            raw_title = (entry.get("title") or "").strip()
+            if not raw_title:
+                continue
+            raw_artist = (entry.get("artist") or "").strip()
+            uploader = (entry.get("uploader") or "").strip()
+            if raw_artist:
+                artist_name = raw_artist
+                title_name = raw_title
+            else:
+                artist_name, title_name = _guess_artist_from_title(raw_title, uploader)
+
+            key = (title_name.lower(), artist_name.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {
+                    "title": title_name,
+                    "artist": artist_name,
+                }
+            )
+            if len(out) >= safe_limit:
+                break
+
+        return {"success": True, "results": out}
+
+    except Exception as e:
+        print(f"[SONG_SUGGESTIONS_ERROR] Error en sugerencias de canción: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": "SongSearchError",
+                "message": str(e),
+            },
+        )
+
+
+@app.get("/api/lyrics")
+def api_lyrics(
+    title: str = Query(..., alias="title"),
+    artist: str = Query(..., alias="artist"),
+):
+    """Obtiene letras con proveedor híbrido (lyrics.ovh + fallback scraper)."""
+    if not title or not title.strip() or not artist or not artist.strip():
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "MissingMetadata",
+                "message": "Please provide title and artist",
+            },
+        )
+
+    safe_artist = artist.strip()
+    safe_title = title.strip()
+
+    provider = LYRICS_PROVIDER if LYRICS_PROVIDER in {"hybrid", "ovh", "legacy"} else "hybrid"
+    started = time.time()
+    last_error: dict | None = None
+    fallback_reason = ""
+
+    if provider in {"hybrid", "ovh"}:
+        ovh_result = _get_lyrics_from_ovh(safe_artist, safe_title)
+        if ovh_result.get("success"):
+            elapsed_ms = int((time.time() - started) * 1000)
+            _get_logger.info(
+                f"/api/lyrics provider={provider} source=lyrics.ovh fallback=no elapsed_ms={elapsed_ms}"
+            )
+            return ovh_result
+        last_error = ovh_result
+        fallback_reason = ovh_result.get("message", "unknown")
+        if provider == "ovh":
+            elapsed_ms = int((time.time() - started) * 1000)
+            _get_logger.info(
+                f"/api/lyrics provider={provider} source=none fallback=no status=404 reason={fallback_reason} elapsed_ms={elapsed_ms}"
+            )
+            return JSONResponse(status_code=404, content=ovh_result)
+
+    letras_result = _get_lyrics_from_letras(safe_artist, safe_title)
+    if letras_result.get("success"):
+        elapsed_ms = int((time.time() - started) * 1000)
+        reason_log = fallback_reason or "n/a"
+        _get_logger.info(
+            f"/api/lyrics provider={provider} source=letras.com fallback=yes reason={reason_log} elapsed_ms={elapsed_ms}"
+        )
+        return letras_result
+
+    if provider == "hybrid" and last_error:
+        elapsed_ms = int((time.time() - started) * 1000)
+        reason_log = fallback_reason or "unknown"
+        _get_logger.info(
+            f"/api/lyrics provider={provider} source=none fallback=yes status=404 reason={reason_log} elapsed_ms={elapsed_ms}"
+        )
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error": "LyricsNotFound",
+                "message": f"lyrics.ovh: {last_error.get('message', 'unknown')} | letras.com: {letras_result.get('message', 'unknown')}",
+            },
+        )
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    _get_logger.info(
+        f"/api/lyrics provider={provider} source=none fallback=no status=404 elapsed_ms={elapsed_ms}"
+    )
+    return JSONResponse(status_code=404, content=letras_result)
+
+
+def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, None], str]:
+    """Descarga audio de YouTube y devuelve (filename, stream, media_type)"""
+    # Directorio único por petición para evitar colisiones (WinError 32)
+    job_dir = tempfile.mkdtemp(prefix="savetune_")
+    out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=True,
+        writethumbnail=False,
+    )
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
@@ -442,15 +2116,15 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
     # Buscar el archivo descargado
     path_file = ""
     for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
-        candidate = os.path.join(tmp_dir, f"savetune_{video_id}{ext}")
+        candidate = os.path.join(job_dir, f"audio_{video_id}{ext}")
         if os.path.isfile(candidate):
             path_file = candidate
             break
 
     if not path_file:
-        for f in os.listdir(tmp_dir):
-            if f.startswith(f"savetune_{video_id}"):
-                path_file = os.path.join(tmp_dir, f)
+        for f in os.listdir(job_dir):
+            if f.startswith(f"audio_{video_id}"):
+                path_file = os.path.join(job_dir, f)
                 break
 
     if not path_file:
@@ -491,24 +2165,14 @@ def _download_with_yt_dlp(video_url: str) -> tuple[str, Generator[bytes, None, N
         else "audio/webm"
     )
 
-    def stream_file() -> Generator[bytes, None, None]:
-        try:
-            with open(path_file, "rb") as f:
-                while chunk := f.read(8192):
-                    yield chunk
-        finally:
-            try:
-                os.remove(path_file)
-            except OSError:
-                pass
-
     filename = f"{title_safe}.{ext}"
-    return filename, stream_file(), media_type
+    return filename, _stream_file_bytes(path_file, cleanup_dir=job_dir), media_type
 
 
 @app.get("/api/download")
 def api_download(videoId: str = Query(..., alias="videoId")):
     """Descarga audio de un video de YouTube"""
+    global _active_downloads
     if not videoId or not videoId.strip():
         return JSONResponse(
             status_code=400,
@@ -521,10 +2185,56 @@ def api_download(videoId: str = Query(..., alias="videoId")):
 
     video_url = f"https://www.youtube.com/watch?v={videoId.strip()}"
 
+    # Intentar ocupar uno de los slots (máx. 5 descargas simultáneas).
+    acquired = _download_semaphore.acquire(blocking=False)
+    if not acquired:
+        _ensure_workers_started()
+        with _downloads_lock:
+            if len(_pending_job_ids) >= MAX_DOWNLOAD_QUEUE_SIZE:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "error": "QueueFull",
+                        "message": "Cola llena. Vuelve a intentarlo en unos segundos.",
+                    },
+                )
+        job_id = str(uuid.uuid4())
+
+        with _downloads_lock:
+            queue_position = _active_downloads + len(_pending_job_ids) + 1
+            _download_jobs[job_id] = {
+                "type": "download",
+                "videoId": videoId.strip(),
+                "status": "queued",
+                "queuePosition": queue_position,
+                "createdAt": int(time.time()),
+            }
+            _pending_job_ids.append(job_id)
+
+        _download_job_queue.put(job_id)
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "success": False,
+                "error": "Queued",
+                "message": f"Servidor petado: eres el numero {queue_position}. Te toca cuando se libere el numero {max(queue_position - 1, 0)}.",
+                "jobId": job_id,
+                "queuePosition": queue_position,
+            },
+        )
+
+    with _downloads_lock:
+        _active_downloads += 1
+
     try:
         filename, stream_gen, media_type = _download_with_yt_dlp(video_url)
     except Exception as e:
-        print(f"❌ Error descargando: {e}")
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+        print(f"[DOWNLOAD_ERROR] Error descargando: {e}")
         return JSONResponse(
             status_code=503,
             content={
@@ -533,6 +2243,11 @@ def api_download(videoId: str = Query(..., alias="videoId")):
                 "message": str(e),
             },
         )
+
+    # El trabajo pesado (yt-dlp/ffmpeg) ya terminó; liberamos el slot.
+    with _downloads_lock:
+        _active_downloads = max(0, _active_downloads - 1)
+    _download_semaphore.release()
 
     return StreamingResponse(
         stream_gen,
@@ -549,6 +2264,7 @@ def api_download_auto(
     title: str | None = Query(None, alias="title"),
     artist: str | None = Query(None, alias="artist"),
     album: str | None = Query(None, alias="album"),
+    imageUrl: str | None = Query(None, alias="imageUrl"),
 ):
     """
     🆕 Busca automáticamente en YouTube y descarga el audio.
@@ -558,6 +2274,7 @@ def api_download_auto(
     - /api/download-auto?query=SexyBack Timbaland
     - /api/download-auto?title=SexyBack&artist=Justin Timberlake&album=FutureSex/LoveSounds
     """
+    global _active_downloads
     # Construir la query de búsqueda
     parts: list[str] = []
     if title and title.strip():
@@ -585,9 +2302,54 @@ def api_download_auto(
 
     print(f"\n🎵 Búsqueda y descarga automática: {final_query}")
 
-    # Usar yt-dlp con búsqueda automática (ytsearch1)
-    tmp_dir = tempfile.gettempdir()
-    out_tmpl = os.path.join(tmp_dir, "savetune_%(id)s.%(ext)s")
+    # Intentar ocupar uno de los slots (máx. 5 descargas simultáneas).
+    acquired = _download_semaphore.acquire(blocking=False)
+    if not acquired:
+        _ensure_workers_started()
+        with _downloads_lock:
+            if len(_pending_job_ids) >= MAX_DOWNLOAD_QUEUE_SIZE:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "error": "QueueFull",
+                        "message": "Cola llena. Vuelve a intentarlo en unos segundos.",
+                    },
+                )
+        job_id = str(uuid.uuid4())
+        with _downloads_lock:
+            queue_position = _active_downloads + len(_pending_job_ids) + 1
+            _download_jobs[job_id] = {
+                "type": "download-auto",
+                "final_query": final_query,
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "imageUrl": imageUrl,
+                "status": "queued",
+                "queuePosition": queue_position,
+                "createdAt": int(time.time()),
+            }
+            _pending_job_ids.append(job_id)
+        _download_job_queue.put(job_id)
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "success": False,
+                "error": "Queued",
+                "message": f"Servidor petado: eres el numero {queue_position}. Te toca cuando se libere el numero {max(queue_position - 1, 0)}.",
+                "jobId": job_id,
+                "queuePosition": queue_position,
+            },
+        )
+
+    with _downloads_lock:
+        _active_downloads += 1
+
+    # Usar un directorio único por petición para evitar colisiones en Temp (WinError 32)
+    job_dir = tempfile.mkdtemp(prefix="savetune_")
+    out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
 
     opts = {
         "format": "bestaudio/best",
@@ -596,7 +2358,12 @@ def api_download_auto(
         "no_warnings": True,
         "prefer_ffmpeg": True,
         "keepvideo": False,
-        "writethumbnail": True,
+        "writethumbnail": False,
+        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+        "retries": YTDLP_RETRIES,
+        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
         "default_search": "ytsearch1",  # 🔍 Busca automáticamente en YouTube
         "postprocessors": [
             {
@@ -606,9 +2373,6 @@ def api_download_auto(
             },
             {
                 "key": "FFmpegMetadata",
-            },
-            {
-                "key": "EmbedThumbnail",
             },
         ],
     }
@@ -633,15 +2397,15 @@ def api_download_auto(
         # Buscar el archivo descargado
         path_file = ""
         for ext in (".mp3", ".m4a", ".webm", ".opus", ".ogg"):
-            candidate = os.path.join(tmp_dir, f"savetune_{video_id}{ext}")
+            candidate = os.path.join(job_dir, f"audio_{video_id}{ext}")
             if os.path.isfile(candidate):
                 path_file = candidate
                 break
 
         if not path_file:
-            for f in os.listdir(tmp_dir):
-                if f.startswith(f"savetune_{video_id}"):
-                    path_file = os.path.join(tmp_dir, f)
+            for f in os.listdir(job_dir):
+                if f.startswith(f"audio_{video_id}"):
+                    path_file = os.path.join(job_dir, f)
                     break
 
         if not path_file:
@@ -672,7 +2436,10 @@ def api_download_auto(
                     if track_album:
                         audio["album"] = [track_album]
                     audio.save()
-                    print(f"✅ Metadatos guardados: {track_title} - {track_artist}")
+                fallback_thumb = video_info.get("thumbnail")
+                cover_url = _pick_cover_url(imageUrl, fallback_thumb)
+                _embed_cover_art_mp3(path_file, cover_url)
+                print(f"✅ Metadatos guardados: {track_title} - {track_artist}")
             except Exception as e:
                 print(f"⚠️ Error guardando metadatos: {e}")
 
@@ -684,31 +2451,37 @@ def api_download_auto(
             else "audio/webm"
         )
 
-        def stream_file() -> Generator[bytes, None, None]:
-            try:
-                with open(path_file, "rb") as f:
-                    while chunk := f.read(8192):
-                        yield chunk
-            finally:
-                try:
-                    os.remove(path_file)
-                except OSError:
-                    pass
-
         filename = f"{title_safe}.{ext}"
 
         print(f"✅ Descarga completada: {filename}")
 
-        return StreamingResponse(
-            stream_file(),
+        resp = StreamingResponse(
+            _stream_file_bytes(path_file, cleanup_dir=job_dir),
             media_type=media_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
             },
         )
 
+        # El trabajo pesado ya terminó; liberamos el slot (no hace falta mantenerlo durante el streaming).
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+
+        return resp
+
     except Exception as e:
-        print(f"❌ Error en descarga automática: {e}")
+        print(f"[AUTO_DOWNLOAD_ERROR] Error en descarga automática: {e}")
+        # Limpieza si falló antes de crear el stream
+        try:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+
         return JSONResponse(
             status_code=503,
             content={
@@ -719,10 +2492,310 @@ def api_download_auto(
         )
 
 
+@app.get("/api/download-youtube-album")
+def api_download_youtube_album(
+    playlistUrl: str | None = Query(None, alias="playlistUrl"),
+    album: str | None = Query(None, alias="album"),
+    artist: str | None = Query(None, alias="artist"),
+):
+    """
+    Descarga un álbum/playlist de YouTube completo y devuelve un ZIP.
+    Formas de uso:
+    - playlistUrl directa
+    - album + artist (resuelve playlist automáticamente)
+    """
+    global _active_downloads
+
+    direct_playlist_url = (playlistUrl or "").strip()
+    album_name = (album or "").strip()
+    artist_name = (artist or "").strip()
+    by_metadata_mode = not bool(direct_playlist_url)
+
+    if not direct_playlist_url and (not album_name or not artist_name):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "MissingMetadata",
+                "message": "Provide playlistUrl OR album and artist",
+            },
+        )
+
+    resolved_playlist_url = direct_playlist_url
+    if not resolved_playlist_url:
+        try:
+            resolved_playlist_url = _resolve_playlist_url_from_album(album_name, artist_name) or ""
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "error": "AlbumSearchError",
+                    "message": str(e),
+                },
+            )
+        if not resolved_playlist_url:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "error": "PlaylistNotFound",
+                    "message": "No se encontró playlist/álbum para ese album+artist",
+                },
+            )
+
+    # Si el modo es album+artist, exigir que sea realmente una playlist/álbum con varios tracks.
+    # Evita caer en vídeos "full album" de una sola pista.
+    try:
+        meta = _fetch_youtube_playlist_metadata(resolved_playlist_url)
+    except Exception:
+        meta = {}
+
+    item_count = int(meta.get("itemCount") or 0)
+    if by_metadata_mode and item_count <= 1:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error": "PlaylistNotFound",
+                "message": "La búsqueda album+artist resolvió a un único vídeo, no a una playlist de pistas separadas. Usa playlistUrl directa.",
+                "resolvedUrl": resolved_playlist_url,
+                "itemCount": item_count,
+            },
+        )
+
+    # Proteger el servidor: si no hay slot, encolar igual que descargas individuales
+    acquired = _download_semaphore.acquire(blocking=False)
+    if not acquired:
+        _ensure_workers_started()
+        with _downloads_lock:
+            if len(_pending_job_ids) >= MAX_DOWNLOAD_QUEUE_SIZE:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "error": "QueueFull",
+                        "message": "Cola llena. Vuelve a intentarlo en unos segundos.",
+                    },
+                )
+            queue_position = _active_downloads + len(_pending_job_ids) + 1
+
+        return JSONResponse(
+            status_code=429,
+            content={
+                "success": False,
+                "error": "ServerBusy",
+                "message": f"Servidor ocupado. Intenta de nuevo cuando se libere el numero {max(queue_position - 1, 0)}.",
+                "queuePositionEstimate": queue_position,
+            },
+        )
+
+    with _downloads_lock:
+        _active_downloads += 1
+
+    job_dir = tempfile.mkdtemp(prefix="savetune_album_")
+    try:
+        zip_path, zip_filename, media_type = _download_youtube_playlist_to_zip(
+            resolved_playlist_url, job_dir
+        )
+
+        resp = StreamingResponse(
+            _stream_file_bytes(zip_path, cleanup_dir=job_dir),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{zip_filename}"',
+            },
+        )
+
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+
+        return resp
+    except Exception as e:
+        try:
+            shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception:
+            pass
+        with _downloads_lock:
+            _active_downloads = max(0, _active_downloads - 1)
+        _download_semaphore.release()
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": "AlbumDownloadError",
+                "message": str(e),
+            },
+        )
+
+
+@app.get("/api/resolve-youtube-album")
+def api_resolve_youtube_album(
+    playlistUrl: str | None = Query(None, alias="playlistUrl"),
+    album: str | None = Query(None, alias="album"),
+    artist: str | None = Query(None, alias="artist"),
+):
+    """
+    Resuelve un álbum/playlist de YouTube sin descargar.
+    """
+    direct_playlist_url = (playlistUrl or "").strip()
+    album_name = (album or "").strip()
+    artist_name = (artist or "").strip()
+
+    if not direct_playlist_url and (not album_name or not artist_name):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "MissingMetadata",
+                "message": "Provide playlistUrl OR album and artist",
+            },
+        )
+
+    resolved_playlist_url = direct_playlist_url
+    mode = "playlistUrl" if resolved_playlist_url else "album+artist"
+
+    if not resolved_playlist_url:
+        try:
+            resolved_playlist_url = _resolve_playlist_url_from_album(album_name, artist_name) or ""
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "error": "AlbumSearchError",
+                    "message": str(e),
+                },
+            )
+        if not resolved_playlist_url:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "success": False,
+                    "error": "PlaylistNotFound",
+                    "message": "No se encontró playlist/álbum para ese album+artist",
+                },
+            )
+
+    try:
+        metadata = _fetch_youtube_playlist_metadata(resolved_playlist_url)
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "error": "PlaylistMetadataError",
+                "message": str(e),
+            },
+        )
+
+    return {
+        "success": True,
+        "mode": mode,
+        "resolvedPlaylistUrl": resolved_playlist_url,
+        "playlist": metadata,
+    }
+
+
+@app.get("/api/download-job")
+def api_download_job(jobId: str = Query(..., alias="jobId")):
+    """
+    Estado de un job en cola para descargas.
+    Usado cuando /api/download o /api/download-auto devuelven 'error=Queued'.
+    """
+    job = _download_jobs.get(jobId)
+    if not job:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "JobNotFound", "message": "No existe el job"},
+        )
+
+    status = job.get("status") or "queued"
+    queue_position = job.get("queuePosition")
+    if status == "queued":
+        queue_position = _get_job_snapshot_position(jobId)
+
+    payload: dict = {
+        "success": True,
+        "jobId": jobId,
+        "status": status,
+    }
+    if queue_position is not None:
+        payload["queuePosition"] = queue_position
+
+    if status == "ready":
+        payload["filename"] = job.get("filename") or ""
+        payload["media_type"] = job.get("media_type") or job.get("mediaType") or ""
+    if status == "error":
+        payload["message"] = job.get("error") or ""
+
+    return payload
+
+
+@app.get("/api/download-job/stream")
+def api_download_job_stream(jobId: str = Query(..., alias="jobId")):
+    """Stream de audio para un job listo."""
+    job = _download_jobs.get(jobId)
+    if not job:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "JobNotFound", "message": "No existe el job"},
+        )
+
+    status = job.get("status")
+    if status != "ready":
+        if status == "error":
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": "JobError",
+                    "message": job.get("error") or "Job falló",
+                },
+            )
+
+        return JSONResponse(
+            status_code=425,
+            content={
+                "success": False,
+                "error": "NotReady",
+                "status": status,
+                "message": "Aún no está listo para descargar",
+                "queuePosition": _get_job_snapshot_position(jobId),
+            },
+        )
+
+    file_path = job.get("file_path") or ""
+    media_type = job.get("media_type") or "audio/mpeg"
+    filename = job.get("filename") or "audio.mp3"
+    job_dir = job.get("job_dir") or ""
+
+    if not file_path or not os.path.isfile(file_path):
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": "FileMissing", "message": "El archivo no está disponible"},
+        )
+
+    def stream_file() -> Generator[bytes, None, None]:
+        yield from _stream_file_bytes(file_path, cleanup_dir=job_dir)
+        # Quitar el job al terminar el streaming.
+        with _downloads_lock:
+            _download_jobs.pop(jobId, None)
+
+    return StreamingResponse(
+        stream_file(),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.environ.get("PORT", 4000))
+    port = int(os.environ.get("PORT", 4001))
     print(f"\n🚀 Iniciando SaveTune Backend en puerto {port}...")
     print(f"📝 Panel de pruebas: http://localhost:{port}/")
     print(f"🔧 Scraper: Selenium (sin necesidad de Spotify API)")

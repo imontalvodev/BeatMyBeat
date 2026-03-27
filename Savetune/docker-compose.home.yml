@@ -1,0 +1,75 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: savetune-backend
+    restart: unless-stopped
+    environment:
+      PORT: 4001
+      # Hibridacion letras:
+      # - LYRICS_PROVIDER=hybrid usa lyrics.ovh y fallback local si falla.
+      # - LYRICS_OVH_BASE_URL apunta al servicio "lyrics" interno.
+      LYRICS_PROVIDER: ${LYRICS_PROVIDER:-hybrid}
+      LYRICS_OVH_BASE_URL: ${LYRICS_OVH_BASE_URL:-http://lyrics:8080}
+      LYRICS_OVH_TIMEOUT_SECONDS: ${LYRICS_OVH_TIMEOUT_SECONDS:-8}
+      # Ajustes opcionales del backend
+      MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-5}
+    ports:
+      - "${HOST_BACKEND_PORT:-41321}:4001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - savetune_net
+
+  middleware:
+    build:
+      context: ./middleware
+      dockerfile: Dockerfile
+    container_name: savetune-middleware
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      # En contenedores, el backend se alcanza por nombre de servicio.
+      PY_BACKEND_URL: http://backend:4001
+    ports:
+      - "${HOST_MIDDLEWARE_PORT:-41311}:3001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - savetune_net
+
+  # Servicio opcional: tu instancia propia de lyrics.ovh.
+  # Requiere que hayas clonado NTag/lyrics.ovh en ../lyrics.ovh
+  # (ruta relativa a este docker-compose.home.yml).
+  lyrics:
+    build:
+      context: ../lyrics.ovh
+      dockerfile: Dockerfile
+    container_name: savetune-lyrics
+    restart: unless-stopped
+    expose:
+      - "8080"
+      - "8081"
+    ports:
+      - "${HOST_LYRICS_API_PORT:-41331}:8080"
+      - "${HOST_LYRICS_WEB_PORT:-41332}:8081"
+    networks:
+      - savetune_net
+
+networks:
+  savetune_net:
+    driver: bridge
