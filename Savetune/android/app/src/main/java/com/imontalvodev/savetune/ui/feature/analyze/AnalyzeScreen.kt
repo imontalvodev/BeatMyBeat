@@ -202,22 +202,34 @@ fun AnalyzeScreen(
                                         searchingSuggestions = true
                                         suggestionError = null
                                         suggestions = emptyList()
-                                        val res = withContext(Dispatchers.IO) {
-                                            MiddlewareApi.fetchSongSuggestions(
-                                                baseUrl = MIDDLEWARE_BASE_URL,
-                                                query = songTitle.trim(),
-                                                limit = 10,
-                                            )
-                                        }
-                                        searchingSuggestions = false
-                                        if (res.success) {
-                                            val capped = res.results.take(10)
-                                            suggestions = capped
-                                            if (capped.isEmpty()) {
-                                                suggestionError = "No se encontraron resultados para esa búsqueda."
+                                        try {
+                                            val searchQuery = listOf(songTitle, songArtist, songAlbum)
+                                                .map { it.trim() }
+                                                .filter { it.isNotBlank() }
+                                                .joinToString(" ")
+                                            val res = withContext(Dispatchers.IO) {
+                                                MiddlewareApi.fetchSongSuggestions(
+                                                    baseUrl = MIDDLEWARE_BASE_URL,
+                                                    query = searchQuery,
+                                                    limit = 10,
+                                                )
                                             }
-                                        } else {
-                                            suggestionError = res.message ?: res.error ?: "No se pudo buscar."
+                                            if (res.success) {
+                                                val capped = res.results.take(10)
+                                                suggestions = capped
+                                                if (capped.isEmpty()) {
+                                                    suggestionError =
+                                                        "No se encontraron resultados para esa búsqueda."
+                                                }
+                                            } else {
+                                                suggestionError =
+                                                    res.message ?: res.error ?: "No se pudo buscar."
+                                            }
+                                        } catch (e: Exception) {
+                                            suggestionError =
+                                                e.message ?: "Error al buscar. Comprueba la conexión."
+                                        } finally {
+                                            searchingSuggestions = false
                                         }
                                     }
                                 }
