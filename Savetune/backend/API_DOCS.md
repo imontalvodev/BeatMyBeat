@@ -2,7 +2,6 @@
 
 Backend en Python con FastAPI. Expone endpoints para:
 - **Salud del servicio**
-- **Lectura de playlists de Spotify**
 - **Búsqueda de vídeos en YouTube**
 - **Sugerencias de canciones (búsqueda flexible)**
 - **Letras de canciones (lyrics.ovh + fallback)**
@@ -32,7 +31,7 @@ Desde el frontend se puede hacer `fetch` directamente al backend sin configuraci
 
 ## 1. `GET /health`
 
-**Descripción**: Comprobación de salud del backend y estado de configuración de Spotify API.
+**Descripción**: Comprobación de salud del backend.
 
 **Request**
 - Método: `GET`
@@ -44,78 +43,7 @@ Desde el frontend se puede hacer `fetch` directamente al backend sin configuraci
 ```json
 {
   "status": "ok",
-  "backend": "python",
-  "scraper": "selenium",
-  "spotify_api_configured": true
-}
-```
-
-- `spotify_api_configured`: `true` si las credenciales de Spotify están bien configuradas en el servidor, si no `false`.
-
----
-
-## 2. `GET /api/playlist`
-
-**Descripción**: Obtiene la información de una playlist de Spotify (título, nº de canciones y lista de canciones) a partir de la URL de la playlist.
-
-El backend intenta primero usar la **Spotify Web API** y, si falla, usa un **scraper con Selenium**. El formato de respuesta es el mismo para ambos.
-
-**Request**
-- Método: `GET`
-- URL: `/api/playlist`
-- Query params:
-  - `url` (obligatorio): URL completa de la playlist de Spotify.
-
-Ejemplo:
-
-```text
-GET /api/playlist?url=https://open.spotify.com/playlist/XXXXXXXXXXXX
-```
-
-**Response 200 – JSON (éxito)**
-
-```json
-{
-  "success": true,
-  "playlist": {
-    "name": "Nombre de la playlist",
-    "totalTracks": 42
-  },
-  "songs": [
-    {
-      "id": "5VnDkUNQs5QJQoOEQLsKER",
-      "title": "Nombre de la canción",
-      "artist": "Nombre del artista",
-      "album": "Nombre del álbum",
-      "imageUrl": "https://i.scdn.co/image/...",
-      "duration": 215
-    }
-  ]
-}
-```
-
-- `duration`: duración en **segundos**.
-- La lista `songs` sólo incluye canciones **válidas** (con id, título no vacío ni "Unknown").
-
-**Errores**
-
-- **400 – URL inválida**
-
-```json
-{
-  "success": false,
-  "error": "Invalid Spotify URL",
-  "message": "Please provide a valid Spotify playlist URL"
-}
-```
-
-- **500 – Fallo tanto en API como en scraper**
-
-```json
-{
-  "success": false,
-  "error": "PlaylistFetchError",
-  "message": "No se pudo obtener la playlist (API y scraper fallaron)"
+  "backend": "python"
 }
 ```
 

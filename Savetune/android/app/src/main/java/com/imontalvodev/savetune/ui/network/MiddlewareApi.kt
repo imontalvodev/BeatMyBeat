@@ -54,7 +54,7 @@ data class SongSuggestionsResponse(
 
 object MiddlewareApi {
     private val client: OkHttpClient = OkHttpClient.Builder()
-        // Playlist/lyrics pueden tardar (Spotify + scraper / letras.com)
+        // Playlist/lyrics pueden tardar (yt-dlp / letras.com)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -93,10 +93,10 @@ object MiddlewareApi {
         }
     }
 
-    fun fetchPlaylist(baseUrl: String, spotifyUrl: String): PlaylistResponse {
+    fun fetchPlaylist(baseUrl: String, playlistUrl: String): PlaylistResponse {
         val url = baseUrl.trimEnd('/').toHttpUrl().newBuilder()
             .addPathSegments("api/playlist")
-            .addQueryParameter("url", spotifyUrl)
+            .addQueryParameter("url", playlistUrl)
             .build()
 
         val req = Request.Builder().url(url).get().build()

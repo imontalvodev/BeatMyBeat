@@ -1,1 +1,1 @@
-"""Services package: spotify (SpotifyPlaylistScraper), youtube (CLI helper)."""
+"""Services package: youtube helpers."""

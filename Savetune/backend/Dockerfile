@@ -6,11 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# ffmpeg para yt-dlp y chromium/chromedriver para Selenium fallback.
+# ffmpeg para yt-dlp
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    chromium \
-    chromium-driver \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*

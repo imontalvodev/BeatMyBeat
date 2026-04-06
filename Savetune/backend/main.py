@@ -1,4 +1,4 @@
-"""SaveTune Python backend (FastAPI) - Spotify Web API + Selenium fallback."""
+"""SaveTune Python backend (FastAPI) - YouTube download + lyrics hybrid provider."""
 
 import os
 import tempfile
@@ -24,8 +24,6 @@ from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 
-from services.spotify import SpotifyPlaylistScraper
-from services.spotify_api import SpotifyWebAPI
 import yt_dlp
 from mutagen import File as MutagenFile
 from mutagen.id3 import APIC, ID3, ID3NoHeaderError
@@ -286,10 +284,10 @@ def _download_youtube_audio_to_file(
     video_url: str,
     job_dir: str,
     *,
-    spotify_title: str | None = None,
-    spotify_artist: str | None = None,
-    spotify_album: str | None = None,
-    force_spotify_metadata: bool = False,
+    meta_title: str | None = None,
+    meta_artist: str | None = None,
+    meta_album: str | None = None,
+    force_metadata: bool = False,
 ) -> tuple[str, str, str, str]:
     """
     Descarga audio a disco y devuelve (file_path, filename, media_type, ext).
@@ -333,10 +331,10 @@ def _download_youtube_audio_to_file(
 
     # Enriquecer metadatos ID3
     if ext == "mp3":
-        if force_spotify_metadata:
-            track_title = spotify_title or raw_title
-            track_artist = spotify_artist or info.get("artist") or info.get("uploader") or ""
-            track_album = spotify_album or info.get("album") or ""
+        if force_metadata:
+            track_title = meta_title or raw_title
+            track_artist = meta_artist or info.get("artist") or info.get("uploader") or ""
+            track_album = meta_album or info.get("album") or ""
         else:
             track_title = raw_title
             track_artist = info.get("artist") or info.get("uploader") or ""
@@ -374,10 +372,10 @@ def _download_auto_audio_to_file(
     final_query: str,
     job_dir: str,
     *,
-    spotify_title: str | None = None,
-    spotify_artist: str | None = None,
-    spotify_album: str | None = None,
-    spotify_image_url: str | None = None,
+    meta_title: str | None = None,
+    meta_artist: str | None = None,
+    meta_album: str | None = None,
+    meta_image_url: str | None = None,
 ) -> tuple[str, str, str, str]:
     """
     Variante de descarga automática (ytsearch1) que devuelve el audio a disco.
@@ -422,11 +420,11 @@ def _download_auto_audio_to_file(
     ext = os.path.splitext(path_file)[1].lstrip(".")
 
     if ext == "mp3":
-        track_title = spotify_title or raw_title
-        track_artist = spotify_artist or (
+        track_title = meta_title or raw_title
+        track_artist = meta_artist or (
             video_info.get("artist") if isinstance(video_info, dict) else ""
         ) or (video_info.get("uploader") if isinstance(video_info, dict) else "") or ""
-        track_album = spotify_album or (video_info.get("album") if isinstance(video_info, dict) else "") or ""
+        track_album = meta_album or (video_info.get("album") if isinstance(video_info, dict) else "") or ""
 
         if " - " in raw_title and not track_artist:
             parts_split = raw_title.rsplit(" - ", 1)
@@ -444,7 +442,7 @@ def _download_auto_audio_to_file(
                 audio["album"] = [track_album]
             audio.save()
         fallback_thumb = video_info.get("thumbnail") if isinstance(video_info, dict) else None
-        cover_url = _pick_cover_url(spotify_image_url, fallback_thumb)
+        cover_url = _pick_cover_url(meta_image_url, fallback_thumb)
         _embed_cover_art_mp3(path_file, cover_url)
 
     media_type = (
@@ -855,17 +853,16 @@ def _download_job_worker():
                 file_path, filename, media_type, _ = _download_youtube_audio_to_file(
                     video_url,
                     job_dir,
-                    force_spotify_metadata=False,
                 )
             elif job_type == "download-auto":
                 final_query = job.get("final_query")
                 file_path, filename, media_type, _ = _download_auto_audio_to_file(
                     final_query,
                     job_dir,
-                    spotify_title=job.get("title"),
-                    spotify_artist=job.get("artist"),
-                    spotify_album=job.get("album"),
-                    spotify_image_url=job.get("imageUrl"),
+                    meta_title=job.get("title"),
+                    meta_artist=job.get("artist"),
+                    meta_album=job.get("album"),
+                    meta_image_url=job.get("imageUrl"),
                 )
             else:
                 raise ValueError(f"Unknown job type: {job_type}")
@@ -1483,90 +1480,6 @@ def _get_lyrics_from_ovh(artist: str, title: str) -> dict:
         }
 
 
-def _fetch_playlist_via_api(url: str) -> dict | None:
-    """Obtiene la playlist vía Spotify Web API. Mismo formato que el scraper."""
-    api = SpotifyWebAPI()
-    if not api.is_configured():
-        return None
-    try:
-        result = api.obtener_canciones_playlist(url)
-    except Exception as e:
-        print("Spotify API error:", e)
-        return None
-    if not result.get("success"):
-        print("Spotify API:", result.get("error", "unknown"))
-        return None
-    playlist = result["playlist"]
-    canciones = result["canciones"]
-    canciones_validas = [
-        c for c in canciones
-        if c.get("id") and c.get("titulo") and c["titulo"] != "Unknown"
-    ]
-    print("API obtuvo", len(canciones_validas), "canciones")
-    songs = [
-        {
-            "id": c["id"],
-            "title": c["titulo"],
-            "artist": c["artistas"],
-            "album": c["album"],
-            "imageUrl": c.get("imagen_url", ""),
-            "duration": c["duracion_segundos"],
-        }
-        for c in canciones_validas
-    ]
-    return {
-        "success": True,
-        "playlist": {"name": playlist.get("nombre", "Unknown Playlist"), "totalTracks": len(songs)},
-        "songs": songs,
-    }
-
-
-def _fetch_playlist_via_scraper(url: str) -> dict | None:
-    """Usa Selenium para scrapear la playlist"""
-    print("🔄 Usando scraper de Selenium...")
-
-    scraper = SpotifyPlaylistScraper(headless=True)
-    try:
-        result = scraper.obtener_canciones_playlist(url)
-    finally:
-        scraper.cerrar_driver()
-
-    if not result.get("success"):
-        return None
-
-    playlist = result["playlist"]
-    canciones = result["canciones"]
-
-    # Filtrar canciones vacías o inválidas
-    canciones_validas = [
-        c for c in canciones
-        if c.get("id") and c.get("titulo") and c["titulo"] != "Unknown"
-    ]
-
-    print(f"✅ Scraper obtuvo {len(canciones_validas)} canciones válidas")
-
-    # Convertir canciones básicas (ya vienen enriquecidas desde el scraper)
-    songs = [
-        {
-            "id": c["id"],
-            "title": c["titulo"],
-            "artist": c["artistas"],
-            "album": c["album"],
-            "imageUrl": c["imagen_url"],
-            "duration": c["duracion_segundos"],
-        }
-        for c in canciones_validas
-    ]
-
-    return {
-        "success": True,
-        "playlist": {
-            "name": playlist.get("nombre", "Unknown Playlist"),
-            "totalTracks": len(songs),
-        },
-        "songs": songs,
-    }
-
 
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -1600,14 +1513,6 @@ def index():
             <h2>/health</h2>
             <button onclick="callHealth()">Probar /health</button>
             <pre id="health-output"></pre>
-        </div>
-
-        <div class="card">
-            <h2>/api/playlist</h2>
-            <label>Spotify playlist URL</label>
-            <input id="playlist-url" type="text" placeholder="https://open.spotify.com/playlist/..." />
-            <button onclick="callPlaylist()">Obtener Playlist</button>
-            <pre id="playlist-output"></pre>
         </div>
 
         <div class="card">
@@ -1800,49 +1705,11 @@ def index():
 @app.get("/health")
 def health():
     """Health check endpoint"""
-    api = SpotifyWebAPI()
     return {
         "status": "ok",
         "backend": "python",
-        "scraper": "selenium",
-        "spotify_api_configured": api.is_configured(),
     }
 
-
-@app.get("/api/playlist")
-def api_playlist(url: str = Query(..., alias="url")):
-    """Obtiene canciones de una playlist de Spotify usando Selenium"""
-    if not url or "spotify.com/playlist/" not in url:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": "Invalid Spotify URL",
-                "message": "Please provide a valid Spotify playlist URL",
-            },
-        )
-
-    print(f"\n{'='*60}")
-    print(f"Solicitud de playlist: {url}")
-    print(f"{'='*60}")
-
-    api_result = _fetch_playlist_via_api(url)
-    if api_result and api_result.get("success"):
-        return api_result
-
-    scraper_result = _fetch_playlist_via_scraper(url)
-
-    if not scraper_result or not scraper_result.get("success"):
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": "PlaylistFetchError",
-                "message": "No se pudo obtener la playlist (API y scraper fallaron)",
-            },
-        )
-
-    return scraper_result
 
 
 @app.get("/api/search-youtube")
@@ -2417,7 +2284,7 @@ def api_download_auto(
 
         ext = os.path.splitext(path_file)[1].lstrip(".")
 
-        # Enriquecer metadatos ID3 con los datos originales de Spotify
+        # Enriquecer metadatos ID3
         if ext == "mp3":
             track_title = title or raw_title
             track_artist = artist or video_info.get("artist") or video_info.get("uploader") or ""
@@ -2802,7 +2669,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 4001))
     print(f"\n🚀 Iniciando SaveTune Backend en puerto {port}...")
     print(f"📝 Panel de pruebas: http://localhost:{port}/")
-    print(f"🔧 Scraper: Selenium (sin necesidad de Spotify API)")
-    print(f"🆕 Nuevo endpoint: /api/download-auto (descarga automática)")
+    print(f"🆕 Nuevo endpoint: /api/download-auto (descarga automatica)")
 
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

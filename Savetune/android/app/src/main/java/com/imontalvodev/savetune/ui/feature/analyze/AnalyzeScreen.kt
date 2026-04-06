@@ -158,7 +158,7 @@ fun AnalyzeScreen(
                         OutlinedTextField(
                             value = playlistUrl,
                             onValueChange = { playlistUrl = it },
-                            label = { Text("Playlist URL (Spotify/YouTube)") },
+                            label = { Text("Playlist URL (YouTube)") },
                             placeholder = { Text("Paste playlist link...") },
                             modifier = Modifier.fillMaxWidth(),
                         )

@@ -3,8 +3,6 @@ const { Readable } = require('stream');
 
 const router = express.Router();
 
-const { validateSpotifyPlaylistUrl } = require('../utils/validators');
-
 const PY_BACKEND_URL = process.env.PY_BACKEND_URL || 'http://localhost:4000';
 const STREAM_HIGH_WATER_MARK = Number(process.env.MIDDLEWARE_STREAM_HIGH_WATER_MARK || 262144);
 
@@ -28,33 +26,6 @@ function pipeUpstreamBody(upstream, res) {
   });
   nodeStream.pipe(res);
 }
-
-// GET /api/playlist?url=...
-router.get('/playlist', async (req, res, next) => {
-  try {
-    const { url } = req.query;
-
-    if (!validateSpotifyPlaylistUrl(url)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid Spotify URL',
-        message: 'Please provide a valid Spotify playlist URL',
-      });
-    }
-
-    const upstream = await fetch(
-      `${PY_BACKEND_URL}/api/playlist?url=${encodeURIComponent(url)}`
-    );
-    const body = await upstream.text();
-
-    res
-      .status(upstream.status)
-      .set('Content-Type', upstream.headers.get('content-type') || 'application/json')
-      .send(body);
-  } catch (error) {
-    next(error);
-  }
-});
 
 // GET /api/search-youtube
 router.get('/search-youtube', async (req, res, next) => {
