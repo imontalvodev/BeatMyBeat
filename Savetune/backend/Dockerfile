@@ -6,15 +6,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# ffmpeg para yt-dlp + Node 20 desde NodeSource para resolver JS challenges de YouTube
+# ffmpeg para yt-dlp + quickjs para resolver JS challenges de YouTube
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     ca-certificates \
     curl \
-    gnupg \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+    quickjs \
     && rm -rf /var/lib/apt/lists/*
+
+# Verificar que quickjs está en PATH y crear symlink si hace falta
+RUN ln -sf $(which qjs) /usr/local/bin/quickjs 2>/dev/null || true
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip && pip install -r /app/requirements.txt
