@@ -33,81 +33,125 @@ object AudioDownloader {
         artist: String,
         album: String,
         imageUrl: String = "",
+        videoId: String = "",
     ): DownloadResult = withContext(Dispatchers.IO) {
         val safeTitle = title.trim()
         val safeArtist = artist.trim()
-        val notificationTitle = if (safeTitle.isNotBlank()) "Descargando: $safeTitle" else "Descargando canción"
         SavetuneNotification.showDownloadInProgress(
-            context = context,
-            title = notificationTitle,
-            subtitle = safeArtist,
+            context,
+            if (safeTitle.isNotBlank()) "Descargando: $safeTitle" else "Descargando canción",
+            safeArtist,
         )
         try {
-            val base = middlewareBaseUrl.trimEnd('/')
-            val builder = "$base/api/download-auto".toHttpUrlOrNull()?.newBuilder()
-                ?: return@withContext DownloadResult(false, null, "BadUrl")
+            // --- Paso 1: resolver videoId si no se proporcionó ---
+            val resolvedVideoId = if (videoId.length == 11) {
+                videoId
+            } else {
+                val query = listOf(safeTitle, safeArtist, album.trim()).filter { it.isNotBlank() }.joinToString(" ")
+                val results = YouTubeSearchClient.search(query, limit = 1)
+                results.firstOrNull()?.videoId ?: run {
+                    SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "No se encontró el vídeo en YouTube.")
+                    return@withContext DownloadResult(false, null, "VideoNotFound")
+                }
+            }
 
-            if (title.isNotBlank()) builder.addQueryParameter("title", title)
-            if (artist.isNotBlank()) builder.addQueryParameter("artist", artist)
-            if (album.isNotBlank()) builder.addQueryParameter("album", album)
-            if (imageUrl.isNotBlank()) builder.addQueryParameter("imageUrl", imageUrl)
+            // --- Paso 2: extraer URL de stream con NewPipe ---
+            val streamInfo = try {
+                NewPipeStreamExtractor.extractBestAudioStream(resolvedVideoId)
+            } catch (e: Exception) {
+                android.util.Log.e("NewPipeStream", "extractBestAudioStream failed: ${e.javaClass.simpleName}: ${e.message}", e)
+                SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
+                return@withContext DownloadResult(false, null, e.message)
+            }
 
-            val url = builder.build()
+            // --- Paso 3: descargar por rangos para evitar bloqueo con streams chunked ---
+            val ext = when {
+                streamInfo.mimeType.contains("mp4") || streamInfo.mimeType.contains("m4a") -> "m4a"
+                streamInfo.mimeType.contains("webm") || streamInfo.mimeType.contains("opus") -> "webm"
+                else -> "m4a"
+            }
+            val fileName = "${safeTitle.ifBlank { "track" }.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180)}.$ext"
+            val dir = File(context.filesDir, ".music").also { if (!it.exists()) it.mkdirs() }
+            val outFile = File(dir, fileName)
 
-            val client = OkHttpClient.Builder()
+            android.util.Log.d("NewPipeStream", "Downloading: ${streamInfo.url.take(100)} mimeType=${streamInfo.mimeType}")
+
+            val downloadClient = OkHttpClient.Builder()
                 .connectTimeout(20, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.MINUTES)
-                .writeTimeout(2, TimeUnit.MINUTES)
-                .callTimeout(7, TimeUnit.MINUTES)
+                .readTimeout(30, TimeUnit.SECONDS)
                 .build()
 
-            val request = Request.Builder().url(url).get().build()
-
-            try {
-                client.newCall(request).execute().use { res: Response ->
-                    val saved = handleResponse(context, res, title)
-                    if (saved.success) {
-                        // Pre-descargar letras para uso offline (si hay metadatos válidos).
-                        val t = title.trim()
-                        val a = artist.trim()
-                        val isUnknown = { s: String ->
-                            s.isBlank() ||
-                                s.equals("unknown", ignoreCase = true) ||
-                                s.equals("unknown artist", ignoreCase = true)
-                        }
-                        if (!isUnknown(t) && !isUnknown(a)) {
-                            runCatching {
-                                val lyr = MiddlewareApi.fetchLyrics(middlewareBaseUrl, t, a)
-                                if (lyr.success && lyr.lyrics.isNotBlank()) {
-                                    LyricsCache.put(context, t, a, lyr.lyrics)
-                                }
-                            }
-                        }
-
-                        SavetuneNotification.showDownloadCompleted(
-                            context = context,
-                            title = "Descarga completada",
-                            subtitle = saved.fileName ?: safeTitle,
-                        )
-                    } else {
-                        SavetuneNotification.showDownloadFailed(
-                            context = context,
-                            title = "Error en la descarga",
-                            subtitle = saved.error ?: "Reintenta más tarde",
-                        )
-                    }
-                    return@withContext saved
+            // Obtener tamaño total
+            val totalBytes = try {
+                downloadClient.newCall(
+                    Request.Builder().url(streamInfo.url)
+                        .header("User-Agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip")
+                        .header("Range", "bytes=0-0").get().build()
+                ).execute().use { r ->
+                    r.header("Content-Range")?.substringAfterLast("/")?.toLongOrNull()
+                        ?: r.body?.contentLength() ?: -1L
                 }
-            } catch (e: Exception) {
-                SavetuneNotification.showDownloadFailed(
-                    context = context,
-                    title = "Error en la descarga",
-                    subtitle = "No se pudo completar la descarga. Inténtalo de nuevo.",
-                )
-                return@withContext DownloadResult(false, null, "Error en la descarga. Inténtalo de nuevo.")
+            } catch (e: Exception) { -1L }
+
+            android.util.Log.d("NewPipeStream", "Total bytes: $totalBytes, writing to $fileName")
+
+            val chunkSize = 1_048_576L
+            var offset = 0L
+            var totalWritten = 0L
+
+            FileOutputStream(outFile).use { out ->
+                while (totalBytes < 0 || offset < totalBytes) {
+                    val end = if (totalBytes > 0) minOf(offset + chunkSize - 1, totalBytes - 1) else offset + chunkSize - 1
+                    val chunkResp = downloadClient.newCall(
+                        Request.Builder().url(streamInfo.url)
+                            .header("User-Agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip")
+                            .header("Accept-Encoding", "identity")
+                            .header("Range", "bytes=$offset-$end")
+                            .get().build()
+                    ).execute()
+
+                    val chunkBody = chunkResp.body
+                    if (!chunkResp.isSuccessful || chunkBody == null) {
+                        android.util.Log.e("NewPipeStream", "Chunk HTTP ${chunkResp.code}")
+                        chunkResp.close()
+                        break
+                    }
+                    val bytes = chunkBody.bytes()
+                    chunkResp.close()
+                    if (bytes.isEmpty()) break
+                    out.write(bytes)
+                    totalWritten += bytes.size
+                    offset += bytes.size
+                    if (bytes.size < chunkSize) break
+                }
+                out.flush()
             }
-        } finally {
-            // no-op: dejamos que la notificación en curso sea reemplazada por completada/error.
+
+            android.util.Log.d("NewPipeStream", "Download complete: ${totalWritten}B")
+
+            if (totalWritten == 0L) {
+                outFile.delete()
+                SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
+                return@withContext DownloadResult(false, null, "ZeroBytes")
+            }
+
+            ArtworkCache.clear()
+
+            // Pre-descargar letras para uso offline
+            val isUnknown = { s: String -> s.isBlank() || s.equals("unknown", ignoreCase = true) || s.equals("unknown artist", ignoreCase = true) }
+            if (!isUnknown(safeTitle) && !isUnknown(safeArtist)) {
+                runCatching {
+                    val lyr = MiddlewareApi.fetchLyricsDirect(safeTitle, safeArtist)
+                    if (lyr.success && lyr.lyrics.isNotBlank()) LyricsCache.put(context, safeTitle, safeArtist, lyr.lyrics)
+                }
+            }
+
+            SavetuneNotification.showDownloadCompleted(context, "Descarga completada", outFile.name)
+            return@withContext DownloadResult(true, outFile.name, null)
+
+        } catch (e: Exception) {
+            SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
+            return@withContext DownloadResult(false, null, e.message)
         }
     }
 

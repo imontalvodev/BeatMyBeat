@@ -84,11 +84,10 @@ YTDLP_FRAGMENT_RETRIES = int(os.environ.get("YTDLP_FRAGMENT_RETRIES", "5"))
 YTDLP_HTTP_CHUNK_SIZE_BYTES = int(os.environ.get("YTDLP_HTTP_CHUNK_SIZE_BYTES", "10485760"))
 
 # --- Autenticación YouTube (anti-bot) ---
-# PO Token: genera uno con https://github.com/YunzheZJU/youtube-po-token-generator
-# o con yt-dlp --print-json --no-download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 YOUTUBE_PO_TOKEN = os.environ.get("YOUTUBE_PO_TOKEN", "").strip()
-# Ruta al cookies.txt dentro del contenedor (montado como volumen en docker-compose)
 YOUTUBE_COOKIES_FILE = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
+# YouTube Data API v3 — para búsquedas desde IPs de datacenter (evita bloqueo bot en ytsearch)
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
 MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", "5242880"))
 
 # --- Logging (.log) para depuración ---
@@ -196,6 +195,9 @@ def _build_yt_dlp_audio_opts(
                 "po_token": [f"web+{YOUTUBE_PO_TOKEN}"],
             }
         }
+
+    # Bypass geoblocking: simular IP española para acceder a contenido restringido regionalmente
+    opts["geo_bypass_country"] = "ES"
 
     return opts
 
@@ -397,19 +399,40 @@ def _download_auto_audio_to_file(
     meta_image_url: str | None = None,
 ) -> tuple[str, str, str, str]:
     """
-    Variante de descarga automática (ytsearch1) que devuelve el audio a disco.
+    Variante de descarga automática que devuelve el audio a disco.
+    Si YOUTUBE_API_KEY está configurada, usa la Data API v3 para resolver la URL
+    del video antes de descargar (evita bloqueo bot en IPs de datacenter).
     """
     out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
 
-    opts = _build_yt_dlp_audio_opts(
-        out_tmpl,
-        noplaylist=True,
-        default_search="ytsearch1",
-        writethumbnail=False,
-    )
+    # Resolver la URL real del video antes de descargar para evitar ytsearch desde datacenter
+    download_target = final_query
+    if YOUTUBE_API_KEY:
+        try:
+            api_results = _search_youtube_api(final_query, max_results=1)
+            if api_results:
+                download_target = api_results[0]["url"]
+                print(f"[AUTO_DOWNLOAD] Resuelto via YouTube API: {download_target}")
+        except Exception as api_err:
+            print(f"[AUTO_DOWNLOAD] YouTube API falló, usando ytsearch como fallback: {api_err}")
+
+    if download_target == final_query:
+        # fallback: ytsearch (puede fallar en datacenter sin API key)
+        opts = _build_yt_dlp_audio_opts(
+            out_tmpl,
+            noplaylist=True,
+            default_search="ytsearch1",
+            writethumbnail=False,
+        )
+    else:
+        opts = _build_yt_dlp_audio_opts(
+            out_tmpl,
+            noplaylist=True,
+            writethumbnail=False,
+        )
 
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(final_query, download=True)
+        info = ydl.extract_info(download_target, download=True)
 
     if not info:
         raise ValueError("No se pudo obtener información del vídeo")
@@ -1768,32 +1791,22 @@ def api_search_youtube(
             },
         )
 
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-        "default_search": "ytsearch1",
-        "noplaylist": True,
-    }
-
     try:
-        print(f"[YT_SEARCH] Buscando en YouTube: {final_query}")
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(final_query, download=False)
+        print(f"[YT_SEARCH] YouTube API query: {final_query}")
+        api_results = _search_youtube_api(final_query, max_results=1)
 
-        if not info or "entries" not in info or not info["entries"]:
+        if not api_results:
             return {
                 "success": True,
                 "video": {"id": "", "title": "", "url": "", "thumbnail": ""},
             }
 
-        entry = info["entries"][0]
-        video_id = entry.get("id") or ""
+        item = api_results[0]
         video = {
-            "id": video_id,
-            "title": entry.get("title") or "",
-            "url": f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
-            "thumbnail": entry.get("thumbnail") or "",
+            "id": item["id"],
+            "title": item["title"],
+            "url": item["url"],
+            "thumbnail": item["thumbnail"],
         }
         return {"success": True, "video": video}
 
@@ -1830,6 +1843,50 @@ def _guess_artist_from_title(title: str, uploader: str) -> tuple[str, str]:
     return "Unknown Artist", safe_title
 
 
+def _search_youtube_api(query: str, max_results: int = 10) -> list[dict]:
+    """
+    Busca en YouTube usando la Data API v3.
+    Devuelve lista de dicts con id, title, channelTitle.
+    Lanza excepción si la API key no está configurada o falla.
+    """
+    if not YOUTUBE_API_KEY:
+        raise ValueError("YOUTUBE_API_KEY no configurada")
+
+    url = "https://www.googleapis.com/youtube/v3/search"
+    params = {
+        "part": "snippet",
+        "q": query,
+        "type": "video",
+        "videoCategoryId": "10",  # Music
+        "maxResults": max_results,
+        "key": YOUTUBE_API_KEY,
+    }
+    resp = requests.get(url, params=params, timeout=10)
+    if resp.status_code != 200:
+        raise ValueError(f"YouTube API error {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+    print(f"[YT_API] Raw items: {[item.get('id') for item in data.get('items', [])]}")
+    results = []
+    for item in data.get("items", []):
+        video_id = item.get("id", {}).get("videoId", "")
+        snippet = item.get("snippet", {})
+        title = snippet.get("title", "").strip()
+        channel = snippet.get("channelTitle", "").strip()
+        if video_id and len(video_id) != 11:
+            print(f"[YT_API] ID truncado descartado: '{video_id}' (len={len(video_id)})")
+        # Los IDs de YouTube siempre son exactamente 11 caracteres; descartar truncados
+        if video_id and len(video_id) == 11 and title:
+            results.append({
+                "id": video_id,
+                "title": title,
+                "channelTitle": channel,
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "thumbnail": snippet.get("thumbnails", {}).get("default", {}).get("url", ""),
+            })
+    return results
+
+
 @app.get("/api/search-song-suggestions")
 def api_search_song_suggestions(
     query: str | None = Query(None, alias="query"),
@@ -1853,46 +1910,27 @@ def api_search_song_suggestions(
         )
 
     safe_limit = max(1, min(int(limit), 30))
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-        "default_search": f"ytsearch{safe_limit}",
-        "noplaylist": True,
-    }
 
     try:
-        print(f"[SONG_SUGGESTIONS] YouTube query: {final_query} (limit={safe_limit})")
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(final_query, download=False)
+        print(f"[SONG_SUGGESTIONS] YouTube API query: {final_query} (limit={safe_limit})")
+        api_results = _search_youtube_api(final_query, max_results=safe_limit)
 
-        entries = info.get("entries", []) if isinstance(info, dict) else []
         out = []
         seen = set()
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            raw_title = (entry.get("title") or "").strip()
+        for item in api_results:
+            raw_title = item.get("title", "").strip()
+            channel = item.get("channelTitle", "").strip()
             if not raw_title:
                 continue
-            raw_artist = (entry.get("artist") or "").strip()
-            uploader = (entry.get("uploader") or "").strip()
-            if raw_artist:
-                artist_name = raw_artist
-                title_name = raw_title
-            else:
-                artist_name, title_name = _guess_artist_from_title(raw_title, uploader)
-
+            artist_name, title_name = _guess_artist_from_title(raw_title, channel)
             key = (title_name.lower(), artist_name.lower())
             if key in seen:
                 continue
             seen.add(key)
-            out.append(
-                {
-                    "title": title_name,
-                    "artist": artist_name,
-                }
-            )
+            out.append({
+                "title": title_name,
+                "artist": artist_name,
+            })
             if len(out) >= safe_limit:
                 break
 
@@ -2148,6 +2186,109 @@ def api_download(videoId: str = Query(..., alias="videoId")):
     )
 
 
+@app.get("/api/resolve-stream")
+def api_resolve_stream(
+    title: str | None = Query(None, alias="title"),
+    artist: str | None = Query(None, alias="artist"),
+    album: str | None = Query(None, alias="album"),
+    query: str | None = Query(None, alias="query"),
+):
+    """
+    Resuelve la URL de stream de audio directa para que el cliente descargue sin pasar por el servidor.
+    Así se evita el bloqueo de YouTube por IP de datacenter.
+
+    Devuelve:
+    - streamUrl: URL directa al stream de audio (expira en ~6h)
+    - videoId: ID del video de YouTube
+    - title: título del video
+    - mimeType: tipo MIME del stream (audio/webm, audio/mp4, etc.)
+    """
+    parts: list[str] = []
+    if title and title.strip():
+        parts.append(title.strip())
+    if artist and artist.strip() and artist.lower() != "unknown artist":
+        parts.append(artist.strip())
+    if album and album.strip() and album.lower() != "unknown album":
+        parts.append(album.strip())
+
+    if parts:
+        parts.append("official audio")
+        final_query = " ".join(parts)
+    else:
+        final_query = (query or "").strip()
+
+    if not final_query:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "MissingQuery", "message": "Provide title/artist or query"},
+        )
+
+    # Resolver video ID via YouTube Data API
+    video_url = None
+    video_id = None
+    video_title = None
+    if YOUTUBE_API_KEY:
+        try:
+            results = _search_youtube_api(final_query, max_results=1)
+            if results:
+                video_url = results[0]["url"]
+                video_id = results[0]["id"]
+                video_title = results[0]["title"]
+                print(f"[RESOLVE_STREAM] Resuelto via API: {video_url}")
+        except Exception as e:
+            print(f"[RESOLVE_STREAM] YouTube API falló: {e}")
+
+    if not video_url:
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": "SearchFailed", "message": "No se pudo encontrar el vídeo"},
+        )
+
+    # Extraer URL directa de stream con yt-dlp (sin descargar)
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "geo_bypass_country": "ES",
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
+    }
+    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
+        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+
+        if not info:
+            raise ValueError("Sin info del vídeo")
+
+        stream_url = info.get("url") or ""
+        mime_type = info.get("ext", "")
+        duration = info.get("duration")
+        thumbnail = info.get("thumbnail", "")
+        resolved_title = info.get("title") or video_title or ""
+
+        if not stream_url:
+            raise ValueError("No se encontró URL de stream")
+
+        return {
+            "success": True,
+            "videoId": video_id,
+            "title": resolved_title,
+            "streamUrl": stream_url,
+            "mimeType": f"audio/{mime_type}" if mime_type else "audio/webm",
+            "duration": duration,
+            "thumbnail": thumbnail,
+        }
+
+    except Exception as e:
+        print(f"[RESOLVE_STREAM_ERROR] {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": "ResolveError", "message": str(e)},
+        )
+
+
 @app.get("/api/download-auto")
 def api_download_auto(
     query: str | None = Query(None, alias="query"),
@@ -2241,35 +2382,28 @@ def api_download_auto(
     job_dir = tempfile.mkdtemp(prefix="savetune_")
     out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
 
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_tmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "prefer_ffmpeg": True,
-        "keepvideo": False,
-        "writethumbnail": False,
-        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
-        "retries": YTDLP_RETRIES,
-        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
-        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
-        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
-        "default_search": "ytsearch1",  # 🔍 Busca automáticamente en YouTube
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            },
-            {
-                "key": "FFmpegMetadata",
-            },
-        ],
-    }
+    # Resolver URL real del video via YouTube Data API para evitar ytsearch en datacenter
+    download_target = final_query
+    if YOUTUBE_API_KEY:
+        try:
+            api_results = _search_youtube_api(final_query, max_results=1)
+            if api_results:
+                download_target = api_results[0]["url"]
+                print(f"[DOWNLOAD_AUTO] Resuelto via YouTube API: {download_target}")
+        except Exception as api_err:
+            print(f"[DOWNLOAD_AUTO] YouTube API falló, usando ytsearch como fallback: {api_err}")
+
+    use_ytsearch = download_target == final_query
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=True,
+        default_search="ytsearch1" if use_ytsearch else None,
+        writethumbnail=False,
+    )
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(final_query, download=True)
+            info = ydl.extract_info(download_target, download=True)
 
         if not info:
             raise ValueError("No se pudo obtener información del vídeo")

@@ -43,6 +43,9 @@ data class PlaylistResponse(
 data class SongSuggestion(
     val title: String,
     val artist: String,
+    val videoId: String = "",
+    val thumbnailUrl: String = "",
+    val durationText: String = "",
 )
 
 data class SongSuggestionsResponse(
@@ -149,6 +152,28 @@ object MiddlewareApi {
             )
         }
     }
+
+    fun fetchLyricsDirect(title: String, artist: String): LyricsResponse {
+        val safeArtist = artist.trim().ifBlank { return LyricsResponse(false, "", null, null, "MissingArtist", null) }
+        val safeTitle = title.trim().ifBlank { return LyricsResponse(false, "", null, null, "MissingTitle", null) }
+        val url = "https://api.lyrics.ovh/v1/${safeArtist.encodeUrl()}/${safeTitle.encodeUrl()}"
+        return try {
+            val req = Request.Builder().url(url).header("Accept", "application/json").get().build()
+            client.newCall(req).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                val json = runCatching { org.json.JSONObject(body) }.getOrNull()
+                    ?: return LyricsResponse(false, "", null, null, "InvalidJson", null)
+                val lyrics = json.optString("lyrics", "")
+                if (lyrics.isNotBlank()) LyricsResponse(true, lyrics, "lyrics.ovh", url, null, null)
+                else LyricsResponse(false, "", null, null, "NoLyrics", json.optString("error", null.toString()).ifBlank { null })
+            }
+        } catch (e: Exception) {
+            LyricsResponse(false, "", null, null, "NetworkError", e.message)
+        }
+    }
+
+    private fun String.encodeUrl(): String =
+        java.net.URLEncoder.encode(this, "UTF-8").replace("+", "%20")
 
     fun fetchSongSuggestions(baseUrl: String, query: String, limit: Int = 10): SongSuggestionsResponse {
         val trimmedQuery = query.trim()

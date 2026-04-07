@@ -5,3 +5,9 @@ backend/logs/**
 middleware/logs/**
 middleware/node_modules/**
 middleware/package-lock.json
+
+frontend/**
+
+# Cookies de YouTube (nunca commitear, contienen sesión de usuario)
+cookies.txt
+**/cookies.txt

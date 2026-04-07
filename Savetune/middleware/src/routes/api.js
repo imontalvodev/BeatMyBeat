@@ -169,6 +169,47 @@ router.get('/download', async (req, res, next) => {
   }
 });
 
+// GET /api/resolve-stream?title=...&artist=...&album=...
+// Devuelve la URL directa de stream para que el cliente descargue sin pasar por el servidor
+router.get('/resolve-stream', async (req, res, next) => {
+  try {
+    const { query, title, artist, album } = req.query;
+
+    if (!query && !title && !artist && !album) {
+      return res.status(400).json({
+        success: false,
+        error: 'MissingQuery',
+        message: 'Provide title/artist or query',
+      });
+    }
+
+    const url = new URL(`${PY_BACKEND_URL}/api/resolve-stream`);
+    if (query) url.searchParams.set('query', query);
+    if (title) url.searchParams.set('title', title);
+    if (artist) url.searchParams.set('artist', artist);
+    if (album) url.searchParams.set('album', album);
+
+    let upstream;
+    try {
+      upstream = await fetch(url);
+    } catch (e) {
+      return res.status(502).json({
+        success: false,
+        error: 'UpstreamUnavailable',
+        message: 'El servicio no está disponible. Inténtalo de nuevo más tarde.',
+      });
+    }
+
+    const body = await upstream.text();
+    return res
+      .status(upstream.status)
+      .set('Content-Type', upstream.headers.get('content-type') || 'application/json')
+      .send(body);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/download-auto
 router.get('/download-auto', async (req, res, next) => {
   try {

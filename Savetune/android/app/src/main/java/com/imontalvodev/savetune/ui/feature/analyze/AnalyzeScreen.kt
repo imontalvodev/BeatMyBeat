@@ -36,6 +36,7 @@ import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.AudioDownloader
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.network.SongSuggestion
+import com.imontalvodev.savetune.ui.network.YouTubeSearchClient
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundTop
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
@@ -207,23 +208,21 @@ fun AnalyzeScreen(
                                                 .map { it.trim() }
                                                 .filter { it.isNotBlank() }
                                                 .joinToString(" ")
-                                            val res = withContext(Dispatchers.IO) {
-                                                MiddlewareApi.fetchSongSuggestions(
-                                                    baseUrl = MIDDLEWARE_BASE_URL,
-                                                    query = searchQuery,
-                                                    limit = 10,
-                                                )
+                                            val results = withContext(Dispatchers.IO) {
+                                                YouTubeSearchClient.search(searchQuery, limit = 10)
                                             }
-                                            if (res.success) {
-                                                val capped = res.results.take(10)
-                                                suggestions = capped
-                                                if (capped.isEmpty()) {
-                                                    suggestionError =
-                                                        "No se encontraron resultados para esa búsqueda."
+                                            if (results.isNotEmpty()) {
+                                                suggestions = results.map { r ->
+                                                    SongSuggestion(
+                                                        title = r.title,
+                                                        artist = r.channel,
+                                                        videoId = r.videoId,
+                                                        thumbnailUrl = r.thumbnailUrl,
+                                                        durationText = r.durationText,
+                                                    )
                                                 }
                                             } else {
-                                                suggestionError =
-                                                    res.message ?: res.error ?: "No se pudo buscar."
+                                                suggestionError = "No se encontraron resultados para esa búsqueda."
                                             }
                                         } catch (e: Exception) {
                                             suggestionError =
@@ -345,6 +344,7 @@ fun AnalyzeScreen(
                                 title = suggestion.title,
                                 artist = suggestion.artist,
                                 album = "",
+                                videoId = suggestion.videoId,
                             )
                             downloadingSuggestion = false
                             selectedSuggestion = null
