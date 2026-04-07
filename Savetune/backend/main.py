@@ -196,6 +196,9 @@ def _build_yt_dlp_audio_opts(
             }
         }
 
+    # Bypass geoblocking: simular IP española para acceder a contenido restringido regionalmente
+    opts["geo_bypass_country"] = "ES"
+
     return opts
 
 # --- Filtros para evitar "letra rara" cuando la canción no tiene vocals ---
@@ -2181,6 +2184,109 @@ def api_download(videoId: str = Query(..., alias="videoId")):
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )
+
+
+@app.get("/api/resolve-stream")
+def api_resolve_stream(
+    title: str | None = Query(None, alias="title"),
+    artist: str | None = Query(None, alias="artist"),
+    album: str | None = Query(None, alias="album"),
+    query: str | None = Query(None, alias="query"),
+):
+    """
+    Resuelve la URL de stream de audio directa para que el cliente descargue sin pasar por el servidor.
+    Así se evita el bloqueo de YouTube por IP de datacenter.
+
+    Devuelve:
+    - streamUrl: URL directa al stream de audio (expira en ~6h)
+    - videoId: ID del video de YouTube
+    - title: título del video
+    - mimeType: tipo MIME del stream (audio/webm, audio/mp4, etc.)
+    """
+    parts: list[str] = []
+    if title and title.strip():
+        parts.append(title.strip())
+    if artist and artist.strip() and artist.lower() != "unknown artist":
+        parts.append(artist.strip())
+    if album and album.strip() and album.lower() != "unknown album":
+        parts.append(album.strip())
+
+    if parts:
+        parts.append("official audio")
+        final_query = " ".join(parts)
+    else:
+        final_query = (query or "").strip()
+
+    if not final_query:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "MissingQuery", "message": "Provide title/artist or query"},
+        )
+
+    # Resolver video ID via YouTube Data API
+    video_url = None
+    video_id = None
+    video_title = None
+    if YOUTUBE_API_KEY:
+        try:
+            results = _search_youtube_api(final_query, max_results=1)
+            if results:
+                video_url = results[0]["url"]
+                video_id = results[0]["id"]
+                video_title = results[0]["title"]
+                print(f"[RESOLVE_STREAM] Resuelto via API: {video_url}")
+        except Exception as e:
+            print(f"[RESOLVE_STREAM] YouTube API falló: {e}")
+
+    if not video_url:
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": "SearchFailed", "message": "No se pudo encontrar el vídeo"},
+        )
+
+    # Extraer URL directa de stream con yt-dlp (sin descargar)
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "geo_bypass_country": "ES",
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
+    }
+    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
+        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+
+        if not info:
+            raise ValueError("Sin info del vídeo")
+
+        stream_url = info.get("url") or ""
+        mime_type = info.get("ext", "")
+        duration = info.get("duration")
+        thumbnail = info.get("thumbnail", "")
+        resolved_title = info.get("title") or video_title or ""
+
+        if not stream_url:
+            raise ValueError("No se encontró URL de stream")
+
+        return {
+            "success": True,
+            "videoId": video_id,
+            "title": resolved_title,
+            "streamUrl": stream_url,
+            "mimeType": f"audio/{mime_type}" if mime_type else "audio/webm",
+            "duration": duration,
+            "thumbnail": thumbnail,
+        }
+
+    except Exception as e:
+        print(f"[RESOLVE_STREAM_ERROR] {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": "ResolveError", "message": str(e)},
+        )
 
 
 @app.get("/api/download-auto")
