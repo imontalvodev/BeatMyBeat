@@ -1863,13 +1863,17 @@ def _search_youtube_api(query: str, max_results: int = 10) -> list[dict]:
         raise ValueError(f"YouTube API error {resp.status_code}: {resp.text[:200]}")
 
     data = resp.json()
+    print(f"[YT_API] Raw items: {[item.get('id') for item in data.get('items', [])]}")
     results = []
     for item in data.get("items", []):
         video_id = item.get("id", {}).get("videoId", "")
         snippet = item.get("snippet", {})
         title = snippet.get("title", "").strip()
         channel = snippet.get("channelTitle", "").strip()
-        if video_id and title:
+        if video_id and len(video_id) != 11:
+            print(f"[YT_API] ID truncado descartado: '{video_id}' (len={len(video_id)})")
+        # Los IDs de YouTube siempre son exactamente 11 caracteres; descartar truncados
+        if video_id and len(video_id) == 11 and title:
             results.append({
                 "id": video_id,
                 "title": title,
