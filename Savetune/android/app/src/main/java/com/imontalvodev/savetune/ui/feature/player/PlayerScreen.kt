@@ -586,7 +586,7 @@ fun PlayerScreen(
             }
         } catch (e: Exception) {
             isPlaying = false
-            Toast.makeText(context, "No se pudo reproducir: ${e.message ?: "error"}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "No se pudo reproducir este archivo.", Toast.LENGTH_SHORT).show()
         }
     }
 

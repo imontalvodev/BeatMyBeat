@@ -227,7 +227,7 @@ fun AnalyzeScreen(
                                             }
                                         } catch (e: Exception) {
                                             suggestionError =
-                                                e.message ?: "Error al buscar. Comprueba la conexión."
+                                                "Error de conexión. Comprueba tu internet e inténtalo de nuevo."
                                         } finally {
                                             searchingSuggestions = false
                                         }
