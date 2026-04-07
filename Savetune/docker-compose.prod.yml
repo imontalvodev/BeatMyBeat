@@ -18,7 +18,7 @@ services:
     volumes:
       # Monta cookies.txt desde el host sin rebuildar la imagen
       # Crea el archivo en el servidor: /root/savetune/cookies.txt
-      - ${YOUTUBE_COOKIES_HOST_PATH:-/root/savetune/cookies.txt}:/app/cookies.txt:ro
+      - ${YOUTUBE_COOKIES_HOST_PATH:-/root/savetune/cookies.txt}:/app/cookies.txt
     ports:
       - "${HOST_BACKEND_PORT:-41321}:4001"
     healthcheck:
