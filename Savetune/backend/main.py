@@ -396,19 +396,40 @@ def _download_auto_audio_to_file(
     meta_image_url: str | None = None,
 ) -> tuple[str, str, str, str]:
     """
-    Variante de descarga automática (ytsearch1) que devuelve el audio a disco.
+    Variante de descarga automática que devuelve el audio a disco.
+    Si YOUTUBE_API_KEY está configurada, usa la Data API v3 para resolver la URL
+    del video antes de descargar (evita bloqueo bot en IPs de datacenter).
     """
     out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
 
-    opts = _build_yt_dlp_audio_opts(
-        out_tmpl,
-        noplaylist=True,
-        default_search="ytsearch1",
-        writethumbnail=False,
-    )
+    # Resolver la URL real del video antes de descargar para evitar ytsearch desde datacenter
+    download_target = final_query
+    if YOUTUBE_API_KEY:
+        try:
+            api_results = _search_youtube_api(final_query, max_results=1)
+            if api_results:
+                download_target = api_results[0]["url"]
+                print(f"[AUTO_DOWNLOAD] Resuelto via YouTube API: {download_target}")
+        except Exception as api_err:
+            print(f"[AUTO_DOWNLOAD] YouTube API falló, usando ytsearch como fallback: {api_err}")
+
+    if download_target == final_query:
+        # fallback: ytsearch (puede fallar en datacenter sin API key)
+        opts = _build_yt_dlp_audio_opts(
+            out_tmpl,
+            noplaylist=True,
+            default_search="ytsearch1",
+            writethumbnail=False,
+        )
+    else:
+        opts = _build_yt_dlp_audio_opts(
+            out_tmpl,
+            noplaylist=True,
+            writethumbnail=False,
+        )
 
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(final_query, download=True)
+        info = ydl.extract_info(download_target, download=True)
 
     if not info:
         raise ValueError("No se pudo obtener información del vídeo")
@@ -2251,44 +2272,28 @@ def api_download_auto(
     job_dir = tempfile.mkdtemp(prefix="savetune_")
     out_tmpl = os.path.join(job_dir, "audio_%(id)s.%(ext)s")
 
-    opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_tmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "prefer_ffmpeg": True,
-        "keepvideo": False,
-        "writethumbnail": False,
-        "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
-        "retries": YTDLP_RETRIES,
-        "fragment_retries": YTDLP_FRAGMENT_RETRIES,
-        "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
-        "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
-        "default_search": "ytsearch1",
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            },
-            {
-                "key": "FFmpegMetadata",
-            },
-        ],
-    }
-    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
-        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
-    if YOUTUBE_PO_TOKEN:
-        opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["web"],
-                "po_token": [f"web+{YOUTUBE_PO_TOKEN}"],
-            }
-        }
+    # Resolver URL real del video via YouTube Data API para evitar ytsearch en datacenter
+    download_target = final_query
+    if YOUTUBE_API_KEY:
+        try:
+            api_results = _search_youtube_api(final_query, max_results=1)
+            if api_results:
+                download_target = api_results[0]["url"]
+                print(f"[DOWNLOAD_AUTO] Resuelto via YouTube API: {download_target}")
+        except Exception as api_err:
+            print(f"[DOWNLOAD_AUTO] YouTube API falló, usando ytsearch como fallback: {api_err}")
+
+    use_ytsearch = download_target == final_query
+    opts = _build_yt_dlp_audio_opts(
+        out_tmpl,
+        noplaylist=True,
+        default_search="ytsearch1" if use_ytsearch else None,
+        writethumbnail=False,
+    )
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(final_query, download=True)
+            info = ydl.extract_info(download_target, download=True)
 
         if not info:
             raise ValueError("No se pudo obtener información del vídeo")
