@@ -1,0 +1,52 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: savetune-backend
+    restart: unless-stopped
+    environment:
+      PORT: 4001
+      LYRICS_PROVIDER: ${LYRICS_PROVIDER:-hybrid}
+      LYRICS_OVH_BASE_URL: ${LYRICS_OVH_BASE_URL:-https://api.lyrics.ovh}
+      LYRICS_OVH_TIMEOUT_SECONDS: ${LYRICS_OVH_TIMEOUT_SECONDS:-8}
+      MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-5}
+    ports:
+      - "${HOST_BACKEND_PORT:-41321}:4001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - savetune_net
+
+  middleware:
+    build:
+      context: ./middleware
+      dockerfile: Dockerfile
+    container_name: savetune-middleware
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      PY_BACKEND_URL: http://backend:4001
+    ports:
+      - "${HOST_MIDDLEWARE_PORT:-41311}:3001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - savetune_net
+
+networks:
+  savetune_net:
+    driver: bridge
