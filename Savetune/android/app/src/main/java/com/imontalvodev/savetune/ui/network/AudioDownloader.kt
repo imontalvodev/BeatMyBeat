@@ -102,9 +102,9 @@ object AudioDownloader {
                 SavetuneNotification.showDownloadFailed(
                     context = context,
                     title = "Error en la descarga",
-                    subtitle = e.message ?: "Reintenta más tarde",
+                    subtitle = "No se pudo completar la descarga. Inténtalo de nuevo.",
                 )
-                return@withContext DownloadResult(false, null, e.message)
+                return@withContext DownloadResult(false, null, "Error en la descarga. Inténtalo de nuevo.")
             }
         } finally {
             // no-op: dejamos que la notificación en curso sea reemplazada por completada/error.
@@ -254,9 +254,9 @@ object AudioDownloader {
                 SavetuneNotification.showDownloadFailed(
                     context = context,
                     title = "Error en la descarga",
-                    subtitle = e.message ?: "Reintenta más tarde",
+                    subtitle = "No se pudo completar la descarga. Inténtalo de nuevo.",
                 )
-                return@withContext ZipDownloadResult(false, 0, e.message)
+                return@withContext ZipDownloadResult(false, 0, "Error en la descarga. Inténtalo de nuevo.")
             }
         } finally {
             // no-op: dejamos que la notificación en curso sea reemplazada por completada/error.

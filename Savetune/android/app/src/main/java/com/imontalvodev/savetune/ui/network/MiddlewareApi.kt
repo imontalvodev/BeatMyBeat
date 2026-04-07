@@ -225,14 +225,14 @@ object MiddlewareApi {
                 success = false,
                 results = emptyList(),
                 error = "NetworkError",
-                message = e.message ?: "No hay conexión con el middleware",
+                message = "Sin conexión. Comprueba tu internet e inténtalo de nuevo.",
             )
         } catch (e: Exception) {
             SongSuggestionsResponse(
                 success = false,
                 results = emptyList(),
                 error = "UnexpectedError",
-                message = e.message ?: e.javaClass.simpleName,
+                message = "Error inesperado. Inténtalo de nuevo.",
             )
         }
     }

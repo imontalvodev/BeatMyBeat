@@ -86,7 +86,7 @@ router.get('/search-song-suggestions', async (req, res, next) => {
       return res.status(502).json({
         success: false,
         error: 'UpstreamUnavailable',
-        message: `No se pudo conectar al backend Python (${PY_BACKEND_URL}). ${e?.message || e}`,
+        message: `El servicio no está disponible. Inténtalo de nuevo más tarde.`,
       });
     }
 
@@ -198,7 +198,7 @@ router.get('/download-auto', async (req, res, next) => {
       return res.status(502).json({
         success: false,
         error: 'UpstreamUnavailable',
-        message: `No se pudo conectar al backend Python (${PY_BACKEND_URL}). ${e?.message || e}`,
+        message: `El servicio no está disponible. Inténtalo de nuevo más tarde.`,
       });
     }
 
@@ -248,7 +248,7 @@ router.get('/download-youtube-album', async (req, res, next) => {
       return res.status(502).json({
         success: false,
         error: 'UpstreamUnavailable',
-        message: `No se pudo conectar al backend Python (${PY_BACKEND_URL}). ${e?.message || e}`,
+        message: `El servicio no está disponible. Inténtalo de nuevo más tarde.`,
       });
     }
 
@@ -296,7 +296,7 @@ router.get('/resolve-youtube-album', async (req, res, next) => {
       return res.status(502).json({
         success: false,
         error: 'UpstreamUnavailable',
-        message: `No se pudo conectar al backend Python (${PY_BACKEND_URL}). ${e?.message || e}`,
+        message: `El servicio no está disponible. Inténtalo de nuevo más tarde.`,
       });
     }
     const body = await upstream.text();
