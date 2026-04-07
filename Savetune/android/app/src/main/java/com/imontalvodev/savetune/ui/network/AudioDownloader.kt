@@ -108,7 +108,10 @@ object AudioDownloader {
                 downloadClient.newCall(
                     Request.Builder()
                         .url(streamUrl)
-                        .header("User-Agent", "Mozilla/5.0 (Android)")
+                        .header("User-Agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip")
+                        .header("Accept", "*/*")
+                        .header("Accept-Encoding", "identity")
+                        .header("Connection", "keep-alive")
                         .get()
                         .build()
                 ).execute().use { res ->
@@ -121,14 +124,16 @@ object AudioDownloader {
                     val outFile = File(dir, fileName)
                     val body = res.body ?: return@withContext DownloadResult(false, null, "EmptyBody")
 
-                    FileOutputStream(outFile).use { out ->
-                        val buffer = ByteArray(8 * 1024)
-                        var bytes = body.byteStream().read(buffer)
-                        while (bytes >= 0) {
-                            if (bytes > 0) out.write(buffer, 0, bytes)
-                            bytes = body.byteStream().read(buffer)
+                    body.byteStream().use { input ->
+                        FileOutputStream(outFile).use { out ->
+                            val buffer = ByteArray(8 * 1024)
+                            var bytes = input.read(buffer)
+                            while (bytes >= 0) {
+                                if (bytes > 0) out.write(buffer, 0, bytes)
+                                bytes = input.read(buffer)
+                            }
+                            out.flush()
                         }
-                        out.flush()
                     }
 
                     ArtworkCache.clear()
