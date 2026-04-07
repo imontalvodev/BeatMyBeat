@@ -1775,6 +1775,15 @@ def api_search_youtube(
         "default_search": "ytsearch1",
         "noplaylist": True,
     }
+    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
+        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
+    if YOUTUBE_PO_TOKEN:
+        opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["web"],
+                "po_token": [f"web+{YOUTUBE_PO_TOKEN}"],
+            }
+        }
 
     try:
         print(f"[YT_SEARCH] Buscando en YouTube: {final_query}")
@@ -1860,6 +1869,15 @@ def api_search_song_suggestions(
         "default_search": f"ytsearch{safe_limit}",
         "noplaylist": True,
     }
+    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
+        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
+    if YOUTUBE_PO_TOKEN:
+        opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["web"],
+                "po_token": [f"web+{YOUTUBE_PO_TOKEN}"],
+            }
+        }
 
     try:
         print(f"[SONG_SUGGESTIONS] YouTube query: {final_query} (limit={safe_limit})")
@@ -2254,7 +2272,7 @@ def api_download_auto(
         "fragment_retries": YTDLP_FRAGMENT_RETRIES,
         "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
         "http_chunk_size": YTDLP_HTTP_CHUNK_SIZE_BYTES,
-        "default_search": "ytsearch1",  # 🔍 Busca automáticamente en YouTube
+        "default_search": "ytsearch1",
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -2266,6 +2284,15 @@ def api_download_auto(
             },
         ],
     }
+    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
+        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
+    if YOUTUBE_PO_TOKEN:
+        opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["web"],
+                "po_token": [f"web+{YOUTUBE_PO_TOKEN}"],
+            }
+        }
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
