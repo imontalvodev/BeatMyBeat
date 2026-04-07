@@ -11,6 +11,14 @@ services:
       LYRICS_OVH_BASE_URL: ${LYRICS_OVH_BASE_URL:-https://api.lyrics.ovh}
       LYRICS_OVH_TIMEOUT_SECONDS: ${LYRICS_OVH_TIMEOUT_SECONDS:-8}
       MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-5}
+      # Anti-bot YouTube: PO Token (recomendado para servidores cloud)
+      YOUTUBE_PO_TOKEN: ${YOUTUBE_PO_TOKEN:-}
+      # Cookies de YouTube (opcional, ruta dentro del contenedor)
+      YOUTUBE_COOKIES_FILE: ${YOUTUBE_COOKIES_FILE:-}
+    volumes:
+      # Monta cookies.txt desde el host sin rebuildar la imagen
+      # Crea el archivo en el servidor: /root/savetune/cookies.txt
+      - ${YOUTUBE_COOKIES_HOST_PATH:-/root/savetune/cookies.txt}:/app/cookies.txt:ro
     ports:
       - "${HOST_BACKEND_PORT:-41321}:4001"
     healthcheck:
