@@ -2131,11 +2131,14 @@ private fun resolveTrackMeta(track: com.imontalvodev.savetune.ui.data.DeviceTrac
         if (!metaFile.exists()) return@runCatching null
         val json = org.json.JSONObject(metaFile.readText())
         val t = json.optString("title").takeIf { it.isNotBlank() } ?: track.title
-        val a = json.optString("artist").takeIf { it.isNotBlank() && !it.equals("unknown artist", ignoreCase = true) }
-            ?: track.artist
+        val rawArtist = json.optString("artist").takeIf {
+            it.isNotBlank() && !it.equals("unknown artist", ignoreCase = true)
+        } ?: track.artist
+        // Limpiar sufijos de canal YouTube antes de buscar letras
+        val a = com.imontalvodev.savetune.ui.network.cleanArtistForLyrics(rawArtist)
         Pair(t, a)
     }.getOrNull()?.let { return it }
-    return Pair(track.title, track.artist)
+    return Pair(track.title, com.imontalvodev.savetune.ui.network.cleanArtistForLyrics(track.artist))
 }
 
 private fun String.toTitleCaseSimple(): String {

@@ -37,6 +37,7 @@ import com.imontalvodev.savetune.ui.network.AudioDownloader
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.network.SongSuggestion
 import com.imontalvodev.savetune.ui.network.YouTubeSearchClient
+import com.imontalvodev.savetune.ui.network.cleanArtistForLyrics
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundTop
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
@@ -382,7 +383,7 @@ private fun isYoutubePlaylistUrl(url: String): Boolean {
  */
 private fun parseYouTubeTitle(rawTitle: String, channel: String): Pair<String, String> {
     val cleanSuffixRegex = Regex(
-        """\s*[\(\[](official\s*(audio|video|music\s*video|lyric\s*video)?|lyrics?|audio|hd|4k|explicit|ft\.?.*|feat\.?.*|official)[\)\]]\s*""",
+        """\s*[\(\[](official\s*(audio|video|music\s*video|lyric\s*video)?|lyrics?|audio|hd|4k|explicit|ft\.?[^)\]]*|feat\.?[^)\]]*)[\)\]]\s*""",
         RegexOption.IGNORE_CASE,
     )
     val cleaned = rawTitle.replace(cleanSuffixRegex, "").trim()
@@ -392,15 +393,14 @@ private fun parseYouTubeTitle(rawTitle: String, channel: String): Pair<String, S
     for (sep in separators) {
         val idx = cleaned.indexOf(sep)
         if (idx > 0) {
-            val artist = cleaned.substring(0, idx).trim()
+            val artistRaw = cleaned.substring(0, idx).trim()
             val title = cleaned.substring(idx + sep.length).trim()
-            if (artist.isNotBlank() && title.isNotBlank()) {
-                return Pair(title, artist)
+            if (artistRaw.isNotBlank() && title.isNotBlank()) {
+                return Pair(title, cleanArtistForLyrics(artistRaw))
             }
         }
     }
     // Sin separador: usar canal como artista y título limpio
-    val cleanChannel = channel.replace(Regex("\\s*-\\s*(Topic|Official|Music|VEVO)$", RegexOption.IGNORE_CASE), "").trim()
-    return Pair(cleaned.ifBlank { rawTitle }, cleanChannel.ifBlank { channel })
+    return Pair(cleaned.ifBlank { rawTitle }, cleanArtistForLyrics(channel))
 }
 
