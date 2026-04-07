@@ -82,6 +82,13 @@ YTDLP_SOCKET_TIMEOUT_SECONDS = int(os.environ.get("YTDLP_SOCKET_TIMEOUT_SECONDS"
 YTDLP_RETRIES = int(os.environ.get("YTDLP_RETRIES", "5"))
 YTDLP_FRAGMENT_RETRIES = int(os.environ.get("YTDLP_FRAGMENT_RETRIES", "5"))
 YTDLP_HTTP_CHUNK_SIZE_BYTES = int(os.environ.get("YTDLP_HTTP_CHUNK_SIZE_BYTES", "10485760"))
+
+# --- Autenticación YouTube (anti-bot) ---
+# PO Token: genera uno con https://github.com/YunzheZJU/youtube-po-token-generator
+# o con yt-dlp --print-json --no-download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+YOUTUBE_PO_TOKEN = os.environ.get("YOUTUBE_PO_TOKEN", "").strip()
+# Ruta al cookies.txt dentro del contenedor (montado como volumen en docker-compose)
+YOUTUBE_COOKIES_FILE = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
 MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", "5242880"))
 
 # --- Logging (.log) para depuración ---
@@ -178,6 +185,18 @@ def _build_yt_dlp_audio_opts(
     }
     if default_search:
         opts["default_search"] = default_search
+
+    # Autenticación anti-bot: cookies y/o PO Token
+    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
+        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
+    if YOUTUBE_PO_TOKEN:
+        opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["web"],
+                "po_token": [f"web+{YOUTUBE_PO_TOKEN}"],
+            }
+        }
+
     return opts
 
 # --- Filtros para evitar "letra rara" cuando la canción no tiene vocals ---
