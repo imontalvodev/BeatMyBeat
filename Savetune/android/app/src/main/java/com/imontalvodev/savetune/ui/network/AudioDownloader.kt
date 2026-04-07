@@ -34,6 +34,7 @@ object AudioDownloader {
         album: String,
         imageUrl: String = "",
         videoId: String = "",
+        thumbnailUrl: String = "",
     ): DownloadResult = withContext(Dispatchers.IO) {
         val safeTitle = title.trim()
         val safeArtist = artist.trim()
@@ -43,17 +44,24 @@ object AudioDownloader {
             safeArtist,
         )
         try {
-            // --- Paso 1: resolver videoId si no se proporcionó ---
+            // --- Paso 1: resolver videoId y thumbnail si no se proporcionaron ---
+            var resolvedThumbnail = thumbnailUrl
             val resolvedVideoId = if (videoId.length == 11) {
                 videoId
             } else {
                 val query = listOf(safeTitle, safeArtist, album.trim()).filter { it.isNotBlank() }.joinToString(" ")
                 val results = YouTubeSearchClient.search(query, limit = 1)
-                results.firstOrNull()?.videoId ?: run {
+                val first = results.firstOrNull() ?: run {
                     SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "No se encontró el vídeo en YouTube.")
                     return@withContext DownloadResult(false, null, "VideoNotFound")
                 }
+                if (resolvedThumbnail.isBlank()) resolvedThumbnail = first.thumbnailUrl
+                first.videoId
             }
+            // Construir siempre la URL de maxresdefault basada en el videoId real
+            resolvedThumbnail = "https://i.ytimg.com/vi/$resolvedVideoId/maxresdefault.jpg"
+
+            android.util.Log.d("NewPipeStream", "title='$safeTitle' artist='$safeArtist' thumbnail='$resolvedThumbnail'")
 
             // --- Paso 2: extraer URL de stream con NewPipe ---
             val streamInfo = try {
@@ -135,9 +143,14 @@ object AudioDownloader {
                 return@withContext DownloadResult(false, null, "ZeroBytes")
             }
 
+            // --- Paso 4: embeber metadatos en el archivo ---
+            runCatching {
+                embedMetadata(outFile, safeTitle, safeArtist, album.trim(), resolvedThumbnail, downloadClient)
+            }.onFailure { android.util.Log.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
+
             ArtworkCache.clear()
 
-            // Pre-descargar letras para uso offline
+            // --- Paso 5: letras desde lyrics.ovh directo ---
             val isUnknown = { s: String -> s.isBlank() || s.equals("unknown", ignoreCase = true) || s.equals("unknown artist", ignoreCase = true) }
             if (!isUnknown(safeTitle) && !isUnknown(safeArtist)) {
                 runCatching {
@@ -355,5 +368,77 @@ object AudioDownloader {
         ArtworkCache.clear()
         return DownloadResult(true, outFile.name, null)
     }
+
+    private fun embedMetadata(
+        file: File,
+        title: String,
+        artist: String,
+        album: String,
+        thumbnailUrl: String,
+        httpClient: OkHttpClient,
+    ) {
+        android.util.Log.d("NewPipeStream", "embedMetadata: title='$title' artist='$artist' ext=${file.extension}")
+
+        // 1. Descargar la carátula (maxresdefault → hqdefault → mqdefault)
+        val artworkBytes: ByteArray? = if (thumbnailUrl.isNotBlank()) {
+            runCatching {
+                val urls = listOf(
+                    thumbnailUrl,
+                    thumbnailUrl.replace("maxresdefault", "hqdefault"),
+                    thumbnailUrl.replace("maxresdefault", "mqdefault"),
+                )
+                var bytes: ByteArray? = null
+                for (url in urls) {
+                    runCatching {
+                        val resp = httpClient.newCall(Request.Builder().url(url).get().build()).execute()
+                        if (resp.isSuccessful) {
+                            val b = resp.body?.bytes()
+                            resp.close()
+                            if (b != null && b.isNotEmpty()) bytes = b
+                        } else { resp.close() }
+                    }
+                    if (bytes != null) break
+                }
+                android.util.Log.d("NewPipeStream", "Artwork: ${bytes?.size ?: 0} bytes")
+                bytes
+            }.getOrNull()
+        } else null
+
+        // 2. Guardar SIEMPRE el .meta.json — fuente de verdad para el scanner
+        val metaFile = File(file.parentFile, "${file.nameWithoutExtension}.meta.json")
+        runCatching {
+            org.json.JSONObject().apply {
+                put("title", title)
+                put("artist", artist)
+                put("album", album.ifBlank { title })
+                put("thumbnailUrl", thumbnailUrl)
+                if (artworkBytes != null) {
+                    put("artworkBase64", android.util.Base64.encodeToString(artworkBytes, android.util.Base64.NO_WRAP))
+                }
+            }.also { metaFile.writeText(it.toString()) }
+            android.util.Log.d("NewPipeStream", "meta.json saved: ${metaFile.name}")
+        }.onFailure { android.util.Log.w("NewPipeStream", "meta.json failed: ${it.message}") }
+
+        // 3. Intentar también embeber tags MP4 en el contenedor (best-effort)
+        if (file.extension.lowercase() == "m4a") {
+            val tmp = File(file.parentFile, "${file.nameWithoutExtension}.tmp.m4a")
+            runCatching {
+                Mp4TagWriter.write(
+                    src = file, dst = tmp,
+                    title = title, artist = artist,
+                    album = album.ifBlank { title },
+                    artworkJpeg = artworkBytes,
+                )
+                if (tmp.exists() && tmp.length() > 0) {
+                    file.delete(); tmp.renameTo(file)
+                    android.util.Log.d("NewPipeStream", "MP4 tags embedded OK")
+                } else { tmp.delete() }
+            }.onFailure {
+                tmp.delete()
+                android.util.Log.w("NewPipeStream", "MP4 tags failed (meta.json fallback active): ${it.message}")
+            }
+        }
+    }
+
 }
 

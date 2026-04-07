@@ -211,16 +211,18 @@ fun AnalyzeScreen(
                                             val results = withContext(Dispatchers.IO) {
                                                 YouTubeSearchClient.search(searchQuery, limit = 10)
                                             }
-                                            if (results.isNotEmpty()) {
-                                                suggestions = results.map { r ->
-                                                    SongSuggestion(
-                                                        title = r.title,
-                                                        artist = r.channel,
-                                                        videoId = r.videoId,
-                                                        thumbnailUrl = r.thumbnailUrl,
-                                                        durationText = r.durationText,
-                                                    )
-                                                }
+                            if (results.isNotEmpty()) {
+                                suggestions = results.map { r ->
+                                    // Muchos vídeos tienen "Artista - Título" en el título
+                                    val (parsedTitle, parsedArtist) = parseYouTubeTitle(r.title, r.channel)
+                                    SongSuggestion(
+                                        title = parsedTitle,
+                                        artist = parsedArtist,
+                                        videoId = r.videoId,
+                                        thumbnailUrl = r.thumbnailUrl,
+                                        durationText = r.durationText,
+                                    )
+                                }
                                             } else {
                                                 suggestionError = "No se encontraron resultados para esa búsqueda."
                                             }
@@ -345,6 +347,7 @@ fun AnalyzeScreen(
                                 artist = suggestion.artist,
                                 album = "",
                                 videoId = suggestion.videoId,
+                                thumbnailUrl = suggestion.thumbnailUrl,
                             )
                             downloadingSuggestion = false
                             selectedSuggestion = null
@@ -370,5 +373,34 @@ private fun isYoutubePlaylistUrl(url: String): Boolean {
     val u = url.lowercase()
     return (u.contains("youtube.com") || u.contains("youtu.be") || u.contains("music.youtube.com")) &&
         u.contains("list=")
+}
+
+/**
+ * Intenta separar "Artista - Título" del nombre del vídeo de YouTube.
+ * Si no hay separador claro, usa el nombre del canal como artista y el título tal cual.
+ * También elimina sufijos comunes como "(Official Audio)", "[Lyrics]", etc.
+ */
+private fun parseYouTubeTitle(rawTitle: String, channel: String): Pair<String, String> {
+    val cleanSuffixRegex = Regex(
+        """\s*[\(\[](official\s*(audio|video|music\s*video|lyric\s*video)?|lyrics?|audio|hd|4k|explicit|ft\.?.*|feat\.?.*|official)[\)\]]\s*""",
+        RegexOption.IGNORE_CASE,
+    )
+    val cleaned = rawTitle.replace(cleanSuffixRegex, "").trim()
+
+    // Separadores comunes: " - ", " – ", " — "
+    val separators = listOf(" - ", " – ", " — ")
+    for (sep in separators) {
+        val idx = cleaned.indexOf(sep)
+        if (idx > 0) {
+            val artist = cleaned.substring(0, idx).trim()
+            val title = cleaned.substring(idx + sep.length).trim()
+            if (artist.isNotBlank() && title.isNotBlank()) {
+                return Pair(title, artist)
+            }
+        }
+    }
+    // Sin separador: usar canal como artista y título limpio
+    val cleanChannel = channel.replace(Regex("\\s*-\\s*(Topic|Official|Music|VEVO)$", RegexOption.IGNORE_CASE), "").trim()
+    return Pair(cleaned.ifBlank { rawTitle }, cleanChannel.ifBlank { channel })
 }
 

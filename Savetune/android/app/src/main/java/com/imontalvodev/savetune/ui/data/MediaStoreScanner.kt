@@ -73,7 +73,7 @@ class MediaStoreScanner(private val context: Context) {
         // 2) Incluir siempre los ficheros en almacenamiento interno privado (.music)
         val appMusicDir = File(context.filesDir, ".music")
         if (appMusicDir.exists()) {
-            val audioExtensions = setOf("mp3", "m4a", "aac", "wav", "ogg", "flac")
+            val audioExtensions = setOf("mp3", "m4a", "aac", "wav", "ogg", "flac", "webm")
             appMusicDir.listFiles()?.forEachIndexed { index, file ->
                 if (file.isFile) {
                     val ext = file.extension.lowercase()
@@ -81,23 +81,39 @@ class MediaStoreScanner(private val context: Context) {
                         val uriString = file.toURI().toString()
                         val already = tracks.any { it.uri == uriString }
                         if (!already) {
-                            val retriever = MediaMetadataRetriever()
+                            // Intentar leer el sidecar .meta.json primero (escrito por AudioDownloader)
+                            val metaFile = File(file.parentFile, "${file.nameWithoutExtension}.meta.json")
                             var title = file.nameWithoutExtension
                             var artist = "Unknown artist"
                             var album: String? = null
                             var durationMs = 0L
+                            var metaLoaded = false
+
+                            if (metaFile.exists()) {
+                                runCatching {
+                                    val json = org.json.JSONObject(metaFile.readText())
+                                    json.optString("title").takeIf { it.isNotBlank() }?.let { title = it }
+                                    json.optString("artist").takeIf { it.isNotBlank() && !it.equals("unknown artist", ignoreCase = true) }?.let { artist = it }
+                                    json.optString("album").takeIf { it.isNotBlank() }?.let { album = it }
+                                    metaLoaded = true
+                                }
+                            }
+
+                            // Si no había meta.json o faltaba duración, leer del archivo
+                            val retriever = MediaMetadataRetriever()
                             try {
                                 retriever.setDataSource(file.absolutePath)
-                                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                                    ?.takeIf { it.isNotBlank() }?.let { title = it }
-                                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                                    ?.takeIf { it.isNotBlank() }?.let { artist = it }
-                                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                                    ?.takeIf { it.isNotBlank() }?.let { album = it }
+                                if (!metaLoaded) {
+                                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                                        ?.takeIf { it.isNotBlank() }?.let { title = it }
+                                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                                        ?.takeIf { it.isNotBlank() }?.let { artist = it }
+                                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                                        ?.takeIf { it.isNotBlank() }?.let { album = it }
+                                }
                                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                                     ?.toLongOrNull()?.let { durationMs = it }
                             } catch (_: Exception) {
-                                // Si falla, usamos los valores por defecto definidos arriba.
                             } finally {
                                 retriever.release()
                             }
