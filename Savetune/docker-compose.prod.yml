@@ -11,6 +11,8 @@ services:
       LYRICS_OVH_BASE_URL: ${LYRICS_OVH_BASE_URL:-https://api.lyrics.ovh}
       LYRICS_OVH_TIMEOUT_SECONDS: ${LYRICS_OVH_TIMEOUT_SECONDS:-8}
       MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-5}
+      # YouTube Data API v3 — búsquedas sin riesgo de bloqueo bot
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # Anti-bot YouTube: PO Token (recomendado para servidores cloud)
       YOUTUBE_PO_TOKEN: ${YOUTUBE_PO_TOKEN:-}
       # Cookies de YouTube (opcional, ruta dentro del contenedor)

@@ -84,11 +84,10 @@ YTDLP_FRAGMENT_RETRIES = int(os.environ.get("YTDLP_FRAGMENT_RETRIES", "5"))
 YTDLP_HTTP_CHUNK_SIZE_BYTES = int(os.environ.get("YTDLP_HTTP_CHUNK_SIZE_BYTES", "10485760"))
 
 # --- Autenticación YouTube (anti-bot) ---
-# PO Token: genera uno con https://github.com/YunzheZJU/youtube-po-token-generator
-# o con yt-dlp --print-json --no-download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 YOUTUBE_PO_TOKEN = os.environ.get("YOUTUBE_PO_TOKEN", "").strip()
-# Ruta al cookies.txt dentro del contenedor (montado como volumen en docker-compose)
 YOUTUBE_COOKIES_FILE = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
+# YouTube Data API v3 — para búsquedas desde IPs de datacenter (evita bloqueo bot en ytsearch)
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
 MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", "5242880"))
 
 # --- Logging (.log) para depuración ---
@@ -1768,41 +1767,22 @@ def api_search_youtube(
             },
         )
 
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-        "default_search": "ytsearch1",
-        "noplaylist": True,
-    }
-    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
-        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
-    if YOUTUBE_PO_TOKEN:
-        opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["web"],
-                "po_token": [f"web+{YOUTUBE_PO_TOKEN}"],
-            }
-        }
-
     try:
-        print(f"[YT_SEARCH] Buscando en YouTube: {final_query}")
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(final_query, download=False)
+        print(f"[YT_SEARCH] YouTube API query: {final_query}")
+        api_results = _search_youtube_api(final_query, max_results=1)
 
-        if not info or "entries" not in info or not info["entries"]:
+        if not api_results:
             return {
                 "success": True,
                 "video": {"id": "", "title": "", "url": "", "thumbnail": ""},
             }
 
-        entry = info["entries"][0]
-        video_id = entry.get("id") or ""
+        item = api_results[0]
         video = {
-            "id": video_id,
-            "title": entry.get("title") or "",
-            "url": f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
-            "thumbnail": entry.get("thumbnail") or "",
+            "id": item["id"],
+            "title": item["title"],
+            "url": item["url"],
+            "thumbnail": item["thumbnail"],
         }
         return {"success": True, "video": video}
 
@@ -1839,6 +1819,46 @@ def _guess_artist_from_title(title: str, uploader: str) -> tuple[str, str]:
     return "Unknown Artist", safe_title
 
 
+def _search_youtube_api(query: str, max_results: int = 10) -> list[dict]:
+    """
+    Busca en YouTube usando la Data API v3.
+    Devuelve lista de dicts con id, title, channelTitle.
+    Lanza excepción si la API key no está configurada o falla.
+    """
+    if not YOUTUBE_API_KEY:
+        raise ValueError("YOUTUBE_API_KEY no configurada")
+
+    url = "https://www.googleapis.com/youtube/v3/search"
+    params = {
+        "part": "snippet",
+        "q": query,
+        "type": "video",
+        "videoCategoryId": "10",  # Music
+        "maxResults": max_results,
+        "key": YOUTUBE_API_KEY,
+    }
+    resp = requests.get(url, params=params, timeout=10)
+    if resp.status_code != 200:
+        raise ValueError(f"YouTube API error {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+    results = []
+    for item in data.get("items", []):
+        video_id = item.get("id", {}).get("videoId", "")
+        snippet = item.get("snippet", {})
+        title = snippet.get("title", "").strip()
+        channel = snippet.get("channelTitle", "").strip()
+        if video_id and title:
+            results.append({
+                "id": video_id,
+                "title": title,
+                "channelTitle": channel,
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "thumbnail": snippet.get("thumbnails", {}).get("default", {}).get("url", ""),
+            })
+    return results
+
+
 @app.get("/api/search-song-suggestions")
 def api_search_song_suggestions(
     query: str | None = Query(None, alias="query"),
@@ -1862,55 +1882,27 @@ def api_search_song_suggestions(
         )
 
     safe_limit = max(1, min(int(limit), 30))
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-        "default_search": f"ytsearch{safe_limit}",
-        "noplaylist": True,
-    }
-    if YOUTUBE_COOKIES_FILE and os.path.isfile(YOUTUBE_COOKIES_FILE):
-        opts["cookiefile"] = YOUTUBE_COOKIES_FILE
-    if YOUTUBE_PO_TOKEN:
-        opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["web"],
-                "po_token": [f"web+{YOUTUBE_PO_TOKEN}"],
-            }
-        }
 
     try:
-        print(f"[SONG_SUGGESTIONS] YouTube query: {final_query} (limit={safe_limit})")
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(final_query, download=False)
+        print(f"[SONG_SUGGESTIONS] YouTube API query: {final_query} (limit={safe_limit})")
+        api_results = _search_youtube_api(final_query, max_results=safe_limit)
 
-        entries = info.get("entries", []) if isinstance(info, dict) else []
         out = []
         seen = set()
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            raw_title = (entry.get("title") or "").strip()
+        for item in api_results:
+            raw_title = item.get("title", "").strip()
+            channel = item.get("channelTitle", "").strip()
             if not raw_title:
                 continue
-            raw_artist = (entry.get("artist") or "").strip()
-            uploader = (entry.get("uploader") or "").strip()
-            if raw_artist:
-                artist_name = raw_artist
-                title_name = raw_title
-            else:
-                artist_name, title_name = _guess_artist_from_title(raw_title, uploader)
-
+            artist_name, title_name = _guess_artist_from_title(raw_title, channel)
             key = (title_name.lower(), artist_name.lower())
             if key in seen:
                 continue
             seen.add(key)
-            out.append(
-                {
-                    "title": title_name,
-                    "artist": artist_name,
-                }
-            )
+            out.append({
+                "title": title_name,
+                "artist": artist_name,
+            })
             if len(out) >= safe_limit:
                 break
 
