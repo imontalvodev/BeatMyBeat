@@ -1,7 +1,7 @@
 {
   "name": "savetune-backend",
   "version": "1.0.0",
-  "description": "Backend API for SaveTune (Spotify playlist scraper + YouTube MP3 downloader)",
+  "description": "Middleware API for SaveTune (YouTube MP3 downloader + lyrics)",
   "main": "src/app.js",
   "scripts": {
     "dev": "node src/app.js",

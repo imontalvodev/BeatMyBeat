@@ -5,6 +5,8 @@
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">portatil-dev</domain>
         <domain includeSubdomains="true">pc-dev</domain>
+        <!-- Mesh / homelab (HTTP al middleware o backend por nombre NordVPN mesh) -->
+        <domain includeSubdomains="true">mini-pc-dev</domain>
     </domain-config>
 </network-security-config>
 

@@ -66,46 +66,7 @@ En el frontend:
 
 ## 3. Endpoints JSON: Front ↔ Middle ↔ Back
 
-### 3.1 `GET /api/playlist`
-
-**Frontend → Middleware**
-
-- Método: `GET`
-- URL: `{MIDDLEWARE_URL}/api/playlist?url=<spotify_playlist_url>`
-
-**Middleware → Backend Python**
-
-- Método: `GET`
-- URL: `{PY_BACKEND_URL}/api/playlist?url=<spotify_playlist_url>`
-
-**Validación en middleware**
-
-- Se valida que el parámetro `url` sea una URL de playlist de Spotify válida.
-- Si es inválida, responde directamente:
-
-```json
-{
-  "success": false,
-  "error": "Invalid Spotify URL",
-  "message": "Please provide a valid Spotify playlist URL"
-}
-```
-
-**Respuesta al frontend**
-
-- Reenvía el JSON que devuelve el backend Python (ver `backend/API_DOCS.md`).
-
-Uso típico desde frontend:
-
-```ts
-const params = new URLSearchParams({ url: playlistUrl });
-const res = await fetch(`${MIDDLEWARE_URL}/api/playlist?${params.toString()}`);
-const data = await res.json();
-```
-
----
-
-### 3.2 `GET /api/search-youtube`
+### 3.1 `GET /api/search-youtube`
 
 **Frontend → Middleware**
 

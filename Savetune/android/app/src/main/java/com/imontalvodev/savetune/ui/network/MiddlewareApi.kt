@@ -1,10 +1,12 @@
 package com.imontalvodev.savetune.ui.network
 
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 data class LyricsResponse(
@@ -52,7 +54,7 @@ data class SongSuggestionsResponse(
 
 object MiddlewareApi {
     private val client: OkHttpClient = OkHttpClient.Builder()
-        // Playlist/lyrics pueden tardar (Spotify + scraper / letras.com)
+        // Playlist/lyrics pueden tardar (yt-dlp / letras.com)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -91,10 +93,10 @@ object MiddlewareApi {
         }
     }
 
-    fun fetchPlaylist(baseUrl: String, spotifyUrl: String): PlaylistResponse {
+    fun fetchPlaylist(baseUrl: String, playlistUrl: String): PlaylistResponse {
         val url = baseUrl.trimEnd('/').toHttpUrl().newBuilder()
             .addPathSegments("api/playlist")
-            .addQueryParameter("url", spotifyUrl)
+            .addQueryParameter("url", playlistUrl)
             .build()
 
         val req = Request.Builder().url(url).get().build()
@@ -149,43 +151,88 @@ object MiddlewareApi {
     }
 
     fun fetchSongSuggestions(baseUrl: String, query: String, limit: Int = 10): SongSuggestionsResponse {
-        val url = baseUrl.trimEnd('/').toHttpUrl().newBuilder()
-            .addPathSegments("api/search-song-suggestions")
-            .addQueryParameter("query", query)
-            .addQueryParameter("limit", limit.toString())
-            .build()
+        val trimmedQuery = query.trim()
+        if (trimmedQuery.isBlank()) {
+            return SongSuggestionsResponse(
+                success = false,
+                results = emptyList(),
+                error = "EmptyQuery",
+                message = "Introduce al menos parte del título o del artista.",
+            )
+        }
 
-        val req = Request.Builder().url(url).get().build()
-        client.newCall(req).execute().use { res ->
-            val body = res.body?.string().orEmpty()
-            val json = runCatching { JSONObject(body) }.getOrNull()
-            if (json == null) {
-                return SongSuggestionsResponse(
+        val url =
+            "${baseUrl.trimEnd('/')}/api/search-song-suggestions".toHttpUrlOrNull()?.newBuilder()
+                ?.addQueryParameter("query", trimmedQuery)
+                ?.addQueryParameter("limit", limit.toString())
+                ?.build()
+                ?: return SongSuggestionsResponse(
                     success = false,
                     results = emptyList(),
-                    error = "InvalidJson",
-                    message = "Invalid JSON from server",
+                    error = "BadUrl",
+                    message = "URL del middleware no válida: ${baseUrl.take(80)}",
                 )
-            }
 
-            val arr = json.optJSONArray("results") ?: JSONArray()
-            val results = buildList {
-                for (i in 0 until arr.length()) {
-                    val item = arr.optJSONObject(i) ?: continue
-                    add(
-                        SongSuggestion(
-                            title = item.optString("title", "").trim(),
-                            artist = item.optString("artist", "").trim(),
-                        ),
+        return try {
+            val req = Request.Builder().url(url).get().build()
+            client.newCall(req).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                val json = runCatching { JSONObject(body) }.getOrNull()
+                if (json == null) {
+                    return SongSuggestionsResponse(
+                        success = false,
+                        results = emptyList(),
+                        error = "InvalidJson",
+                        message = "Respuesta no JSON del servidor (HTTP ${res.code})",
                     )
                 }
-            }
 
-            return SongSuggestionsResponse(
-                success = json.optBoolean("success", false),
-                results = results,
-                error = json.opt("error")?.toString(),
-                message = json.opt("message")?.toString(),
+                val arr = json.optJSONArray("results") ?: JSONArray()
+                val results = buildList {
+                    for (i in 0 until arr.length()) {
+                        when (val el = arr.opt(i)) {
+                            is JSONObject -> add(
+                                SongSuggestion(
+                                    title = el.optString("title", "").trim(),
+                                    artist = el.optString("artist", "").trim(),
+                                ),
+                            )
+                            is String -> {
+                                val line = el.trim()
+                                if (line.isNotBlank()) {
+                                    val parts = line.split(" - ", limit = 2)
+                                    if (parts.size == 2) {
+                                        add(SongSuggestion(title = parts[1].trim(), artist = parts[0].trim()))
+                                    } else {
+                                        add(SongSuggestion(title = line, artist = ""))
+                                    }
+                                }
+                            }
+                            else -> continue
+                        }
+                    }
+                }
+
+                SongSuggestionsResponse(
+                    success = json.optBoolean("success", false),
+                    results = results,
+                    error = json.opt("error")?.toString(),
+                    message = json.opt("message")?.toString(),
+                )
+            }
+        } catch (e: IOException) {
+            SongSuggestionsResponse(
+                success = false,
+                results = emptyList(),
+                error = "NetworkError",
+                message = e.message ?: "No hay conexión con el middleware",
+            )
+        } catch (e: Exception) {
+            SongSuggestionsResponse(
+                success = false,
+                results = emptyList(),
+                error = "UnexpectedError",
+                message = e.message ?: e.javaClass.simpleName,
             )
         }
     }
