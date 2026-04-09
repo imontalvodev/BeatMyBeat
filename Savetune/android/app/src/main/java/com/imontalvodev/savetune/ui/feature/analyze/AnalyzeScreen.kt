@@ -78,6 +78,7 @@ fun AnalyzeScreen(
     var suggestions by remember { mutableStateOf<List<SongSuggestion>>(emptyList()) }
     var selectedSuggestion by remember { mutableStateOf<SongSuggestion?>(null) }
     var downloadingSuggestion by remember { mutableStateOf(false) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -331,9 +332,17 @@ fun AnalyzeScreen(
             },
             title = { Text("Descargar canción") },
             text = {
-                Text(
-                    "¿Quieres descargar \"${suggestion.title}\" de ${suggestion.artist}?",
-                )
+                androidx.compose.foundation.layout.Column {
+                    Text("¿Quieres descargar \"${suggestion.title}\" de ${suggestion.artist}?")
+                    if (downloadError != null) {
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = downloadError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
@@ -341,17 +350,28 @@ fun AnalyzeScreen(
                     onClick = {
                         scope.launch {
                             downloadingSuggestion = true
-                            AudioDownloader.downloadAutoToAppMusic(
-                                context = context,
-                                middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                title = suggestion.title,
-                                artist = suggestion.artist,
-                                album = "",
-                                videoId = suggestion.videoId,
-                                thumbnailUrl = suggestion.thumbnailUrl,
-                            )
-                            downloadingSuggestion = false
-                            selectedSuggestion = null
+                            downloadError = null
+                            try {
+                                val result = AudioDownloader.downloadAutoToAppMusic(
+                                    context = context,
+                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                    title = suggestion.title,
+                                    artist = suggestion.artist,
+                                    album = "",
+                                    videoId = suggestion.videoId,
+                                    thumbnailUrl = suggestion.thumbnailUrl,
+                                )
+                                if (!result.success) {
+                                    downloadError = result.error ?: "Error desconocido"
+                                } else {
+                                    selectedSuggestion = null
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
+                                downloadError = "Error: ${e.javaClass.simpleName}"
+                            } finally {
+                                downloadingSuggestion = false
+                            }
                         }
                     },
                 ) {

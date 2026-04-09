@@ -37,11 +37,27 @@ object NewPipeStreamExtractor {
         init()
         val url = "https://www.youtube.com/watch?v=$videoId"
         android.util.Log.d("NewPipeStream", "Extracting: $url")
-        val extractor: StreamExtractor = ServiceList.YouTube.getStreamExtractor(url)
-        extractor.fetchPage()
+
+        val extractor: StreamExtractor = try {
+            ServiceList.YouTube.getStreamExtractor(url)
+        } catch (e: Exception) {
+            throw Exception("No se pudo crear el extractor: ${e.message}", e)
+        }
+
+        try {
+            extractor.fetchPage()
+        } catch (e: Exception) {
+            throw Exception("Error al obtener la página del vídeo: ${e.message}", e)
+        }
+
         android.util.Log.d("NewPipeStream", "Page fetched, getting audio streams")
 
-        val audioStreams: List<AudioStream> = extractor.audioStreams
+        val audioStreams: List<AudioStream> = try {
+            extractor.audioStreams
+        } catch (e: Exception) {
+            throw Exception("Error al obtener streams de audio: ${e.message}", e)
+        }
+
         android.util.Log.d("NewPipeStream", "Audio streams found: ${audioStreams.size}")
         if (audioStreams.isEmpty()) throw Exception("No se encontraron streams de audio para $videoId")
 
@@ -60,6 +76,8 @@ object NewPipeStreamExtractor {
             MediaFormat.MP3 -> "audio/mpeg"
             else -> "audio/mp4"
         }
+
+        android.util.Log.d("NewPipeStream", "Best stream: format=${best.format} bitrate=${best.averageBitrate} mime=$mimeType")
 
         return AudioStreamInfo(
             url = best.content,

@@ -28,8 +28,14 @@ object Mp4TagWriter {
         album: String,
         artworkJpeg: ByteArray?,
     ) {
+        if (!src.exists() || src.length() < 8) throw Exception("Archivo fuente inválido: ${src.name}")
+        // Limitar el tamaño de artwork para evitar OOM en dispositivos con poca RAM
+        val safeArtwork = if (artworkJpeg != null && artworkJpeg.size > 512 * 1024) {
+            artworkJpeg.copyOf(512 * 1024) // truncar a 512KB máximo
+        } else artworkJpeg
+
         val srcBytes = src.readBytes()
-        val ilstBytes = buildIlst(title, artist, album, artworkJpeg)
+        val ilstBytes = buildIlst(title, artist, album, safeArtwork)
         val udtaBytes = wrapInBox("udta", wrapInBox("meta", buildMeta(ilstBytes)))
 
         // Buscar y reemplazar un 'udta' existente, o insertar antes de 'mdat'

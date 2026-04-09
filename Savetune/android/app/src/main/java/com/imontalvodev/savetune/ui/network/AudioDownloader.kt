@@ -163,8 +163,14 @@ object AudioDownloader {
             return@withContext DownloadResult(true, outFile.name, null)
 
         } catch (e: Exception) {
+            android.util.Log.e("NewPipeStream", "Download exception: ${e.javaClass.simpleName}: ${e.message}", e)
             SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
-            return@withContext DownloadResult(false, null, e.message)
+            return@withContext DownloadResult(false, null, "${e.javaClass.simpleName}: ${e.message}")
+        } catch (t: Throwable) {
+            // Captura también Error (NoSuchMethodError, OutOfMemoryError, etc.)
+            android.util.Log.e("NewPipeStream", "Download fatal: ${t.javaClass.simpleName}: ${t.message}", t)
+            SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "Error crítico: ${t.javaClass.simpleName}")
+            return@withContext DownloadResult(false, null, "${t.javaClass.simpleName}: ${t.message}")
         }
     }
 
