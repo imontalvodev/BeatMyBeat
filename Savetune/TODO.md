@@ -1,30 +1,57 @@
+# Cosas a corregir
+
+## IMPORTANTE LEER EL FICHERO PDF CON TODAS LAS RESPUESTAS DE LOS BETA TESTERS
+
+## Bugs con el reproductor
+
+### Reproducir desde cualquier punto
+Al reproducir una cancion los usuarios reportan que solo se puede reproducir desde el principio y no desde cualquier punto
+
+### Falta el tiempo de duracion de la cancion
+Los usuarios reportan la falta del indicador de duracion de la cancion
+
+### Arreglar botones de shuffle y loop
+Reportan que falla el boton de aleatorio y el de reproducir en bucle
+
+## Descargas
+
+### Miniaturas
+Mostrar las miniaturas de las canciones que se desee descargar para no descargar el fichero equivocado
+
+### Pete al descargar playlists de YT
+Cuando el usuario inserta una URL de una playlist de YT la app directamente peta
+
 # Cosas a implementar
 
-## Subscripciones
-Habria que pensar para no saturar el servidor un limite de descargas por usuarios q sean free o algo asi y con una suscripcion o pago unico darles mas descargas, esto permite generar ingresos economicos para invertir en el mantenimiento de servidores y escalar a mejores servidores
+## V1
 
-### Implementar esto mediante botones o variables booleanas para mas simplicidad (investigar y hablar)
+### FFmpeg
+Implementar esta herramienta para poder convertir los audios descargados de m4a a mp3 u otros formatos (.flac, .ogg, etc)
 
-## Modo karaoke (futura update)
-Al tener la cancion y la letra se puede crear un karaoke, habria que ver como aislar la voz o algo y asi permitimos al usuario el tener el karaoke
+### Sincronizar la letra con el ritmo de la cancion
+Buscar como poder sincronizar las letras con lo que va cantando la cancion
 
-## Enlace de compartir
-Compartir enlace generado por la app para que otros usuarios al pinchar, se les abra la app y se les descargue dicha cancion dentro de la app
+### Poder ver la cola de las canciones a reproducir y editarla
+Opcion para que el usuario vea las canciones en cola y poder editar esa cola de reproduccion a gusto del usuario (usar FIFO)
 
-## Cambiar entre diferentes idiomas
-Implementar diferentes opciones de idiomas dentro de la app
+### Cambiar entre diferentes idiomas
+Implementar diferentes opciones de idiomas dentro de la app (Español, ingles, croata, aleman, etc)
 
-## Personalizar el fondo de la app
-Dejar que el usuario implemente de fondo una foto personalizada para verse cuando se ejecuta la app
+### Personalizar el fondo de la app
+Dejar que el usuario implemente de fondo una foto personalizada para verse cuando se ejecuta la app al igual que pueda personalizar cada color y detalle de la app a su propio gusto
 
-## Poner foto de perfil
+### Poner foto de perfil
 
-## FFmpeg
-Implementar esta herramienta para poder convertir los audios descargados de m4a a mp3
-
-## Compartir informacion
+### Compartir informacion
 Compartir como un documento PDF con las playlists y el nombre de las canciones para conseguir que la app luego ese PDF lo reconozca y poder descargar las diferentes canciones (PDF interactivo, posiblemente implementar hipervinculos dentro de el para la APP)
 En caso de q el usuario no tenga la app cuando pinche al enlace, le lleve a la playstore para descargar la app automaticamente
 
-## Personalizar colores de la app mediante paleta
-Permitir al usuario cambiar los colores de la app a su gusto total
+## Futuras actualizaciones
+
+### Implementacion de Spotify API
+**Se requiere de una cuenta de Spotify Premium para poder usar la API**
+Para esto necesitaremos pensar una forma de financiar el pago de la cuenta y ademas el mantener el servidor a montar con un backend sencillo para obtener los datos de la API
+
+### Modo karaoke (futura update)
+Al tener la cancion y la letra se puede crear un karaoke, habria que ver como aislar la voz o algo y asi permitimos al usuario el tener el karaoke
+
