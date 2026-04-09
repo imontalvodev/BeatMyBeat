@@ -279,7 +279,7 @@ fun PlayerScreen(
         }
     }
 
-    // Cargar carátula embebida de la pista actual, si existe (con caché)
+    // Cargar carátula: primero tags embebidos, luego .meta.json con artworkBase64
     LaunchedEffect(currentTrack?.id) {
         if (currentTrack == null) {
             currentArtwork = null
@@ -292,16 +292,31 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
 
-        val loaded = runCatching {
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(context, Uri.parse(currentTrack!!.uri))
-                val data = retriever.embeddedPicture
-                if (data != null) BitmapFactory.decodeByteArray(data, 0, data.size) else null
-            } finally {
-                retriever.release()
-            }
-        }.getOrNull()
+        val loaded = withContext(Dispatchers.IO) {
+            // 1) Tags embebidos en el archivo
+            val embedded = runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(context, Uri.parse(currentTrack!!.uri))
+                    val data = retriever.embeddedPicture
+                    if (data != null) BitmapFactory.decodeByteArray(data, 0, data.size) else null
+                } finally { retriever.release() }
+            }.getOrNull()
+
+            if (embedded != null) return@withContext embedded
+
+            // 2) Fallback: artworkBase64 en el .meta.json del .music privado
+            runCatching {
+                val uri = Uri.parse(currentTrack!!.uri)
+                val audioFile = java.io.File(uri.path ?: return@runCatching null)
+                val metaFile = java.io.File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.meta.json")
+                if (!metaFile.exists()) return@runCatching null
+                val b64 = org.json.JSONObject(metaFile.readText()).optString("artworkBase64")
+                if (b64.isBlank()) return@runCatching null
+                val bytes = android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()
+        }
 
         currentArtwork = loaded
         if (loaded != null) ArtworkCache.put(currentTrack!!.id, loaded)
@@ -314,8 +329,11 @@ fun PlayerScreen(
             lyricsState = LyricsUiState.Empty("Selecciona una canción")
             return@LaunchedEffect
         }
-        val title = t.title.trim()
-        val artist = t.artist.trim()
+
+        // Leer título y artista reales desde .meta.json si existen
+        val (title, artist) = withContext(Dispatchers.IO) {
+            resolveTrackMeta(t)
+        }
 
         fun isUnknown(s: String): Boolean =
             s.equals("unknown", ignoreCase = true) ||
@@ -369,79 +387,42 @@ fun PlayerScreen(
     fun downloadLyricsIfNeeded(track: DeviceTrack) {
         if (lyricsDownloading) return
 
-        val title = track.title.trim()
-        val artist = track.artist.trim()
-        if (isUnknown(title) || isUnknown(artist)) {
-            lyricsState = LyricsUiState.Empty("No hay letra disponible para esta canción")
-            return
-        }
-
         lyricsDownloading = true
         lyricsState = LyricsUiState.Loading
 
         uiScope.launch {
             try {
-                // 1) Cache por si ya se bajó en otro momento
-                val cached = withContext(Dispatchers.IO) {
-                    LyricsCache.get(context, title, artist)
+                // Leer metadatos reales desde .meta.json si existen
+                val (title, artist) = withContext(Dispatchers.IO) { resolveTrackMeta(track) }
+
+                if (isUnknown(title) || isUnknown(artist)) {
+                    lyricsState = LyricsUiState.Empty("No hay letra disponible para esta canción")
+                    return@launch
                 }
+
+                // 1) Caché local (offline-first)
+                val cached = withContext(Dispatchers.IO) { LyricsCache.get(context, title, artist) }
                 if (!cached.isNullOrBlank()) {
                     lyricsState = LyricsUiState.Ready(cached)
                     return@launch
                 }
 
-                // 2) Fallback de título para mejorar tasa de acierto.
-                // Nota: Kotlin no permite "forward reference" fiable para funciones locales,
-                // así que calculamos el base URL inline.
-                val pythonBaseUrl = run {
-                    val m = MIDDLEWARE_BASE_URL.trimEnd('/')
-                    when {
-                        m.endsWith(":3000") -> m.removeSuffix(":3000") + ":4000"
-                        else -> "http://10.0.2.2:4000"
-                    }
-                }
+                // 2) Varios candidatos de título limpio
                 val uriTitle = titleFromUri(track.uri)
-                val attempts = listOf(
-                    title,
-                    sanitizeTitle(title),
-                    uriTitle,
-                    sanitizeTitle(uriTitle),
-                )
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .distinct()
+                val attempts = listOf(title, sanitizeTitle(title), uriTitle, sanitizeTitle(uriTitle))
+                    .map { it.trim() }.filter { it.isNotBlank() }.distinct()
 
+                // 3) lyrics.ovh directo (sin servidor)
                 for (candidate in attempts) {
                     val res = runCatching {
                         withContext(Dispatchers.IO) {
-                            MiddlewareApi.fetchLyrics(
-                                baseUrl = MIDDLEWARE_BASE_URL,
-                                title = candidate,
-                                artist = artist,
-                            )
+                            MiddlewareApi.fetchLyricsDirect(title = candidate, artist = artist)
                         }
                     }.getOrNull()
 
-                    val finalRes = if (res != null && !res.success && res.error == "InvalidJson") {
-                        runCatching {
-                            withContext(Dispatchers.IO) {
-                                MiddlewareApi.fetchLyrics(
-                                    baseUrl = pythonBaseUrl,
-                                    title = candidate,
-                                    artist = artist,
-                                )
-                            }
-                        }.getOrNull() ?: res
-                    } else {
-                        res
-                    }
-
-                    if (finalRes != null && finalRes.success && finalRes.lyrics.isNotBlank()) {
-                        withContext(Dispatchers.IO) {
-                            // Guardamos bajo el título/artista original para que el cache coincida.
-                            LyricsCache.put(context, title, artist, finalRes.lyrics)
-                        }
-                        lyricsState = LyricsUiState.Ready(finalRes.lyrics)
+                    if (res != null && res.success && res.lyrics.isNotBlank()) {
+                        withContext(Dispatchers.IO) { LyricsCache.put(context, title, artist, res.lyrics) }
+                        lyricsState = LyricsUiState.Ready(res.lyrics)
                         return@launch
                     }
                 }
@@ -1494,15 +1475,28 @@ private fun ArtworkThumbnail(
         if (bitmap != null) return@LaunchedEffect
 
         val loaded = withContext(Dispatchers.IO) {
-            runCatching {
+            // 1) Tags embebidos
+            val embedded = runCatching {
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(context, Uri.parse(track.uri))
                     val data = retriever.embeddedPicture
                     if (data != null) BitmapFactory.decodeByteArray(data, 0, data.size) else null
-                } finally {
-                    retriever.release()
-                }
+                } finally { retriever.release() }
+            }.getOrNull()
+
+            if (embedded != null) return@withContext embedded
+
+            // 2) Fallback: .meta.json artworkBase64
+            runCatching {
+                val uri = Uri.parse(track.uri)
+                val audioFile = java.io.File(uri.path ?: return@runCatching null)
+                val metaFile = java.io.File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.meta.json")
+                if (!metaFile.exists()) return@runCatching null
+                val b64 = org.json.JSONObject(metaFile.readText()).optString("artworkBase64")
+                if (b64.isBlank()) return@runCatching null
+                val bytes = android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             }.getOrNull()
         }
 
@@ -2122,6 +2116,29 @@ private sealed interface LyricsUiState {
     data object Loading : LyricsUiState
     data class Ready(val lyrics: String) : LyricsUiState
     data class Empty(val message: String) : LyricsUiState
+}
+
+/**
+ * Devuelve (title, artist) leyendo primero el sidecar .meta.json del archivo
+ * descargado. Si no existe o no tiene los campos, usa los valores de DeviceTrack.
+ */
+private fun resolveTrackMeta(track: com.imontalvodev.savetune.ui.data.DeviceTrack): Pair<String, String> {
+    runCatching {
+        val uri = android.net.Uri.parse(track.uri)
+        val path = uri.path ?: return@runCatching null
+        val audioFile = java.io.File(path)
+        val metaFile = java.io.File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.meta.json")
+        if (!metaFile.exists()) return@runCatching null
+        val json = org.json.JSONObject(metaFile.readText())
+        val t = json.optString("title").takeIf { it.isNotBlank() } ?: track.title
+        val rawArtist = json.optString("artist").takeIf {
+            it.isNotBlank() && !it.equals("unknown artist", ignoreCase = true)
+        } ?: track.artist
+        // Limpiar sufijos de canal YouTube antes de buscar letras
+        val a = com.imontalvodev.savetune.ui.network.cleanArtistForLyrics(rawArtist)
+        Pair(t, a)
+    }.getOrNull()?.let { return it }
+    return Pair(track.title, com.imontalvodev.savetune.ui.network.cleanArtistForLyrics(track.artist))
 }
 
 private fun String.toTitleCaseSimple(): String {

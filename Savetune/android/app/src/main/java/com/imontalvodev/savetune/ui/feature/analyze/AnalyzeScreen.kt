@@ -37,6 +37,7 @@ import com.imontalvodev.savetune.ui.network.AudioDownloader
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.network.SongSuggestion
 import com.imontalvodev.savetune.ui.network.YouTubeSearchClient
+import com.imontalvodev.savetune.ui.network.cleanArtistForLyrics
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.CherryBackgroundTop
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
@@ -77,6 +78,7 @@ fun AnalyzeScreen(
     var suggestions by remember { mutableStateOf<List<SongSuggestion>>(emptyList()) }
     var selectedSuggestion by remember { mutableStateOf<SongSuggestion?>(null) }
     var downloadingSuggestion by remember { mutableStateOf(false) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -211,16 +213,18 @@ fun AnalyzeScreen(
                                             val results = withContext(Dispatchers.IO) {
                                                 YouTubeSearchClient.search(searchQuery, limit = 10)
                                             }
-                                            if (results.isNotEmpty()) {
-                                                suggestions = results.map { r ->
-                                                    SongSuggestion(
-                                                        title = r.title,
-                                                        artist = r.channel,
-                                                        videoId = r.videoId,
-                                                        thumbnailUrl = r.thumbnailUrl,
-                                                        durationText = r.durationText,
-                                                    )
-                                                }
+                            if (results.isNotEmpty()) {
+                                suggestions = results.map { r ->
+                                    // Muchos vídeos tienen "Artista - Título" en el título
+                                    val (parsedTitle, parsedArtist) = parseYouTubeTitle(r.title, r.channel)
+                                    SongSuggestion(
+                                        title = parsedTitle,
+                                        artist = parsedArtist,
+                                        videoId = r.videoId,
+                                        thumbnailUrl = r.thumbnailUrl,
+                                        durationText = r.durationText,
+                                    )
+                                }
                                             } else {
                                                 suggestionError = "No se encontraron resultados para esa búsqueda."
                                             }
@@ -328,9 +332,17 @@ fun AnalyzeScreen(
             },
             title = { Text("Descargar canción") },
             text = {
-                Text(
-                    "¿Quieres descargar \"${suggestion.title}\" de ${suggestion.artist}?",
-                )
+                androidx.compose.foundation.layout.Column {
+                    Text("¿Quieres descargar \"${suggestion.title}\" de ${suggestion.artist}?")
+                    if (downloadError != null) {
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = downloadError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
@@ -338,16 +350,28 @@ fun AnalyzeScreen(
                     onClick = {
                         scope.launch {
                             downloadingSuggestion = true
-                            AudioDownloader.downloadAutoToAppMusic(
-                                context = context,
-                                middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                title = suggestion.title,
-                                artist = suggestion.artist,
-                                album = "",
-                                videoId = suggestion.videoId,
-                            )
-                            downloadingSuggestion = false
-                            selectedSuggestion = null
+                            downloadError = null
+                            try {
+                                val result = AudioDownloader.downloadAutoToAppMusic(
+                                    context = context,
+                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                    title = suggestion.title,
+                                    artist = suggestion.artist,
+                                    album = "",
+                                    videoId = suggestion.videoId,
+                                    thumbnailUrl = suggestion.thumbnailUrl,
+                                )
+                                if (!result.success) {
+                                    downloadError = result.error ?: "Error desconocido"
+                                } else {
+                                    selectedSuggestion = null
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
+                                downloadError = "Error: ${e.javaClass.simpleName}"
+                            } finally {
+                                downloadingSuggestion = false
+                            }
                         }
                     },
                 ) {
@@ -370,5 +394,33 @@ private fun isYoutubePlaylistUrl(url: String): Boolean {
     val u = url.lowercase()
     return (u.contains("youtube.com") || u.contains("youtu.be") || u.contains("music.youtube.com")) &&
         u.contains("list=")
+}
+
+/**
+ * Intenta separar "Artista - Título" del nombre del vídeo de YouTube.
+ * Si no hay separador claro, usa el nombre del canal como artista y el título tal cual.
+ * También elimina sufijos comunes como "(Official Audio)", "[Lyrics]", etc.
+ */
+private fun parseYouTubeTitle(rawTitle: String, channel: String): Pair<String, String> {
+    val cleanSuffixRegex = Regex(
+        """\s*[\(\[](official\s*(audio|video|music\s*video|lyric\s*video)?|lyrics?|audio|hd|4k|explicit|ft\.?[^)\]]*|feat\.?[^)\]]*)[\)\]]\s*""",
+        RegexOption.IGNORE_CASE,
+    )
+    val cleaned = rawTitle.replace(cleanSuffixRegex, "").trim()
+
+    // Separadores comunes: " - ", " – ", " — "
+    val separators = listOf(" - ", " – ", " — ")
+    for (sep in separators) {
+        val idx = cleaned.indexOf(sep)
+        if (idx > 0) {
+            val artistRaw = cleaned.substring(0, idx).trim()
+            val title = cleaned.substring(idx + sep.length).trim()
+            if (artistRaw.isNotBlank() && title.isNotBlank()) {
+                return Pair(title, cleanArtistForLyrics(artistRaw))
+            }
+        }
+    }
+    // Sin separador: usar canal como artista y título limpio
+    return Pair(cleaned.ifBlank { rawTitle }, cleanArtistForLyrics(channel))
 }
 

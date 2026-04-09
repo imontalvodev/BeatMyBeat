@@ -57,7 +57,6 @@ data class SongSuggestionsResponse(
 
 object MiddlewareApi {
     private val client: OkHttpClient = OkHttpClient.Builder()
-        // Playlist/lyrics pueden tardar (yt-dlp / letras.com)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -77,12 +76,8 @@ object MiddlewareApi {
             val json = runCatching { JSONObject(body) }.getOrNull()
             if (json == null) {
                 return LyricsResponse(
-                    success = false,
-                    lyrics = "",
-                    source = null,
-                    sourceUrl = null,
-                    error = "InvalidJson",
-                    message = "Invalid JSON from server",
+                    success = false, lyrics = "", source = null, sourceUrl = null,
+                    error = "InvalidJson", message = "Invalid JSON from server",
                 )
             }
             return LyricsResponse(
@@ -108,11 +103,8 @@ object MiddlewareApi {
             val json = runCatching { JSONObject(body) }.getOrNull()
             if (json == null) {
                 return PlaylistResponse(
-                    success = false,
-                    playlist = null,
-                    songs = emptyList(),
-                    error = "InvalidJson",
-                    message = "Invalid JSON from server",
+                    success = false, playlist = null, songs = emptyList(),
+                    error = "InvalidJson", message = "Invalid JSON from server",
                 )
             }
 
@@ -122,9 +114,7 @@ object MiddlewareApi {
                     name = playlistObj.optString("name", ""),
                     totalTracks = playlistObj.optInt("totalTracks", 0),
                 )
-            } else {
-                null
-            }
+            } else null
 
             val songsArray: JSONArray = json.optJSONArray("songs") ?: JSONArray()
             val songs = buildList {
@@ -153,64 +143,66 @@ object MiddlewareApi {
         }
     }
 
+    /**
+     * Busca letras directamente en lyrics.ovh sin pasar por el servidor.
+     * Limpia el nombre del artista antes de la búsqueda.
+     */
     fun fetchLyricsDirect(title: String, artist: String): LyricsResponse {
-        val safeArtist = artist.trim().ifBlank { return LyricsResponse(false, "", null, null, "MissingArtist", null) }
-        val safeTitle = title.trim().ifBlank { return LyricsResponse(false, "", null, null, "MissingTitle", null) }
+        val safeArtist = cleanArtistForLyrics(artist)
+            .ifBlank { return LyricsResponse(false, "", null, null, "MissingArtist", null) }
+        val safeTitle = title.trim()
+            .ifBlank { return LyricsResponse(false, "", null, null, "MissingTitle", null) }
         val url = "https://api.lyrics.ovh/v1/${safeArtist.encodeUrl()}/${safeTitle.encodeUrl()}"
         return try {
             val req = Request.Builder().url(url).header("Accept", "application/json").get().build()
             client.newCall(req).execute().use { res ->
                 val body = res.body?.string().orEmpty()
-                val json = runCatching { org.json.JSONObject(body) }.getOrNull()
+                val json = runCatching { JSONObject(body) }.getOrNull()
                     ?: return LyricsResponse(false, "", null, null, "InvalidJson", null)
                 val lyrics = json.optString("lyrics", "")
-                if (lyrics.isNotBlank()) LyricsResponse(true, lyrics, "lyrics.ovh", url, null, null)
-                else LyricsResponse(false, "", null, null, "NoLyrics", json.optString("error", null.toString()).ifBlank { null })
+                if (lyrics.isNotBlank()) {
+                    LyricsResponse(true, lyrics, "lyrics.ovh", url, null, null)
+                } else {
+                    LyricsResponse(false, "", null, null, "NoLyrics",
+                        json.optString("error").ifBlank { null })
+                }
             }
         } catch (e: Exception) {
             LyricsResponse(false, "", null, null, "NetworkError", e.message)
         }
     }
 
-    private fun String.encodeUrl(): String =
-        java.net.URLEncoder.encode(this, "UTF-8").replace("+", "%20")
-
     fun fetchSongSuggestions(baseUrl: String, query: String, limit: Int = 10): SongSuggestionsResponse {
         val trimmedQuery = query.trim()
         if (trimmedQuery.isBlank()) {
             return SongSuggestionsResponse(
-                success = false,
-                results = emptyList(),
+                success = false, results = emptyList(),
                 error = "EmptyQuery",
                 message = "Introduce al menos parte del título o del artista.",
             )
         }
 
-        val url =
-            "${baseUrl.trimEnd('/')}/api/search-song-suggestions".toHttpUrlOrNull()?.newBuilder()
-                ?.addQueryParameter("query", trimmedQuery)
-                ?.addQueryParameter("limit", limit.toString())
-                ?.build()
-                ?: return SongSuggestionsResponse(
-                    success = false,
-                    results = emptyList(),
-                    error = "BadUrl",
-                    message = "URL del middleware no válida: ${baseUrl.take(80)}",
-                )
+        val url = "${baseUrl.trimEnd('/')}/api/search-song-suggestions".toHttpUrlOrNull()
+            ?.newBuilder()
+            ?.addQueryParameter("query", trimmedQuery)
+            ?.addQueryParameter("limit", limit.toString())
+            ?.build()
+            ?: return SongSuggestionsResponse(
+                success = false, results = emptyList(),
+                error = "BadUrl",
+                message = "URL del middleware no válida: ${baseUrl.take(80)}",
+            )
 
         return try {
             val req = Request.Builder().url(url).get().build()
             client.newCall(req).execute().use { res ->
                 val body = res.body?.string().orEmpty()
                 val json = runCatching { JSONObject(body) }.getOrNull()
-                if (json == null) {
-                    return SongSuggestionsResponse(
-                        success = false,
-                        results = emptyList(),
+                    ?: return SongSuggestionsResponse(
+                        success = false, results = emptyList(),
                         error = "InvalidJson",
                         message = "Respuesta no JSON del servidor (HTTP ${res.code})",
                     )
-                }
 
                 val arr = json.optJSONArray("results") ?: JSONArray()
                 val results = buildList {
@@ -247,19 +239,42 @@ object MiddlewareApi {
             }
         } catch (e: IOException) {
             SongSuggestionsResponse(
-                success = false,
-                results = emptyList(),
+                success = false, results = emptyList(),
                 error = "NetworkError",
                 message = "Sin conexión. Comprueba tu internet e inténtalo de nuevo.",
             )
         } catch (e: Exception) {
             SongSuggestionsResponse(
-                success = false,
-                results = emptyList(),
+                success = false, results = emptyList(),
                 error = "UnexpectedError",
                 message = "Error inesperado. Inténtalo de nuevo.",
             )
         }
     }
+
+    private fun String.encodeUrl(): String =
+        java.net.URLEncoder.encode(this, "UTF-8").replace("+", "%20")
 }
 
+/**
+ * Elimina sufijos de canal de YouTube del nombre del artista antes de buscar letras.
+ * Ejemplos: "Extremoduro (oficial)" → "Extremoduro"
+ *           "Metallica - Topic"    → "Metallica"
+ *           "TaylorSwiftVEVO"      → "TaylorSwift"
+ */
+fun cleanArtistForLyrics(raw: String): String {
+    var result = raw.trim()
+    // Sufijos tras guión/espacio: "- Topic", "- Official", "- Music", "- VEVO"
+    result = result.replace(
+        Regex("""[\s\-–—]+(Topic|Official|Music|VEVO|Channel|TV|Records?|Oficial)\s*$""",
+            RegexOption.IGNORE_CASE),
+        "",
+    )
+    // Entre paréntesis o corchetes: "(oficial)", "(official)", "[music]", etc.
+    result = result.replace(
+        Regex("""\s*[\(\[]\s*(oficial|official|music|vevo|channel|records?|tv|ofici[ao]l)\s*[\)\]]\s*""",
+            RegexOption.IGNORE_CASE),
+        "",
+    )
+    return result.trim().ifBlank { raw.trim() }
+}
