@@ -4,6 +4,9 @@
 
 ## Bugs con el reproductor
 
+### Agregar filtro de audios
+Se reporta que la app detecta audios de Whatsapp, Instagram, etc
+
 ### Reproducir desde cualquier punto
 Al reproducir una cancion los usuarios reportan que solo se puede reproducir desde el principio y no desde cualquier punto
 
@@ -21,6 +24,9 @@ Mostrar las miniaturas de las canciones que se desee descargar para no descargar
 ### Pete al descargar playlists de YT
 Cuando el usuario inserta una URL de una playlist de YT la app directamente peta
 
+### Implementar compatibilidad con playlists de YT y de YTMusic
+Algunos usuarios intentaron descargar canciones de YTMusic y daba error, habria q aplicar a nivel interno filtros para mirar la URL y de ahi la app sepa donde debe buscar
+
 # Cosas a implementar
 
 ## V1
@@ -33,6 +39,12 @@ Buscar como poder sincronizar las letras con lo que va cantando la cancion
 
 ### Poder ver la cola de las canciones a reproducir y editarla
 Opcion para que el usuario vea las canciones en cola y poder editar esa cola de reproduccion a gusto del usuario (usar FIFO)
+
+### Historial de busqueda
+Implementar un historial de las canciones buscadas a nivel local y ¿para descargar?
+
+### Informar de que se requiere el permiso de notificaciones
+Si el usuario no acepta recibir notificaciones informarle q es necesario y obligarle para que asi la app le pueda avisar de cuando se descargan las canciones y le aparezca la bar menu en el area de notificaciones sobre la cancion en reproduccion
 
 ### Cambiar entre diferentes idiomas
 Implementar diferentes opciones de idiomas dentro de la app (Español, ingles, croata, aleman, etc)
@@ -55,3 +67,5 @@ Para esto necesitaremos pensar una forma de financiar el pago de la cuenta y ade
 ### Modo karaoke (futura update)
 Al tener la cancion y la letra se puede crear un karaoke, habria que ver como aislar la voz o algo y asi permitimos al usuario el tener el karaoke
 
+### Detectar una cancion como Shazam
+Implementar una funcion para poder escanear las canciones como hace Shazam
