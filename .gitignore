@@ -1,40 +1,11 @@
-# Node / backend
-node_modules/
-npm-debug.log*
-yarn.lock
-pnpm-lock.yaml
-.npmrc
-dist/
-build/
-.vercel/
+backend/__pycache__/**
+backend/services/__pycache__/**
+backend/logs/**
 
-# Env / secrets
-.env
-.env.*
-!.env.example
+middleware/logs/**
+middleware/node_modules/**
+middleware/package-lock.json
 
-# Android / Gradle
-**/.gradle/
-**/build/
-local.properties
-*.iml
-.idea/
-captures/
-.cxx/
-
-# OS files
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Editor / Cursor
-.vscode/
-.history/
-.cursor/
-
-# Python cache / bytecode
-__pycache__/
-**/__pycache__/
-*.py[cod]
-*$py.class
-
+# Cookies de YouTube (nunca commitear, contienen sesión de usuario)
+cookies.txt
+**/cookies.txt
