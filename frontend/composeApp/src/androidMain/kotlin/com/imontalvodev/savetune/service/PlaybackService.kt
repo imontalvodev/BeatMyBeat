@@ -140,13 +140,17 @@ class PlaybackService : Service() {
 
     /**
      * Seek directo. Sin intents, sin delays, sin posibilidad de que Android lo descarte.
+     * Preserva el estado play/pause: si estaba reproduciendo, sigue reproduciendo.
      */
     fun seekTo(positionMs: Long) {
         val dur = exoPlayer.duration.let { if (it == C.TIME_UNSET) 0L else it }
         if (dur <= 0L) return
         val safe = positionMs.coerceIn(0L, (dur - 500L).coerceAtLeast(0L))
         android.util.Log.d("SavetuneSeek", "seekTo target=${positionMs}ms safe=${safe}ms dur=${dur}ms")
+        val wasPlaying = exoPlayer.isPlaying || exoPlayer.playWhenReady
         exoPlayer.seekTo(safe)
+        // Garantizar que sigue reproduciendo si lo estaba antes del seek.
+        if (wasPlaying) exoPlayer.play()
         pushState()
     }
 

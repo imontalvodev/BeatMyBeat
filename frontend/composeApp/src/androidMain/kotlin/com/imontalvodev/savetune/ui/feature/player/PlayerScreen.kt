@@ -1900,21 +1900,20 @@ private fun MiniPlayerBar(
             }
 
             val currentMs = (position.coerceIn(0f, 1f) * durationMs).toInt()
-            // El drag se gestiona en el padre (PlayerScreen) via sliderDragPos.
-            // Aquí solo propagamos el valor y los eventos de cambio.
             var localDrag by remember { mutableStateOf<Float?>(null) }
+            val sliderValue = localDrag ?: position
             Slider(
-                value = localDrag ?: position,
+                value = sliderValue,
                 onValueChange = { v ->
                     localDrag = v
                     onSeekPreview(v)
                 },
                 onValueChangeFinished = {
-                    val c = localDrag
-                    if (c != null) {
-                        onSeekCommit(c)
-                        localDrag = null
-                    }
+                    // localDrag es null cuando el usuario toca sin arrastrar:
+                    // en ese caso usamos sliderValue (que Compose ya actualizó).
+                    val target = localDrag ?: sliderValue
+                    onSeekCommit(target)
+                    localDrag = null
                 },
             )
             Row(
@@ -2110,18 +2109,17 @@ private fun ExpandedPlayerOverlay(
                 ) {
                     val currentMs = (position.coerceIn(0f, 1f) * durationMs).toInt()
                     var localDrag by remember { mutableStateOf<Float?>(null) }
+                    val sliderValue = localDrag ?: position
                     Slider(
-                        value = localDrag ?: position,
+                        value = sliderValue,
                         onValueChange = { v ->
                             localDrag = v
                             onSeekPreview(v)
                         },
                         onValueChangeFinished = {
-                            val c = localDrag
-                            if (c != null) {
-                                onSeekCommit(c)
-                                localDrag = null
-                            }
+                            val target = localDrag ?: sliderValue
+                            onSeekCommit(target)
+                            localDrag = null
                         },
                     )
                     Row(
