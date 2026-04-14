@@ -61,6 +61,35 @@ object YouTubeSearchClient {
         return parseResults(responseBody, limit)
     }
 
+    fun fetchPlaylistVideoIds(listId: String, limit: Int = 200): List<String> {
+        val safeListId = listId.trim()
+        if (safeListId.isBlank()) return emptyList()
+
+        val playlistUrl = "https://www.youtube.com/playlist?list=$safeListId"
+        val request = Request.Builder()
+            .url(playlistUrl)
+            .get()
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            .header("Accept-Language", "es-ES,es;q=0.9")
+            .build()
+
+        val html = client.newCall(request).execute().use { res ->
+            if (!res.isSuccessful) return emptyList()
+            res.body?.string().orEmpty()
+        }
+        if (html.isBlank()) return emptyList()
+
+        val regex = Regex("\"videoId\":\"([A-Za-z0-9_-]{11})\"")
+        return regex.findAll(html)
+            .map { it.groupValues[1] }
+            .distinct()
+            .take(limit)
+            .toList()
+    }
+
     private fun parseResults(json: String, limit: Int): List<YouTubeSearchResult> {
         val results = mutableListOf<YouTubeSearchResult>()
         try {

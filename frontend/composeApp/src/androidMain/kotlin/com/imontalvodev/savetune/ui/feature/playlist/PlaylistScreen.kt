@@ -76,7 +76,7 @@ fun PlaylistScreen(
         error = null
         val res = try {
             withContext(Dispatchers.IO) {
-                MiddlewareApi.fetchPlaylist(MIDDLEWARE_BASE_URL, playlistUrl)
+                MiddlewareApi.fetchPlaylistWithFallback(MIDDLEWARE_BASE_URL, playlistUrl)
             }
         } catch (_: Exception) {
             PlaylistResponse(

@@ -18,6 +18,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,7 +35,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.AudioDownloader
-import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.network.SongSuggestion
 import com.imontalvodev.savetune.ui.network.YouTubeSearchClient
 import com.imontalvodev.savetune.ui.network.cleanArtistForLyrics
@@ -52,6 +52,7 @@ import okhttp3.OkHttpClient
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
+import com.imontalvodev.savetune.service.SavetuneForegroundService
 
 @Composable
 fun AnalyzeScreen(
@@ -83,6 +84,11 @@ fun AnalyzeScreen(
     var downloadingSuggestion by remember { mutableStateOf(false) }
     var downloadError by remember { mutableStateOf<String?>(null) }
     var playlistInputError by remember { mutableStateOf<String?>(null) }
+    var playlistDownloadRunning by remember { mutableStateOf(false) }
+    var playlistDownloadTotal by remember { mutableStateOf(0) }
+    var playlistDownloadDone by remember { mutableStateOf(0) }
+    var playlistDownloadFailed by remember { mutableStateOf(0) }
+    var playlistCurrentTitle by remember { mutableStateOf("") }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -201,7 +207,12 @@ fun AnalyzeScreen(
                     Spacer(modifier = Modifier.height(20.dp))
 
                     PrimaryButton(
-                        text = if (mode == "playlist") "ANALYZE PLAYLIST" else "ANALYZE SONG",
+                        text = when {
+                            mode != "playlist" -> "ANALYZE SONG"
+                            playlistDownloadRunning -> "DESCARGANDO..."
+                            else -> "ANALYZE PLAYLIST"
+                        },
+                        enabled = !playlistDownloadRunning,
                         onClick = {
                             if (mode == "song") {
                                 if (songTitle.isBlank() && songArtist.isBlank() && songAlbum.isBlank()) {
@@ -255,45 +266,62 @@ fun AnalyzeScreen(
                                         is ParsedYouTubeInput.PlaylistOrAlbum -> {
                                             scope.launch {
                                                 try {
-                                                    val result = AudioDownloader.downloadYoutubeAlbumZipToAppMusic(
-                                                        context = context,
-                                                        middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                                        playlistUrl = parsed.url,
-                                                    )
-                                                    if (result.success) return@launch
-
-                                                    // Fallback: algunos listId de YouTube/YTMusic (OLAK..., RD...)
-                                                    // pueden fallar en ZIP. Intentamos resolver tracks y descargar uno a uno.
-                                                    val playlistResponse = withContext(Dispatchers.IO) {
-                                                        MiddlewareApi.fetchPlaylist(MIDDLEWARE_BASE_URL, parsed.url)
+                                                    val videoIds = withContext(Dispatchers.IO) {
+                                                        YouTubeSearchClient.fetchPlaylistVideoIds(parsed.listId, limit = 200)
                                                     }
-                                                    if (!playlistResponse.success || playlistResponse.songs.isEmpty()) {
-                                                        playlistInputError =
-                                                            playlistResponse.message
-                                                                ?: playlistResponse.error
-                                                                ?: result.error
-                                                                ?: "No se pudo procesar la playlist. Revisa la URL."
+                                                    if (videoIds.isEmpty()) {
+                                                        playlistInputError = "No se pudieron resolver canciones de la playlist/álbum."
                                                         return@launch
                                                     }
 
+                                                    playlistDownloadRunning = true
+                                                    playlistDownloadTotal = videoIds.size
+                                                    playlistDownloadDone = 0
+                                                    playlistDownloadFailed = 0
+                                                    playlistCurrentTitle = "Preparando descargas..."
+                                                    SavetuneForegroundService.startDownload(
+                                                        context = context,
+                                                        title = "Descargando playlist",
+                                                        subtitle = "0/${videoIds.size}",
+                                                    )
+
                                                     var downloaded = 0
-                                                    playlistResponse.songs.forEach { song ->
+                                                    var failed = 0
+                                                    videoIds.forEach { videoId ->
+                                                        val metadata = withContext(Dispatchers.IO) {
+                                                            fetchYouTubeSongMetadata(videoId)
+                                                        }
+                                                        playlistCurrentTitle = metadata.title
+                                                        SavetuneForegroundService.startDownload(
+                                                            context = context,
+                                                            title = "Descargando playlist",
+                                                            subtitle = "${downloaded + failed}/${videoIds.size} · ${metadata.title.take(40)}",
+                                                        )
                                                         val single = AudioDownloader.downloadAutoToAppMusic(
                                                             context = context,
                                                             middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                                            title = song.title,
-                                                            artist = song.artist,
-                                                            album = song.album,
-                                                            imageUrl = song.imageUrl,
+                                                            title = metadata.title,
+                                                            artist = metadata.artist,
+                                                            album = "",
+                                                            videoId = videoId,
+                                                            thumbnailUrl = metadata.thumbnailUrl,
                                                         )
-                                                        if (single.success) downloaded++
+                                                        if (single.success) downloaded++ else failed++
+                                                        playlistDownloadDone = downloaded
+                                                        playlistDownloadFailed = failed
                                                     }
                                                     if (downloaded <= 0) {
                                                         playlistInputError = "No se pudo descargar ninguna canción de esa playlist."
+                                                    } else if (failed > 0) {
+                                                        playlistInputError = "Descargadas $downloaded de ${videoIds.size}. Fallidas: $failed."
                                                     }
                                                 } catch (_: Exception) {
                                                     playlistInputError =
-                                                        "No se pudo conectar con el servidor de playlists. Inténtalo más tarde."
+                                                        "No se pudo resolver la playlist directamente desde YouTube. Inténtalo más tarde."
+                                                } finally {
+                                                    playlistDownloadRunning = false
+                                                    playlistCurrentTitle = ""
+                                                    SavetuneForegroundService.stopDownload(context)
                                                 }
                                             }
                                         }
@@ -330,6 +358,38 @@ fun AnalyzeScreen(
                             text = playlistInputError!!,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
+                    if (mode == "playlist" && playlistDownloadRunning) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        val progress =
+                            if (playlistDownloadTotal > 0) {
+                                playlistDownloadDone.toFloat() / playlistDownloadTotal.toFloat()
+                            } else {
+                                0f
+                            }
+                        LinearProgressIndicator(
+                            progress = { progress.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Descargando ${playlistDownloadDone}/${playlistDownloadTotal} · Fallidas: $playlistDownloadFailed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                        )
+                        if (playlistCurrentTitle.isNotBlank()) {
+                            Text(
+                                text = "Actual: ${playlistCurrentTitle.take(60)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            )
+                        }
+                        Text(
+                            text = "Puedes dejar la app en segundo plano mientras termina.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         )
                     }
 
@@ -465,7 +525,7 @@ fun AnalyzeScreen(
 }
 
 private sealed interface ParsedYouTubeInput {
-    data class PlaylistOrAlbum(val url: String) : ParsedYouTubeInput
+    data class PlaylistOrAlbum(val url: String, val listId: String) : ParsedYouTubeInput
     data class SingleSong(val videoId: String) : ParsedYouTubeInput
     data class Invalid(val reason: String) : ParsedYouTubeInput
 }
@@ -484,15 +544,15 @@ private fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
         )
     }
 
-    val listId = url.queryParameter("list")?.trim().orEmpty()
-    if (listId.isNotBlank()) {
-        val normalized = buildCanonicalPlaylistUrl(url, listId)
-        return ParsedYouTubeInput.PlaylistOrAlbum(normalized)
-    }
-
     val videoId = extractYouTubeVideoId(url)
     if (videoId != null) {
         return ParsedYouTubeInput.SingleSong(videoId)
+    }
+
+    val listId = url.queryParameter("list")?.trim().orEmpty()
+    if (listId.isNotBlank()) {
+        val normalized = buildCanonicalPlaylistUrl(url, listId)
+        return ParsedYouTubeInput.PlaylistOrAlbum(normalized, listId)
     }
 
     return ParsedYouTubeInput.Invalid(

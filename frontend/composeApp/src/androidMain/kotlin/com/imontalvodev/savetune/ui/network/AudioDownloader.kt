@@ -193,9 +193,7 @@ object AudioDownloader {
                     ?.apply { addQueryParameter("playlistUrl", playlistUrl) }
                     ?.build()
 
-            val url = buildUrl(middlewareBaseUrl)
-                ?: return@withContext ZipDownloadResult(false, 0, "BadUrl")
-            val fallbackBackendUrl = buildUrl(guessPythonBackendBaseUrl(middlewareBaseUrl))
+            val baseCandidates = getMiddlewareBaseCandidates(middlewareBaseUrl)
 
             val client = OkHttpClient.Builder()
                 .connectTimeout(20, TimeUnit.SECONDS)
@@ -250,44 +248,15 @@ object AudioDownloader {
                 return ZipDownloadResult(true, extracted, null)
             }
 
-            try {
-                client.newCall(Request.Builder().url(url).get().build()).execute().use { res ->
-                    if (res.isSuccessful) {
-                        val out = extractZipFromResponse(res)
-                        if (out.success) {
-                            SavetuneNotification.showDownloadCompleted(
-                                context = context,
-                                title = "Playlist descargada",
-                                subtitle = "${out.extractedFiles} pistas",
-                            )
-                        } else {
-                            SavetuneNotification.showDownloadFailed(
-                                context = context,
-                                title = "Error en la descarga",
-                                subtitle = out.error ?: "Reintenta más tarde",
-                            )
-                        }
-                        return@withContext out
-                    }
+            var lastError: String = "No se pudo completar la descarga. Inténtalo de nuevo."
 
-                    val firstContentType = (res.header("Content-Type") ?: "").lowercase()
-                    val firstBody = res.body?.string().orEmpty()
-                    val isHtml404 = res.code == 404 && firstContentType.contains("text/html")
-
-                    // Fallback pragmático: middleware sin ruta nueva o no reiniciado.
-                    if (isHtml404 && fallbackBackendUrl != null) {
-                        client.newCall(Request.Builder().url(fallbackBackendUrl).get().build()).execute().use { res2 ->
-                            if (!res2.isSuccessful) {
-                                val body2 = res2.body?.string().orEmpty()
-                                val msg2 = if (body2.isNotBlank()) "HTTP_${res2.code}: $body2" else "HTTP_${res2.code}"
-                                SavetuneNotification.showDownloadFailed(
-                                    context = context,
-                                    title = "Error en la descarga",
-                                    subtitle = msg2,
-                                )
-                                return@withContext ZipDownloadResult(false, 0, msg2)
-                            }
-                            val out = extractZipFromResponse(res2)
+            for (base in baseCandidates) {
+                val url = buildUrl(base) ?: continue
+                val fallbackBackendUrl = buildUrl(guessPythonBackendBaseUrl(base))
+                try {
+                    client.newCall(Request.Builder().url(url).get().build()).execute().use { res ->
+                        if (res.isSuccessful) {
+                            val out = extractZipFromResponse(res)
                             if (out.success) {
                                 SavetuneNotification.showDownloadCompleted(
                                     context = context,
@@ -303,24 +272,49 @@ object AudioDownloader {
                             }
                             return@withContext out
                         }
-                    }
 
-                    val msg = if (firstBody.isNotBlank()) "HTTP_${res.code}: $firstBody" else "HTTP_${res.code}"
-                    SavetuneNotification.showDownloadFailed(
-                        context = context,
-                        title = "Error en la descarga",
-                        subtitle = msg,
-                    )
-                    return@withContext ZipDownloadResult(false, 0, msg)
+                        val firstContentType = (res.header("Content-Type") ?: "").lowercase()
+                        val firstBody = res.body?.string().orEmpty()
+                        lastError = if (firstBody.isNotBlank()) "HTTP_${res.code}: $firstBody" else "HTTP_${res.code}"
+                        val isHtml404 = res.code == 404 && firstContentType.contains("text/html")
+
+                        // Fallback pragmático: middleware sin ruta nueva o no reiniciado.
+                        if (isHtml404 && fallbackBackendUrl != null) {
+                            client.newCall(Request.Builder().url(fallbackBackendUrl).get().build()).execute().use { res2 ->
+                                if (!res2.isSuccessful) {
+                                    val body2 = res2.body?.string().orEmpty()
+                                    lastError = if (body2.isNotBlank()) "HTTP_${res2.code}: $body2" else "HTTP_${res2.code}"
+                                    return@use
+                                }
+                                val out = extractZipFromResponse(res2)
+                                if (out.success) {
+                                    SavetuneNotification.showDownloadCompleted(
+                                        context = context,
+                                        title = "Playlist descargada",
+                                        subtitle = "${out.extractedFiles} pistas",
+                                    )
+                                } else {
+                                    SavetuneNotification.showDownloadFailed(
+                                        context = context,
+                                        title = "Error en la descarga",
+                                        subtitle = out.error ?: "Reintenta más tarde",
+                                    )
+                                }
+                                return@withContext out
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                    lastError = "No se pudo conectar al servidor (${base.removePrefix("http://").removePrefix("https://")})."
                 }
-            } catch (e: Exception) {
-                SavetuneNotification.showDownloadFailed(
-                    context = context,
-                    title = "Error en la descarga",
-                    subtitle = "No se pudo completar la descarga. Inténtalo de nuevo.",
-                )
-                return@withContext ZipDownloadResult(false, 0, "Error en la descarga. Inténtalo de nuevo.")
             }
+
+            SavetuneNotification.showDownloadFailed(
+                context = context,
+                title = "Error en la descarga",
+                subtitle = lastError,
+            )
+            return@withContext ZipDownloadResult(false, 0, lastError)
         } finally {
             // no-op: dejamos que la notificación en curso sea reemplazada por completada/error.
         }

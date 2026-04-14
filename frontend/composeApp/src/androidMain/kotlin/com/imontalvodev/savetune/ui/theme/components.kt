@@ -41,21 +41,32 @@ fun ModeChip(
 fun PrimaryButton(
     text: String,
     onClick: () -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val start = if (enabled) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.95f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+    }
+    val end = if (enabled) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+    }
     Surface(
         modifier = modifier
             .height(56.dp)
             .background(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.95f),
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                        start,
+                        end,
                     ),
                 ),
                 shape = RoundedCornerShape(999.dp),
             )
-            .clickable { onClick() },
+            .clickable(enabled = enabled) { onClick() },
         shape = RoundedCornerShape(999.dp),
         color = Color.Transparent,
         shadowElevation = 12.dp,
@@ -65,7 +76,7 @@ fun PrimaryButton(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
-            color = MaterialTheme.colorScheme.onPrimary,
+            color = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
             style = MaterialTheme.typography.labelLarge.copy(
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,

@@ -161,6 +161,28 @@ object MiddlewareApi {
         }
     }
 
+    fun fetchPlaylistWithFallback(preferredBaseUrl: String, playlistUrl: String): PlaylistResponse {
+        val baseCandidates = getMiddlewareBaseCandidates(preferredBaseUrl)
+        var lastFailure: PlaylistResponse? = null
+
+        for (base in baseCandidates) {
+            val result = fetchPlaylist(base, playlistUrl)
+            if (result.success) return result
+            lastFailure = result
+
+            // Si no fue error de red, no tiene sentido seguir probando otros hosts.
+            if (result.error != "NetworkError") return result
+        }
+
+        return lastFailure ?: PlaylistResponse(
+            success = false,
+            playlist = null,
+            songs = emptyList(),
+            error = "NetworkError",
+            message = "No se pudo conectar con ningún servidor disponible.",
+        )
+    }
+
     /**
      * Busca letras directamente en lyrics.ovh sin pasar por el servidor.
      * Limpia el nombre del artista antes de la búsqueda.
