@@ -6,6 +6,8 @@ Backlog de evolución a medio/largo plazo a partir del feedback de beta testers.
 
 - **Version iOS completa** (siempre solicitada como prioridad de expansión).
 - **Detección de canciones tipo Shazam**.
+- **Integración con Spotify API**.
+  - Requiere estrategia legal/técnica y modelo de costes para operación.
 - **Recomendaciones inteligentes**.
   - Canciones similares, artistas relacionados, sugerencias según historial.
 - **Historial de búsquedas** con acciones rápidas.
@@ -23,12 +25,17 @@ Backlog de evolución a medio/largo plazo a partir del feedback de beta testers.
 
 - **Compartir playlists** con otras personas.
 - **Importación/exportación de listas** (formato por definir).
+- **Compartir información en documento/enlace**.
+  - Exportar playlists/canciones en PDF o formato equivalente con deep links.
+  - Redirigir a tienda si el receptor no tiene la app instalada.
 
 ## Personalización y producto
 
 - **Más opciones visuales**.
   - Paletas adicionales.
   - Personalización profunda de UI.
+- **Perfil de usuario**.
+  - Foto de perfil y preferencias personales.
 - **Unificación total del idioma de interfaz** y localización completa.
 
 ## Notas de priorización sugerida

@@ -31,6 +31,8 @@ Documento consolidado desde `Savetune Beta (respuestas).xlsx`.
 - **No se muestra duración de la canción en el reproductor**.
 - **El reproductor detecta audios no musicales (WhatsApp/Instagram, etc.)**.
 - **No queda claro dónde se guardan las descargas / acceso confuso**.
+- **Compatibilidad incompleta con URLs de YouTube Music**.
+  - Sintomas: algunos enlaces de YTMusic fallan en descarga/parseo.
 - **Problemas de estado UI**:
   - botón principal descentrado en Downloader.
   - cambio de tema no persiste al reiniciar.

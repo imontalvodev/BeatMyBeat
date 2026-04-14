@@ -6,6 +6,8 @@ Mejoras orientadas a una `v1.0` solida, basadas en feedback de testers.
 
 - **Mostrar miniatura y preview al buscar canción para descargar**.
   - Reduce descargas equivocadas.
+- **Compatibilidad robusta YouTube + YouTube Music**.
+  - Detectar tipo de URL y aplicar estrategia de extracción correcta.
 - **Mejorar UX del flujo Downloader**.
   - Etiquetas claras en botones (ej. "Descargar").
   - Indicar explícitamente que se acepta URL para descarga.
@@ -22,6 +24,8 @@ Mejoras orientadas a una `v1.0` solida, basadas en feedback de testers.
   - Mostrar duración total y tiempo actual.
   - Permitir seek completo.
   - Mantener posición de scroll al cambiar pestañas.
+- **Permisos y dependencias funcionales explicadas en UI**.
+  - Avisar claramente sobre permiso de notificaciones y su impacto en descargas.
 
 ## Prioridad media (si entra en v1.0)
 
@@ -34,6 +38,8 @@ Mejoras orientadas a una `v1.0` solida, basadas en feedback de testers.
   - Mejoras para localizar canciones por transliteración.
 - **Ajustes básicos en app**.
   - Idioma, tamaño de interfaz/letra, notificaciones.
+- **Cola de reproducción editable**.
+  - Ver cola actual y reordenar/eliminar canciones (FIFO o modo configurable).
 
 ## Criterio de "version final lista"
 
