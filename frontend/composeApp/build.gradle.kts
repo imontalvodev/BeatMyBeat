@@ -29,6 +29,15 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.core.ktx)
+            implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.compose.ui)
+            implementation(libs.compose.material3)
+            implementation(libs.androidx.media)
+            implementation(libs.androidx.navigation.compose)
+            implementation(compose.materialIconsExtended)
+            implementation(libs.okhttp)
+            implementation(libs.newpipeextractor)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -70,10 +79,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
 }
 
 dependencies {
     debugImplementation(libs.compose.uiTooling)
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
 
