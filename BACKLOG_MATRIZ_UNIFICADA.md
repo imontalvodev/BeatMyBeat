@@ -58,9 +58,9 @@ Matriz consolidada de `TESTERS_BUGS_Y_ERRORES.md`, `MEJORAS_VERSION_FINAL.md` y 
 - ✅ Descarga por URL funcional en los casos reportados de song + playlist/álbum.
 - ✅ Miniaturas visibles en resultados de búsqueda de canciones.
 - ✅ Feedback de descarga dentro de la app (progreso, conteo y estado en segundo plano con foreground service).
-- ✅ Seek funcional al soltar barra y tiempos visibles (actual/total) en mini y expanded player.
+- ✅ Seekbar funcional en drag + tap puntual (sin saltar de canción), migrado a ExoPlayer con servicio ligado.
 - ✅ Filtro de audios no musicales en MediaStore (IS_MUSIC + duración + heurísticas de ruta/MIME).
-- ⏳ Pendiente: bloque de reproductor (play/pause atascado y shuffle/loop), y UX final de ajustes/almacenamiento.
+- ⏳ Pendiente: bloque de reproductor (shuffle/loop), y UX final de ajustes/almacenamiento.
 
 ## Orden de ejecución recomendado (rápido)
 
