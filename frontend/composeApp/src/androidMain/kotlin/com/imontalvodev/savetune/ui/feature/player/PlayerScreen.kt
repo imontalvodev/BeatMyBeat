@@ -4,12 +4,13 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.MediaMetadataRetriever
-import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.Intent
+import android.os.IBinder
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -61,7 +62,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -142,23 +142,53 @@ fun PlayerScreen(
         },
     )
 
-    // Reproducción real se delega a `PlaybackService` (MediaSession) para poder controlarla
-    // desde notificación y lockscreen. El MediaPlayer local queda solo para evitar crashes
-    // en previews, pero no se usa para iniciar playback.
-    val mediaPlayer = remember { MediaPlayer() }
     val queue = remember { mutableStateListOf<DeviceTrack>() }
-    DisposableEffect(Unit) {
-        mediaPlayer.setOnErrorListener { _, _, _ -> true }
-        onDispose {
-            mediaPlayer.reset()
-            mediaPlayer.release()
-        }
-    }
 
     var currentTrack by remember { mutableStateOf<DeviceTrack?>(null) }
     var currentIndex by remember { mutableStateOf(-1) }
-    var isPlaying by remember { mutableStateOf(false) }
-    var position by remember { mutableStateOf(0f) }
+
+    // ── Bound service: referencia directa al PlaybackService ────────────────
+    // Con bindService obtenemos una referencia al objeto PlaybackService en memoria.
+    // Esto permite llamar player.seekTo(ms) sin ningún intent de por medio.
+    var boundService by remember { mutableStateOf<PlaybackService?>(null) }
+    // Cola pendiente si el usuario pulsa play antes de que el servicio esté ligado.
+    data class PendingPlay(val queueJson: String, val index: Int)
+    var pendingPlay by remember { mutableStateOf<PendingPlay?>(null) }
+
+    DisposableEffect(context) {
+        val conn = object : android.content.ServiceConnection {
+            override fun onServiceConnected(name: android.content.ComponentName?, b: IBinder?) {
+                val svc = (b as? PlaybackService.LocalBinder)?.service
+                boundService = svc
+                // Si había una reproducción pendiente, la ejecutamos ahora.
+                val pending = pendingPlay
+                if (svc != null && pending != null) {
+                    svc.loadQueue(pending.queueJson, pending.index)
+                    pendingPlay = null
+                }
+            }
+            override fun onServiceDisconnected(name: android.content.ComponentName?) {
+                boundService = null
+            }
+        }
+        val intent = Intent(context, PlaybackService::class.java)
+        context.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
+        onDispose { context.unbindService(conn) }
+    }
+
+    // ── Playback state: única fuente de verdad ──────────────────────────────
+    // StateFlow del servicio: reactivo, sin polling, sin variables @Volatile.
+    val playbackState by PlaybackService.state.collectAsState()
+    val isPlaying = playbackState.isPlaying
+    val playbackPositionMs = playbackState.positionMs
+    val playbackDurationMs = playbackState.durationMs
+
+    // posición normalizada [0,1] que ve el Slider: mientras el usuario arrastra
+    // usamos sliderDragPos; en cuanto suelta, el StateFlow vuelve a mandar.
+    var sliderDragPos by remember { mutableStateOf<Float?>(null) }
+    val sliderPosition: Float = sliderDragPos
+        ?: if (playbackDurationMs > 0) playbackPositionMs.toFloat() / playbackDurationMs else 0f
+
     var currentArtwork by remember { mutableStateOf<Bitmap?>(null) }
 
     var query by remember { mutableStateOf("") }
@@ -263,20 +293,6 @@ fun PlayerScreen(
             }
         }
         return
-    }
-
-    // Sincronizar estado de playback real desde PlaybackService
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            val snap = PlaybackService.getSnapshot()
-            isPlaying = snap.isPlaying
-            if (snap.durationMs > 0) {
-                position = snap.positionMs.toFloat() / snap.durationMs.toFloat()
-            } else if (!snap.isPlaying) {
-                position = 0f
-            }
-            delay(300)
-        }
     }
 
     // Cargar carátula: primero tags embebidos, luego .meta.json con artworkBase64
@@ -461,7 +477,11 @@ fun PlayerScreen(
     }
 
     fun onToggleShuffle() {
-        shuffleOn = !shuffleOn
+        val next = !shuffleOn
+        shuffleOn = next
+        if (next && repeatMode != RepeatMode.OFF) {
+            repeatMode = RepeatMode.OFF
+        }
         if (shuffleOn) {
             queueRepeatSnapshot = emptyList()
             queueRepeatIndex = -1
@@ -491,6 +511,11 @@ fun PlayerScreen(
             RepeatMode.ONE -> RepeatMode.OFF
         }
         repeatMode = next
+        if (next != RepeatMode.OFF && shuffleOn) {
+            shuffleOn = false
+            shuffleOrder = emptyList()
+            shuffleIndex = -1
+        }
 
         // Iniciar/limpiar snapshot de repetición de cola si aplica.
         if (next != RepeatMode.LIST || shuffleOn || currentTrack == null || queue.isEmpty()) {
@@ -537,26 +562,27 @@ fun PlayerScreen(
                 arr.put(o)
             }
 
-            PlaybackService.startWithQueue(
-                context = context,
-                queueJson = arr.toString(),
-                index = idxInVisible,
-                shuffle = shuffleOn,
-                repeat = when (repeatMode) {
-                    RepeatMode.ONE -> "one"
-                    RepeatMode.LIST -> "list"
-                    else -> "off"
-                },
-            )
+            val queueJson = arr.toString()
+            val svc = boundService
+            if (svc != null) {
+                // Ruta rápida: servicio ya ligado — seek directo garantizado.
+                svc.loadQueue(queueJson, idxInVisible)
+            } else {
+                // El servicio aún no está ligado: arrancamos en foreground y
+                // guardamos la cola para cargarla en onServiceConnected.
+                androidx.core.content.ContextCompat.startForegroundService(
+                    context, Intent(context, PlaybackService::class.java),
+                )
+                pendingPlay = PendingPlay(queueJson, idxInVisible)
+            }
             currentTrack = track
             currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
-            isPlaying = true
+            // isPlaying se actualiza automáticamente vía PlaybackService.state
 
             // Si Shuffle está activado, ajustamos el índice sin rebarajar para mantener bidireccionalidad.
             if (shuffleOn) {
                 shuffleIndex = shuffleOrder.indexOfFirst { it.id == track.id }
                 if (shuffleIndex < 0) {
-                    // Si por alguna razón la canción no está en la orden actual, reconstruimos con el track incluido.
                     val base = visibleTracks.toMutableList()
                     if (currentTrack != null && base.none { it.id == currentTrack!!.id }) {
                         base.add(currentTrack!!)
@@ -566,7 +592,6 @@ fun PlayerScreen(
                 }
             }
         } catch (e: Exception) {
-            isPlaying = false
             Toast.makeText(context, "No se pudo reproducir este archivo.", Toast.LENGTH_SHORT).show()
         }
     }
@@ -696,11 +721,8 @@ fun PlayerScreen(
 
             queue.removeAll { it.id == track.id }
             if (currentTrack?.id == track.id) {
-                mediaPlayer.reset()
-                isPlaying = false
                 currentTrack = null
                 currentArtwork = null
-                position = 0f
                 lyricsState = LyricsUiState.Empty("Selecciona una canción")
                 SavetuneForegroundService.stopPlayback(context)
             }
@@ -999,29 +1021,26 @@ fun PlayerScreen(
                     .padding(horizontal = 12.dp, vertical = 12.dp),
                 track = currentTrack,
                 isPlaying = isPlaying,
-                position = position,
+                position = sliderPosition,
                 artwork = currentArtwork,
                 shuffleOn = shuffleOn,
                 repeatMode = repeatMode,
                 onTogglePlay = {
                     currentTrack ?: return@MiniPlayerBar
-                    if (isPlaying) {
-                        context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PAUSE))
-                        isPlaying = false
-                    } else {
-                        context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PLAY))
-                        isPlaying = true
-                    }
+                    context.startService(
+                        Intent(context, PlaybackService::class.java).setAction(
+                            if (isPlaying) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY,
+                        ),
+                    )
                 },
                 onPrev = { playPrev() },
                 onNext = { playNext() },
-                onSeek = { newPos ->
-                    position = newPos
-                    val snap = PlaybackService.getSnapshot()
-                    val dur = snap.durationMs
-                    if (dur > 0) {
-                        PlaybackService.seekTo(context, (dur * newPos).toInt())
+                onSeekPreview = { newPos -> sliderDragPos = newPos },
+                onSeekCommit = { finalPos ->
+                    if (playbackDurationMs > 0) {
+                        boundService?.seekTo((playbackDurationMs * finalPos).toLong())
                     }
+                    sliderDragPos = null
                 },
                 onOpenExpanded = { isExpanded = true },
                 onToggleShuffle = { onToggleShuffle() },
@@ -1041,27 +1060,24 @@ fun PlayerScreen(
                     artwork = currentArtwork,
                     lyricsState = lyricsState,
                     isPlaying = isPlaying,
-                    position = position,
+                    position = sliderPosition,
                     onClose = { isExpanded = false },
                     onTogglePlay = {
                         currentTrack ?: return@ExpandedPlayerOverlay
-                        if (isPlaying) {
-                            context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PAUSE))
-                            isPlaying = false
-                        } else {
-                            context.startService(Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PLAY))
-                            isPlaying = true
-                        }
+                        context.startService(
+                            Intent(context, PlaybackService::class.java).setAction(
+                                if (isPlaying) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY,
+                            ),
+                        )
                     },
                     onPrev = { playPrev() },
                     onNext = { playNext() },
-                    onSeek = { newPos ->
-                        position = newPos
-                        val snap = PlaybackService.getSnapshot()
-                        val dur = snap.durationMs
-                        if (dur > 0) {
-                            PlaybackService.seekTo(context, (dur * newPos).toInt())
+                    onSeekPreview = { newPos -> sliderDragPos = newPos },
+                    onSeekCommit = { finalPos ->
+                        if (playbackDurationMs > 0) {
+                            boundService?.seekTo((playbackDurationMs * finalPos).toLong())
                         }
+                        sliderDragPos = null
                     },
                     shuffleOn = shuffleOn,
                     repeatMode = repeatMode,
@@ -1822,11 +1838,13 @@ private fun MiniPlayerBar(
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
-    onSeek: (Float) -> Unit,
+    onSeekPreview: (Float) -> Unit,
+    onSeekCommit: (Float) -> Unit,
     onOpenExpanded: () -> Unit,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
 ) {
+    val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -1881,7 +1899,40 @@ private fun MiniPlayerBar(
                 }
             }
 
-            Slider(value = position, onValueChange = onSeek)
+            val currentMs = (position.coerceIn(0f, 1f) * durationMs).toInt()
+            // El drag se gestiona en el padre (PlayerScreen) via sliderDragPos.
+            // Aquí solo propagamos el valor y los eventos de cambio.
+            var localDrag by remember { mutableStateOf<Float?>(null) }
+            Slider(
+                value = localDrag ?: position,
+                onValueChange = { v ->
+                    localDrag = v
+                    onSeekPreview(v)
+                },
+                onValueChangeFinished = {
+                    val c = localDrag
+                    if (c != null) {
+                        onSeekCommit(c)
+                        localDrag = null
+                    }
+                },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = formatMs(currentMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+                Text(
+                    text = formatMs(durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1945,7 +1996,8 @@ private fun ExpandedPlayerOverlay(
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
-    onSeek: (Float) -> Unit,
+    onSeekPreview: (Float) -> Unit,
+    onSeekCommit: (Float) -> Unit,
     shuffleOn: Boolean,
     repeatMode: RepeatMode,
     onToggleShuffle: () -> Unit,
@@ -1953,6 +2005,7 @@ private fun ExpandedPlayerOverlay(
     canDownloadLyrics: Boolean,
     onRequestLyricsDownload: () -> Unit,
 ) {
+    val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     Surface(
         modifier = modifier.background(bgBrush),
         color = Color.Transparent,
@@ -2055,7 +2108,38 @@ private fun ExpandedPlayerOverlay(
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                 ) {
-                    Slider(value = position, onValueChange = onSeek)
+                    val currentMs = (position.coerceIn(0f, 1f) * durationMs).toInt()
+                    var localDrag by remember { mutableStateOf<Float?>(null) }
+                    Slider(
+                        value = localDrag ?: position,
+                        onValueChange = { v ->
+                            localDrag = v
+                            onSeekPreview(v)
+                        },
+                        onValueChangeFinished = {
+                            val c = localDrag
+                            if (c != null) {
+                                onSeekCommit(c)
+                                localDrag = null
+                            }
+                        },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = formatMs(currentMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        )
+                        Text(
+                            text = formatMs(durationMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        )
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2152,5 +2236,13 @@ private fun String.toTitleCaseSimple(): String {
                 if (ch.isLowerCase()) ch.titlecase() else ch.toString()
             }
         }
+}
+
+private fun formatMs(ms: Int): String {
+    if (ms <= 0) return "0:00"
+    val totalSec = ms / 1000
+    val minutes = totalSec / 60
+    val seconds = totalSec % 60
+    return "%d:%02d".format(minutes, seconds)
 }
 

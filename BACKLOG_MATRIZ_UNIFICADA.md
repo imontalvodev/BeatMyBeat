@@ -24,9 +24,9 @@ Matriz consolidada de `TESTERS_BUGS_Y_ERRORES.md`, `MEJORAS_VERSION_FINAL.md` y 
 | B-06 | Incompatibilidad URL YouTube Music | Bug | ambos | P1 | ✅ Resuelto (playlist + song URL) | Release Android |
 | B-07 | Permiso de notificaciones afecta descargas sin feedback | Bug/UX | ambos | P1 | ⏳ Pendiente | Release Android |
 | B-08 | Crear playlist desde ciertos flujos falla/UX confusa | Bug/UX | ambos | P1 | ⏳ Pendiente | Release Android |
-| B-09 | Seek no permite reproducir desde cualquier punto | Bug | ambos | P1 | ⏳ Pendiente | Release Android |
-| B-10 | No se muestra duración de canción | Bug/UX | ambos | P1 | ⏳ Pendiente | Release Android |
-| B-11 | Detecta audios no musicales (WhatsApp/Instagram) | Bug | ambos | P1 | ⏳ Pendiente | Release Android |
+| B-09 | Seek no permite reproducir desde cualquier punto | Bug | ambos | P1 | ✅ Resuelto | Release Android |
+| B-10 | No se muestra duración de canción | Bug/UX | ambos | P1 | ✅ Resuelto | Release Android |
+| B-11 | Detecta audios no musicales (WhatsApp/Instagram) | Bug | ambos | P1 | ✅ Resuelto (filtro estricto) | Release Android |
 | B-12 | No se entiende dónde se guardan descargas | UX | ambos | P2 | 🟡 Parcial (progreso visible, falta acceso carpeta) | Release Android |
 | B-13 | Botón principal Downloader descentrado | UI | testers | P2 | ⏳ Pendiente | Release Android |
 | B-14 | Tema no persiste al cerrar app | Bug/UX | testers | P2 | ⏳ Pendiente | Release Android |
@@ -58,12 +58,14 @@ Matriz consolidada de `TESTERS_BUGS_Y_ERRORES.md`, `MEJORAS_VERSION_FINAL.md` y 
 - ✅ Descarga por URL funcional en los casos reportados de song + playlist/álbum.
 - ✅ Miniaturas visibles en resultados de búsqueda de canciones.
 - ✅ Feedback de descarga dentro de la app (progreso, conteo y estado en segundo plano con foreground service).
-- ⏳ Pendiente: bloque de reproductor (shuffle/loop/seek/duración), filtrado de audios no musicales y UX final de ajustes/almacenamiento.
+- ✅ Seek funcional al soltar barra y tiempos visibles (actual/total) en mini y expanded player.
+- ✅ Filtro de audios no musicales en MediaStore (IS_MUSIC + duración + heurísticas de ruta/MIME).
+- ⏳ Pendiente: bloque de reproductor (play/pause atascado y shuffle/loop), y UX final de ajustes/almacenamiento.
 
 ## Orden de ejecución recomendado (rápido)
 
 1. **Bloque P0 restante**: B-03.
-2. **Bloque P1**: B-04 a B-11.
+2. **Bloque P1**: B-04, B-05, B-07, B-08.
 3. **Bloque P2 técnico**: B-12, B-14, B-15.
 4. **Bloque P2 producto v1.0**: V-02 a V-09.
 5. **Bloque P3**: F-01 en adelante.
@@ -74,6 +76,6 @@ Si se retoma el proyecto con contexto nuevo, empezar por:
 
 - `B-03` (bloqueos en player),
 - `B-04/B-05` (shuffle/loop),
-- `B-11` (filtro de audios no musicales).
+- `B-07/B-08` (feedback permisos + UX playlist).
 
 Ese trío concentra la mayor parte de fricción pendiente reportada por testers.
