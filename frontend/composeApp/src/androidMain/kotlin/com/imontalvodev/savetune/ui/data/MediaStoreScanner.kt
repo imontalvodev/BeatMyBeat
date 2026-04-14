@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.provider.MediaStore
 import java.io.File
+import java.util.Locale
 
 data class DeviceTrack(
     val id: Long,
@@ -17,15 +18,23 @@ data class DeviceTrack(
 class MediaStoreScanner(private val context: Context) {
 
     suspend fun scanAudio(): List<DeviceTrack> {
+        val minMusicDurationMs = 30_000L
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.IS_MUSIC,
+            MediaStore.Audio.Media.MIME_TYPE,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.RELATIVE_PATH,
         )
 
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= ?"
+        val selectionArgs = arrayOf(minMusicDurationMs.toString())
 
         val tracks = mutableListOf<DeviceTrack>()
 
@@ -34,8 +43,8 @@ class MediaStoreScanner(private val context: Context) {
             context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                null,
-                null,
+                selection,
+                selectionArgs,
                 sortOrder,
             )?.use { cursor ->
                 val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
@@ -43,6 +52,10 @@ class MediaStoreScanner(private val context: Context) {
                 val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
                 val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val mimeTypeCol = cursor.getColumnIndex(MediaStore.Audio.Media.MIME_TYPE)
+                val displayNameCol = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                val relativePathCol = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
@@ -50,11 +63,22 @@ class MediaStoreScanner(private val context: Context) {
                     val artist = cursor.getString(artistCol) ?: "Unknown"
                     val album = cursor.getString(albumCol)
                     val duration = cursor.getLong(durationCol)
+                    val mimeType = cursor.optString(mimeTypeCol).lowercase(Locale.ROOT)
+                    val displayName = cursor.optString(displayNameCol).lowercase(Locale.ROOT)
+                    val absolutePath = cursor.optString(dataCol).lowercase(Locale.ROOT)
+                    val relativePath = cursor.optString(relativePathCol).lowercase(Locale.ROOT)
                     val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
                         .buildUpon()
                         .appendPath(id.toString())
                         .build()
                         .toString()
+
+                    val searchableText = listOf(title, artist, album, displayName, absolutePath, relativePath)
+                        .joinToString(" ")
+                        .lowercase(Locale.ROOT)
+
+                    if (duration < minMusicDurationMs) continue
+                    if (isLikelyNonMusicAudio(searchableText, mimeType)) continue
 
                     tracks += DeviceTrack(
                         id = id,
@@ -133,6 +157,33 @@ class MediaStoreScanner(private val context: Context) {
         }
 
         return tracks
+    }
+
+    private fun isLikelyNonMusicAudio(searchableText: String, mimeType: String): Boolean {
+        val nonMusicPathHints = listOf(
+            "whatsapp",
+            "telegram",
+            "instagram",
+            "voice notes",
+            "voicenotes",
+            "recordings",
+            "recorder",
+            "call",
+            "podcast",
+            "audiobooks",
+            "notifications",
+            "ringtones",
+            "alarms",
+        )
+
+        if (nonMusicPathHints.any { searchableText.contains(it) }) return true
+        if (mimeType.contains("audio/3gpp") || mimeType.contains("audio/amr")) return true
+        return false
+    }
+
+    private fun android.database.Cursor.optString(columnIndex: Int): String {
+        if (columnIndex < 0) return ""
+        return runCatching { getString(columnIndex) ?: "" }.getOrDefault("")
     }
 }
 
