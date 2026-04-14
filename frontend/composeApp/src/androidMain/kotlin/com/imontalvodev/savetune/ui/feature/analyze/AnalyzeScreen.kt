@@ -1,8 +1,12 @@
 package com.imontalvodev.savetune.ui.feature.analyze
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,10 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.AudioDownloader
+import com.imontalvodev.savetune.ui.network.RemoteArtworkCache
 import com.imontalvodev.savetune.ui.network.SongSuggestion
 import com.imontalvodev.savetune.ui.network.YouTubeSearchClient
 import com.imontalvodev.savetune.ui.network.cleanArtistForLyrics
@@ -436,16 +444,27 @@ fun AnalyzeScreen(
                                             Column(
                                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                             ) {
-                                                Text(
-                                                    text = suggestion.title.ifBlank { "Sin título" },
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                )
-                                                Text(
-                                                    text = suggestion.artist.ifBlank { "Artista desconocido" },
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                                )
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                ) {
+                                                    SuggestionThumbnail(url = suggestion.thumbnailUrl)
+                                                    Column(
+                                                        modifier = Modifier.weight(1f),
+                                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                    ) {
+                                                        Text(
+                                                            text = suggestion.title.ifBlank { "Sin título" },
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                        )
+                                                        Text(
+                                                            text = suggestion.artist.ifBlank { "Artista desconocido" },
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -598,6 +617,50 @@ private data class SongUrlMetadata(
     val artist: String,
     val thumbnailUrl: String,
 )
+
+@Composable
+private fun SuggestionThumbnail(url: String) {
+    val client = remember { OkHttpClient() }
+    var bitmap by remember(url) { mutableStateOf<Bitmap?>(RemoteArtworkCache.get(url)) }
+
+    LaunchedEffect(url) {
+        if (url.isBlank() || bitmap != null) return@LaunchedEffect
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching {
+                val req = Request.Builder().url(url).get().build()
+                client.newCall(req).execute().use { res ->
+                    if (!res.isSuccessful) return@use null
+                    val bytes = res.body?.bytes() ?: return@use null
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }
+            }.getOrNull()
+        }
+        bitmap = loaded
+        if (loaded != null) RemoteArtworkCache.put(url, loaded)
+    }
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier
+                .size(54.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(10.dp),
+                ),
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(10.dp),
+                ),
+        )
+    }
+}
 
 private fun fetchYouTubeSongMetadata(videoId: String): SongUrlMetadata {
     val fallback = SongUrlMetadata(
