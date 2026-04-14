@@ -44,6 +44,7 @@ import com.imontalvodev.savetune.ui.network.RemoteArtworkCache
 import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.network.AudioDownloader
+import com.imontalvodev.savetune.ui.network.PlaylistResponse
 import com.imontalvodev.savetune.ui.network.PlaylistSong
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
 import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
@@ -73,8 +74,18 @@ fun PlaylistScreen(
         if (playlistUrl.isBlank()) return@LaunchedEffect
         loading = true
         error = null
-        val res = withContext(Dispatchers.IO) {
-            MiddlewareApi.fetchPlaylist(MIDDLEWARE_BASE_URL, playlistUrl)
+        val res = try {
+            withContext(Dispatchers.IO) {
+                MiddlewareApi.fetchPlaylist(MIDDLEWARE_BASE_URL, playlistUrl)
+            }
+        } catch (_: Exception) {
+            PlaylistResponse(
+                success = false,
+                playlist = null,
+                songs = emptyList(),
+                error = "NetworkError",
+                message = "No se pudo conectar con el servidor de playlists.",
+            )
         }
         loading = false
         if (!res.success) {

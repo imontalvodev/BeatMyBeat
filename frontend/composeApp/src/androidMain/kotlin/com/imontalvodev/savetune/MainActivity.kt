@@ -136,9 +136,6 @@ class MainActivity : ComponentActivity() {
                                                     SavetuneThemeMode.NeonMint
                                                 }
                                         },
-                                        onOpenPlaylist = { playlistUrl ->
-                                            navController.navigate("playlist?url=${java.net.URLEncoder.encode(playlistUrl, "UTF-8")}")
-                                        },
                                     )
                                 }
                                 composable(

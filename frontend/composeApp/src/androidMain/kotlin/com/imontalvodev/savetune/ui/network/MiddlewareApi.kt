@@ -97,48 +97,66 @@ object MiddlewareApi {
             .addQueryParameter("url", playlistUrl)
             .build()
 
-        val req = Request.Builder().url(url).get().build()
-        client.newCall(req).execute().use { res ->
-            val body = res.body?.string().orEmpty()
-            val json = runCatching { JSONObject(body) }.getOrNull()
-            if (json == null) {
-                return PlaylistResponse(
-                    success = false, playlist = null, songs = emptyList(),
-                    error = "InvalidJson", message = "Invalid JSON from server",
-                )
-            }
-
-            val playlistObj = json.optJSONObject("playlist")
-            val playlist = if (playlistObj != null) {
-                PlaylistMeta(
-                    name = playlistObj.optString("name", ""),
-                    totalTracks = playlistObj.optInt("totalTracks", 0),
-                )
-            } else null
-
-            val songsArray: JSONArray = json.optJSONArray("songs") ?: JSONArray()
-            val songs = buildList {
-                for (i in 0 until songsArray.length()) {
-                    val s = songsArray.optJSONObject(i) ?: continue
-                    add(
-                        PlaylistSong(
-                            id = s.optString("id", ""),
-                            title = s.optString("title", ""),
-                            artist = s.optString("artist", ""),
-                            album = s.optString("album", ""),
-                            imageUrl = s.optString("imageUrl", ""),
-                            durationSeconds = s.optInt("duration", 0),
-                        )
+        return try {
+            val req = Request.Builder().url(url).get().build()
+            client.newCall(req).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                val json = runCatching { JSONObject(body) }.getOrNull()
+                if (json == null) {
+                    return PlaylistResponse(
+                        success = false, playlist = null, songs = emptyList(),
+                        error = "InvalidJson", message = "Invalid JSON from server",
                     )
                 }
-            }
 
-            return PlaylistResponse(
-                success = json.optBoolean("success", false),
-                playlist = playlist,
-                songs = songs,
-                error = json.opt("error")?.toString(),
-                message = json.opt("message")?.toString(),
+                val playlistObj = json.optJSONObject("playlist")
+                val playlist = if (playlistObj != null) {
+                    PlaylistMeta(
+                        name = playlistObj.optString("name", ""),
+                        totalTracks = playlistObj.optInt("totalTracks", 0),
+                    )
+                } else null
+
+                val songsArray: JSONArray = json.optJSONArray("songs") ?: JSONArray()
+                val songs = buildList {
+                    for (i in 0 until songsArray.length()) {
+                        val s = songsArray.optJSONObject(i) ?: continue
+                        add(
+                            PlaylistSong(
+                                id = s.optString("id", ""),
+                                title = s.optString("title", ""),
+                                artist = s.optString("artist", ""),
+                                album = s.optString("album", ""),
+                                imageUrl = s.optString("imageUrl", ""),
+                                durationSeconds = s.optInt("duration", 0),
+                            )
+                        )
+                    }
+                }
+
+                return PlaylistResponse(
+                    success = json.optBoolean("success", false),
+                    playlist = playlist,
+                    songs = songs,
+                    error = json.opt("error")?.toString(),
+                    message = json.opt("message")?.toString(),
+                )
+            }
+        } catch (e: IOException) {
+            PlaylistResponse(
+                success = false,
+                playlist = null,
+                songs = emptyList(),
+                error = "NetworkError",
+                message = "No se pudo conectar con el servidor. Inténtalo de nuevo más tarde.",
+            )
+        } catch (e: Exception) {
+            PlaylistResponse(
+                success = false,
+                playlist = null,
+                songs = emptyList(),
+                error = "UnexpectedError",
+                message = "Error inesperado al cargar la playlist.",
             )
         }
     }

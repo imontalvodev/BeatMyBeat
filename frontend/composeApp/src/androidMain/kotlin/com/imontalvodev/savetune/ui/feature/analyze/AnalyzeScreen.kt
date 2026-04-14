@@ -48,12 +48,15 @@ import com.imontalvodev.savetune.ui.theme.PrimaryButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Request
 
 @Composable
 fun AnalyzeScreen(
     themeMode: SavetuneThemeMode,
     onToggleTheme: () -> Unit,
-    onOpenPlaylist: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val backgroundBrush = remember(themeMode) {
@@ -79,6 +82,7 @@ fun AnalyzeScreen(
     var selectedSuggestion by remember { mutableStateOf<SongSuggestion?>(null) }
     var downloadingSuggestion by remember { mutableStateOf(false) }
     var downloadError by remember { mutableStateOf<String?>(null) }
+    var playlistInputError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -160,9 +164,12 @@ fun AnalyzeScreen(
                     if (mode == "playlist") {
                         OutlinedTextField(
                             value = playlistUrl,
-                            onValueChange = { playlistUrl = it },
-                            label = { Text("Playlist URL (YouTube)") },
-                            placeholder = { Text("Paste playlist link...") },
+                            onValueChange = {
+                                playlistUrl = it
+                                playlistInputError = null
+                            },
+                            label = { Text("URL de playlist/album/canción (YouTube)") },
+                            placeholder = { Text("https://youtube.com/... o https://music.youtube.com/...") },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
@@ -237,27 +244,94 @@ fun AnalyzeScreen(
                                     }
                                 }
                             } else {
-                                if (playlistUrl.isBlank()) {
-                                    // Validación rápida sin notificación.
+                                val normalizedUrl = playlistUrl.trim()
+                                if (normalizedUrl.isBlank()) {
+                                    playlistInputError = "Introduce una URL de YouTube o YouTube Music."
                                 } else {
-                                    val normalizedUrl = playlistUrl.trim()
-                                    if (isYoutubePlaylistUrl(normalizedUrl)) {
-                                        scope.launch {
-                                            val result = AudioDownloader.downloadYoutubeAlbumZipToAppMusic(
-                                                context = context,
-                                                middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                                playlistUrl = normalizedUrl,
-                                            )
-                                            // El feedback de progreso/completado se maneja con notificaciones.
+                                    when (val parsed = parseYouTubeInput(normalizedUrl)) {
+                                        is ParsedYouTubeInput.Invalid -> {
+                                            playlistInputError = parsed.reason
                                         }
-                                    } else {
-                                        onOpenPlaylist(normalizedUrl)
+                                        is ParsedYouTubeInput.PlaylistOrAlbum -> {
+                                            scope.launch {
+                                                try {
+                                                    val result = AudioDownloader.downloadYoutubeAlbumZipToAppMusic(
+                                                        context = context,
+                                                        middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                                        playlistUrl = parsed.url,
+                                                    )
+                                                    if (result.success) return@launch
+
+                                                    // Fallback: algunos listId de YouTube/YTMusic (OLAK..., RD...)
+                                                    // pueden fallar en ZIP. Intentamos resolver tracks y descargar uno a uno.
+                                                    val playlistResponse = withContext(Dispatchers.IO) {
+                                                        MiddlewareApi.fetchPlaylist(MIDDLEWARE_BASE_URL, parsed.url)
+                                                    }
+                                                    if (!playlistResponse.success || playlistResponse.songs.isEmpty()) {
+                                                        playlistInputError =
+                                                            playlistResponse.message
+                                                                ?: playlistResponse.error
+                                                                ?: result.error
+                                                                ?: "No se pudo procesar la playlist. Revisa la URL."
+                                                        return@launch
+                                                    }
+
+                                                    var downloaded = 0
+                                                    playlistResponse.songs.forEach { song ->
+                                                        val single = AudioDownloader.downloadAutoToAppMusic(
+                                                            context = context,
+                                                            middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                                            title = song.title,
+                                                            artist = song.artist,
+                                                            album = song.album,
+                                                            imageUrl = song.imageUrl,
+                                                        )
+                                                        if (single.success) downloaded++
+                                                    }
+                                                    if (downloaded <= 0) {
+                                                        playlistInputError = "No se pudo descargar ninguna canción de esa playlist."
+                                                    }
+                                                } catch (_: Exception) {
+                                                    playlistInputError =
+                                                        "No se pudo conectar con el servidor de playlists. Inténtalo más tarde."
+                                                }
+                                            }
+                                        }
+                                        is ParsedYouTubeInput.SingleSong -> {
+                                            scope.launch {
+                                                val metadata = withContext(Dispatchers.IO) {
+                                                    fetchYouTubeSongMetadata(parsed.videoId)
+                                                }
+                                                val result = AudioDownloader.downloadAutoToAppMusic(
+                                                    context = context,
+                                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                                                    title = metadata.title,
+                                                    artist = metadata.artist,
+                                                    album = "",
+                                                    videoId = parsed.videoId,
+                                                    thumbnailUrl = metadata.thumbnailUrl,
+                                                )
+                                                if (!result.success) {
+                                                    playlistInputError =
+                                                        result.error ?: "No se pudo descargar la canción desde esa URL."
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
+
+                    if (mode == "playlist" && playlistInputError != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = playlistInputError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
 
                     if (mode == "song") {
                         Spacer(modifier = Modifier.height(12.dp))
@@ -390,10 +464,103 @@ fun AnalyzeScreen(
     }
 }
 
-private fun isYoutubePlaylistUrl(url: String): Boolean {
-    val u = url.lowercase()
-    return (u.contains("youtube.com") || u.contains("youtu.be") || u.contains("music.youtube.com")) &&
-        u.contains("list=")
+private sealed interface ParsedYouTubeInput {
+    data class PlaylistOrAlbum(val url: String) : ParsedYouTubeInput
+    data class SingleSong(val videoId: String) : ParsedYouTubeInput
+    data class Invalid(val reason: String) : ParsedYouTubeInput
+}
+
+private fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
+    val url = raw.toHttpUrlOrNull()
+        ?: return ParsedYouTubeInput.Invalid(
+            "Formato inválido. Usa una URL completa de YouTube o YouTube Music.",
+        )
+
+    val host = url.host.lowercase().removePrefix("www.")
+    val allowedHosts = setOf("youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be")
+    if (host !in allowedHosts) {
+        return ParsedYouTubeInput.Invalid(
+            "Solo se admiten enlaces de YouTube o YouTube Music.",
+        )
+    }
+
+    val listId = url.queryParameter("list")?.trim().orEmpty()
+    if (listId.isNotBlank()) {
+        val normalized = buildCanonicalPlaylistUrl(url, listId)
+        return ParsedYouTubeInput.PlaylistOrAlbum(normalized)
+    }
+
+    val videoId = extractYouTubeVideoId(url)
+    if (videoId != null) {
+        return ParsedYouTubeInput.SingleSong(videoId)
+    }
+
+    return ParsedYouTubeInput.Invalid(
+        "URL no válida. Introduce un enlace de playlist/álbum o de canción de YouTube/YT Music.",
+    )
+}
+
+private fun buildCanonicalPlaylistUrl(url: HttpUrl, listId: String): String {
+    val builder = HttpUrl.Builder()
+        .scheme("https")
+        .host("www.youtube.com")
+        .addPathSegment("playlist")
+        .addQueryParameter("list", listId)
+
+    // Para casos como youtu.be/<videoId>?list=... preservamos v para mejorar compatibilidad backend.
+    val v = extractYouTubeVideoId(url)
+    if (!v.isNullOrBlank()) builder.addQueryParameter("v", v)
+    return builder.build().toString()
+}
+
+private fun extractYouTubeVideoId(url: HttpUrl): String? {
+    val host = url.host.lowercase().removePrefix("www.")
+    if (host == "youtu.be") {
+        val shortId = url.pathSegments.firstOrNull().orEmpty()
+        return shortId.takeIf { it.length == 11 }
+    }
+
+    val path = url.encodedPath.lowercase()
+    val fromQuery = url.queryParameter("v")?.trim().orEmpty()
+    if (path == "/watch" && fromQuery.length == 11) {
+        return fromQuery
+    }
+
+    val segments = url.pathSegments
+    if (segments.size >= 2 && (segments[0] == "shorts" || segments[0] == "live")) {
+        return segments[1].takeIf { it.length == 11 }
+    }
+    return null
+}
+
+private data class SongUrlMetadata(
+    val title: String,
+    val artist: String,
+    val thumbnailUrl: String,
+)
+
+private fun fetchYouTubeSongMetadata(videoId: String): SongUrlMetadata {
+    val fallback = SongUrlMetadata(
+        title = "YouTube Track $videoId",
+        artist = "Unknown artist",
+        thumbnailUrl = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg",
+    )
+
+    return runCatching {
+        val targetUrl = "https://www.youtube.com/watch?v=$videoId"
+        val oEmbed = "https://www.youtube.com/oembed?url=$targetUrl&format=json"
+        val req = Request.Builder().url(oEmbed).get().build()
+        OkHttpClient().newCall(req).execute().use { res ->
+            if (!res.isSuccessful) return fallback
+            val body = res.body?.string().orEmpty()
+            val json = org.json.JSONObject(body)
+            SongUrlMetadata(
+                title = json.optString("title", fallback.title).ifBlank { fallback.title },
+                artist = json.optString("author_name", fallback.artist).ifBlank { fallback.artist },
+                thumbnailUrl = json.optString("thumbnail_url", fallback.thumbnailUrl).ifBlank { fallback.thumbnailUrl },
+            )
+        }
+    }.getOrElse { fallback }
 }
 
 /**
