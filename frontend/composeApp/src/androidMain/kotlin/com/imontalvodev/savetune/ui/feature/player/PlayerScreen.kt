@@ -1191,7 +1191,6 @@ fun PlayerScreen(
                                     addToPlaylistExistingId
                                         ?: selectedPlaylistId
                                         ?: playlists.firstOrNull()?.id
-                                        ?: return@TextButton
 
                                 val targetPlaylistId = if (newName.isNotBlank()) {
                                     val res = viewModel.createPlaylist(newName)
@@ -1212,7 +1211,16 @@ fun PlayerScreen(
                                         }
                                     }
                                 } else {
-                                    chosenId
+                                    val existingId = chosenId
+                                    if (existingId == null) {
+                                        Toast.makeText(
+                                            context,
+                                            "Elige una playlist o escribe un nombre para crear una nueva.",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                        return@TextButton
+                                    }
+                                    existingId
                                 }
 
                                 val duplicateIds = mutableListOf<Long>()
