@@ -1,6 +1,8 @@
 package com.imontalvodev.savetune.ui.network
 
 import android.content.Context
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.imontalvodev.savetune.notifications.SavetuneNotification
@@ -73,13 +75,16 @@ object AudioDownloader {
             }
 
             // --- Paso 3: descargar por rangos para evitar bloqueo con streams chunked ---
-            val ext = when {
+            val sourceExt = when {
                 streamInfo.mimeType.contains("mp4") || streamInfo.mimeType.contains("m4a") -> "m4a"
                 streamInfo.mimeType.contains("webm") || streamInfo.mimeType.contains("opus") -> "webm"
                 else -> "m4a"
             }
-            val fileName = "${safeTitle.ifBlank { "track" }.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180)}.$ext"
+            val baseName = safeTitle.ifBlank { "track" }.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180)
+            val tempFileName = "${baseName}.source.$sourceExt"
+            val fileName = "${baseName}.mp3"
             val dir = File(context.filesDir, ".music").also { if (!it.exists()) it.mkdirs() }
+            val tempFile = File(dir, tempFileName)
             val outFile = File(dir, fileName)
 
             android.util.Log.d("NewPipeStream", "Downloading: ${streamInfo.url.take(100)} mimeType=${streamInfo.mimeType}")
@@ -107,7 +112,7 @@ object AudioDownloader {
             var offset = 0L
             var totalWritten = 0L
 
-            FileOutputStream(outFile).use { out ->
+            FileOutputStream(tempFile).use { out ->
                 while (totalBytes < 0 || offset < totalBytes) {
                     val end = if (totalBytes > 0) minOf(offset + chunkSize - 1, totalBytes - 1) else offset + chunkSize - 1
                     val chunkResp = downloadClient.newCall(
@@ -138,19 +143,32 @@ object AudioDownloader {
             android.util.Log.d("NewPipeStream", "Download complete: ${totalWritten}B")
 
             if (totalWritten == 0L) {
-                outFile.delete()
+                tempFile.delete()
                 SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
                 return@withContext DownloadResult(false, null, "ZeroBytes")
             }
 
-            // --- Paso 4: embeber metadatos en el archivo ---
+            // --- Paso 4: convertir a MP3 con FFmpeg ---
+            outFile.delete()
+            val ffmpegCmd = "-y -i \"${tempFile.absolutePath}\" -vn -c:a mp3 -b:a 192k \"${outFile.absolutePath}\""
+            val ffmpegSession = FFmpegKit.execute(ffmpegCmd)
+            val ffmpegRc = ffmpegSession.returnCode
+            if (!ReturnCode.isSuccess(ffmpegRc) || !outFile.exists() || outFile.length() <= 0L) {
+                tempFile.delete()
+                outFile.delete()
+                SavetuneNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo convertir el audio a MP3.")
+                return@withContext DownloadResult(false, null, "FfmpegConvertFailed:${ffmpegRc?.value}")
+            }
+            tempFile.delete()
+
+            // --- Paso 5: embeber metadatos en el archivo ---
             runCatching {
                 embedMetadata(outFile, safeTitle, safeArtist, album.trim(), resolvedThumbnail, downloadClient)
             }.onFailure { android.util.Log.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
 
             ArtworkCache.clear()
 
-            // --- Paso 5: letras desde lyrics.ovh directo ---
+            // --- Paso 6: letras desde lyrics.ovh directo ---
             val isUnknown = { s: String -> s.isBlank() || s.equals("unknown", ignoreCase = true) || s.equals("unknown artist", ignoreCase = true) }
             if (!isUnknown(safeTitle) && !isUnknown(safeArtist)) {
                 runCatching {

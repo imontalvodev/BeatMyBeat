@@ -41,6 +41,7 @@ kotlin {
             implementation(compose.materialIconsExtended)
             implementation(libs.okhttp)
             implementation(libs.newpipeextractor)
+            implementation(libs.ffmpeg.kit)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
