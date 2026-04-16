@@ -1,2 +1,4 @@
-backend/**
-middleware/**
+*
+!app/
+!app/**
+!.gitignore
