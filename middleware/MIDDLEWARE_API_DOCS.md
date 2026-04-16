@@ -1,4 +1,4 @@
-## Middleware SaveTune – Conexión Front ↔ Middle ↔ Python Backend
+## Middleware BeatMyBeat – Conexión Front ↔ Middle ↔ Python Backend
 
 Este middleware es un servidor Express (Node.js) que:
 - Expone una API HTTP simple hacia el **frontend**.
@@ -6,7 +6,7 @@ Este middleware es un servidor Express (Node.js) que:
 - Normaliza errores y gestiona el *streaming* de audio para las descargas.
 
 Se asume que:
-- El middleware corre, por ejemplo, en `https://api.savetune.com` o `http://localhost:3000` en desarrollo.
+- El middleware corre, por ejemplo, en `https://api.beatmybeat.com` o `http://localhost:3000` en desarrollo.
 - El backend Python corre en `PY_BACKEND_URL` (por defecto `http://localhost:4000`).
 
 ---
@@ -18,14 +18,14 @@ En el middleware:
 - **Variable de entorno importante**
   - `PY_BACKEND_URL`: URL base del backend Python.
     - Ejemplo dev: `PY_BACKEND_URL=http://localhost:4000`
-    - Ejemplo prod: `PY_BACKEND_URL=https://python-backend.savetune.com`
+    - Ejemplo prod: `PY_BACKEND_URL=https://python-backend.beatmybeat.com`
 
 En el frontend:
 
 - **Recomendado** usar algo como:
   - `MIDDLEWARE_URL`: URL base del middleware.
     - Ejemplo dev: `MIDDLEWARE_URL=http://localhost:3000`
-    - Ejemplo prod: `MIDDLEWARE_URL=https://api.savetune.com`
+    - Ejemplo prod: `MIDDLEWARE_URL=https://api.beatmybeat.com`
 
 ---
 

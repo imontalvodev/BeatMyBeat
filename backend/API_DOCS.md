@@ -1,4 +1,4 @@
-## SaveTune Backend (FastAPI) – Documentación para Frontend
+## BeatMyBeat Backend (FastAPI) – Documentación para Frontend
 
 Backend en Python con FastAPI. Expone endpoints para:
 - **Salud del servicio**
