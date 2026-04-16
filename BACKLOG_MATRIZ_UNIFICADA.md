@@ -50,7 +50,7 @@ Matriz consolidada de `TESTERS_BUGS_Y_ERRORES.md`, `MEJORAS_VERSION_FINAL.md` y 
 | F-07 | Recomendaciones inteligentes                                 | Futuro      | testers | P3        | Post v1.0                                                           |                                       |
 | F-08 | Ecualizador y vistas por carpetas/grupos                     | Futuro      | testers | P3        | Post v1.0                                                           |                                       |
 | F-09 | Compartir playlists/documentos con deep links                | Futuro      | todo    | P3        | Post v1.0                                                           |                                       |
-| F-10 | Personalización avanzada y perfil de usuario                 | Futuro      | todo    | P3        | Post v1.0                                                           |                                       |
+| F-10 | Personalización avanzada y perfil de usuario                 | Futuro      | todo    | P3        | Post v1.0                                                           | 🟡Parcial(Logica implementada)       |
 
 
 ## Progreso actual (sesión)

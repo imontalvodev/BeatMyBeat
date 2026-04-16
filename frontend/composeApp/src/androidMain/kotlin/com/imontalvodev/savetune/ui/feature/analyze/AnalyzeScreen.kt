@@ -46,11 +46,7 @@ import com.imontalvodev.savetune.ui.network.RemoteArtworkCache
 import com.imontalvodev.savetune.ui.network.SongSuggestion
 import com.imontalvodev.savetune.ui.network.YouTubeSearchClient
 import com.imontalvodev.savetune.ui.network.cleanArtistForLyrics
-import com.imontalvodev.savetune.ui.theme.CherryBackgroundBottom
-import com.imontalvodev.savetune.ui.theme.CherryBackgroundTop
-import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
-import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
-import com.imontalvodev.savetune.ui.theme.SavetuneThemeMode
+import com.imontalvodev.savetune.ui.theme.currentSavetuneThemeProfile
 import com.imontalvodev.savetune.ui.theme.ModeChip
 import com.imontalvodev.savetune.ui.theme.PrimaryButton
 import kotlinx.coroutines.Dispatchers
@@ -64,20 +60,14 @@ import com.imontalvodev.savetune.service.SavetuneForegroundService
 
 @Composable
 fun AnalyzeScreen(
-    themeMode: SavetuneThemeMode,
-    onToggleTheme: () -> Unit,
+    themeName: String,
     modifier: Modifier = Modifier,
 ) {
-    val backgroundBrush = remember(themeMode) {
-        when (themeMode) {
-            SavetuneThemeMode.NeonMint -> Brush.verticalGradient(
-                colors = listOf(NeonBackgroundTop, NeonBackgroundBottom),
-            )
-
-            SavetuneThemeMode.CherryPulse -> Brush.verticalGradient(
-                colors = listOf(CherryBackgroundTop, CherryBackgroundBottom),
-            )
-        }
+    val palette = currentSavetuneThemeProfile()
+    val backgroundBrush = remember(palette.id) {
+        Brush.verticalGradient(
+            colors = listOf(palette.backgroundTop, palette.backgroundBottom),
+        )
     }
 
     var mode by remember { mutableStateOf("playlist") }
@@ -125,13 +115,12 @@ fun AnalyzeScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = if (themeMode == SavetuneThemeMode.NeonMint) "Neon" else "Cherry",
+                    text = themeName,
                     modifier = Modifier
                         .background(
                             color = MaterialTheme.colorScheme.primary,
                             shape = RoundedCornerShape(999.dp),
                         )
-                        .clickable { onToggleTheme() }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onPrimary,

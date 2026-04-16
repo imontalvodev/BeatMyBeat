@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
@@ -24,8 +25,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.DrawerValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
@@ -37,9 +41,9 @@ import androidx.core.content.ContextCompat
 import com.imontalvodev.savetune.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.savetune.ui.feature.playlist.PlaylistScreen
 import com.imontalvodev.savetune.ui.feature.player.PlayerScreen
+import com.imontalvodev.savetune.ui.feature.theme.ThemeCustomizerScreen
 import com.imontalvodev.savetune.ui.theme.SavetuneTheme
-import com.imontalvodev.savetune.ui.theme.SavetuneThemeMode
-import com.imontalvodev.savetune.ui.theme.rememberSavetuneThemeModeState
+import com.imontalvodev.savetune.ui.theme.ThemeProfilesStore
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,11 +65,21 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val themeModeState = rememberSavetuneThemeModeState()
-            SavetuneTheme(themeMode = themeModeState.value) {
+            val store = remember { ThemeProfilesStore(this) }
+            var profiles by remember { mutableStateOf(store.loadProfiles()) }
+            var activeProfileId by remember {
+                mutableStateOf(store.loadActiveProfileId() ?: profiles.first().id)
+            }
+            val activeProfile = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.first()
+
+            SavetuneTheme(themeProfile = activeProfile) {
                 val navController = rememberNavController()
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
+                val currentRoute = navController.currentBackStackEntry?.destination?.route
+                BackHandler(enabled = drawerState.isOpen) {
+                    scope.launch { drawerState.close() }
+                }
 
                 ModalNavigationDrawer(
                     drawerState = drawerState,
@@ -77,7 +91,7 @@ class MainActivity : ComponentActivity() {
                             )
                             NavigationDrawerItem(
                                 label = { Text("Downloader") },
-                                selected = false,
+                                selected = currentRoute == "analyze",
                                 onClick = {
                                     scope.launch { drawerState.close() }
                                     navController.navigate("analyze") {
@@ -90,10 +104,19 @@ class MainActivity : ComponentActivity() {
                             )
                             NavigationDrawerItem(
                                 label = { Text("Player demo") },
-                                selected = false,
+                                selected = currentRoute == "player",
                                 onClick = {
                                     scope.launch { drawerState.close() }
                                     navController.navigate("player")
+                                },
+                                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Editar tema") },
+                                selected = currentRoute == "theme-customizer",
+                                onClick = {
+                                    scope.launch { drawerState.close() }
+                                    navController.navigate("theme-customizer")
                                 },
                                 modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                             )
@@ -126,17 +149,7 @@ class MainActivity : ComponentActivity() {
                         Box(modifier = Modifier.padding(innerPadding)) {
                             NavHost(navController = navController, startDestination = "analyze") {
                                 composable("analyze") {
-                                    AnalyzeScreen(
-                                        themeMode = themeModeState.value,
-                                        onToggleTheme = {
-                                            themeModeState.value =
-                                                if (themeModeState.value == SavetuneThemeMode.NeonMint) {
-                                                    SavetuneThemeMode.CherryPulse
-                                                } else {
-                                                    SavetuneThemeMode.NeonMint
-                                                }
-                                        },
-                                    )
+                                    AnalyzeScreen(themeName = activeProfile.name)
                                 }
                                 composable(
                                     route = "playlist?url={url}",
@@ -155,6 +168,30 @@ class MainActivity : ComponentActivity() {
                                 }
                             composable("player") {
                                 PlayerScreen()
+                            }
+                            composable("theme-customizer") {
+                                ThemeCustomizerScreen(
+                                    profiles = profiles,
+                                    activeProfileId = activeProfileId,
+                                    onApplyProfile = { id ->
+                                        activeProfileId = id
+                                        store.saveActiveProfileId(id)
+                                    },
+                                    onDeleteProfile = { id ->
+                                        profiles = profiles.filterNot { it.id == id }.ifEmpty { store.defaultProfiles() }
+                                        if (activeProfileId == id) {
+                                            activeProfileId = profiles.first().id
+                                            store.saveActiveProfileId(activeProfileId)
+                                        }
+                                        store.saveProfiles(profiles)
+                                    },
+                                    onSaveProfile = { profile ->
+                                        profiles = profiles + profile
+                                        store.saveProfiles(profiles)
+                                        activeProfileId = profile.id
+                                        store.saveActiveProfileId(profile.id)
+                                    },
+                                )
                             }
                             }
                         }

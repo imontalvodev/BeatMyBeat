@@ -46,8 +46,7 @@ import com.imontalvodev.savetune.ui.network.MiddlewareApi
 import com.imontalvodev.savetune.ui.network.AudioDownloader
 import com.imontalvodev.savetune.ui.network.PlaylistResponse
 import com.imontalvodev.savetune.ui.network.PlaylistSong
-import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
-import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
+import com.imontalvodev.savetune.ui.theme.currentSavetuneThemeProfile
 import com.imontalvodev.savetune.ui.theme.PrimaryButton
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -98,8 +97,9 @@ fun PlaylistScreen(
         }
     }
 
+    val palette = currentSavetuneThemeProfile()
     val bgBrush = Brush.verticalGradient(
-        colors = listOf(NeonBackgroundTop, NeonBackgroundBottom),
+        colors = listOf(palette.backgroundTop, palette.backgroundBottom),
     )
 
     Surface(

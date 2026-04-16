@@ -93,8 +93,7 @@ import com.imontalvodev.savetune.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.savetune.ui.network.LyricsCache
 import com.imontalvodev.savetune.ui.network.ArtworkCache
 import com.imontalvodev.savetune.ui.network.MiddlewareApi
-import com.imontalvodev.savetune.ui.theme.NeonBackgroundBottom
-import com.imontalvodev.savetune.ui.theme.NeonBackgroundTop
+import com.imontalvodev.savetune.ui.theme.currentSavetuneThemeProfile
 import com.imontalvodev.savetune.service.PlaybackService
 import com.imontalvodev.savetune.service.SavetuneForegroundService
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +109,7 @@ import kotlin.random.Random
 fun PlayerScreen(
     modifier: Modifier = Modifier,
 ) {
+    val palette = currentSavetuneThemeProfile()
     val viewModel: PlayerViewModel = viewModel()
     val deviceTracks = viewModel.tracks.collectAsState().value
     val favoriteIds = viewModel.favoriteIds.collectAsState().value
@@ -277,7 +277,7 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(NeonBackgroundTop, NeonBackgroundBottom),
+                        colors = listOf(palette.backgroundTop, palette.backgroundBottom),
                     ),
                 ),
             color = Color.Transparent,
@@ -452,7 +452,7 @@ fun PlayerScreen(
 
     // (Helper eliminado: ya no se usa en el fallback de letras bajo demanda)
 
-    val bgBrush = Brush.verticalGradient(colors = listOf(NeonBackgroundTop, NeonBackgroundBottom))
+    val bgBrush = Brush.verticalGradient(colors = listOf(palette.backgroundTop, palette.backgroundBottom))
 
     val visibleTracks = remember(deviceTracks, favoriteIds, playlists, selectedPlaylistId, query, selectedSection) {
         val trackById = deviceTracks.associateBy { it.id }
@@ -2035,71 +2035,77 @@ private fun ExpandedPlayerOverlay(
                 }
             }
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp),
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
-            ) {
-                if (artwork != null) {
-                    Image(
-                        bitmap = artwork.asImageBitmap(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize())
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
             val scroll = rememberScrollState()
-            Text(
-                text = (track?.title ?: "").toTitleCaseSimple(),
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = (track?.artist ?: "").toTitleCaseSimple(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Card(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .clickable(
-                        enabled = canDownloadLyrics,
-                        onClick = onRequestLyricsDownload,
-                    ),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.30f)),
+                    .weight(1f, fill = true),
             ) {
-                val bodyText = when (lyricsState) {
-                    LyricsUiState.Idle -> "Pulsa para cargar letra"
-                    LyricsUiState.Loading -> "Cargando letra..."
-                    is LyricsUiState.Ready -> lyricsState.lyrics
-                    is LyricsUiState.Empty -> lyricsState.message
-                }
-                Text(
-                    text = bodyText,
+                Card(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scroll)
-                        .padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        .fillMaxWidth()
+                        .weight(1f, fill = true),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
+                ) {
+                    if (artwork != null) {
+                        Image(
+                            bitmap = artwork.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize())
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = (track?.title ?: "").toTitleCaseSimple(),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Text(
+                    text = (track?.artist ?: "").toTitleCaseSimple(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = true)
+                        .clickable(
+                            enabled = canDownloadLyrics,
+                            onClick = onRequestLyricsDownload,
+                        ),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.30f)),
+                ) {
+                    val bodyText = when (lyricsState) {
+                        LyricsUiState.Idle -> "Pulsa para cargar letra"
+                        LyricsUiState.Loading -> "Cargando letra..."
+                        is LyricsUiState.Ready -> lyricsState.lyrics
+                        is LyricsUiState.Empty -> lyricsState.message
+                    }
+                    Text(
+                        text = bodyText,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scroll)
+                            .padding(16.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))

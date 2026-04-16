@@ -3,51 +3,72 @@ package com.imontalvodev.savetune.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
-enum class SavetuneThemeMode {
-    NeonMint,
-    CherryPulse,
-}
+data class SavetuneThemeProfile(
+    val id: String,
+    val name: String,
+    val backgroundTop: Color,
+    val backgroundBottom: Color,
+    val primary: Color,
+    val primaryVariant: Color,
+    val secondary: Color,
+    val surface: Color,
+    val onSurface: Color,
+    val onSurfaceMuted: Color,
+)
 
-private val NeonMintDarkColorScheme = darkColorScheme(
+val NeonMintProfile = SavetuneThemeProfile(
+    id = "builtin-neon",
+    name = "Neon",
+    backgroundTop = NeonBackgroundTop,
+    backgroundBottom = NeonBackgroundBottom,
     primary = NeonPrimary,
-    onPrimary = Color.Black,
+    primaryVariant = NeonPrimaryVariant,
     secondary = NeonSecondary,
-    background = NeonBackgroundBottom,
     surface = NeonSurface,
     onSurface = NeonOnSurface,
+    onSurfaceMuted = NeonOnSurfaceMuted,
 )
 
-private val CherryPulseDarkColorScheme = darkColorScheme(
+val CherryPulseProfile = SavetuneThemeProfile(
+    id = "builtin-cherry",
+    name = "Cherry",
+    backgroundTop = CherryBackgroundTop,
+    backgroundBottom = CherryBackgroundBottom,
     primary = CherryPrimary,
-    onPrimary = Color.Black,
+    primaryVariant = CherryPrimaryVariant,
     secondary = CherrySecondary,
-    background = CherryBackgroundBottom,
     surface = CherrySurface,
     onSurface = CherryOnSurface,
+    onSurfaceMuted = CherryOnSurfaceMuted,
 )
 
-@Composable
-fun rememberSavetuneThemeModeState(): MutableState<SavetuneThemeMode> =
-    remember { mutableStateOf(SavetuneThemeMode.NeonMint) }
+val LocalSavetuneThemeProfile = staticCompositionLocalOf { NeonMintProfile }
+
+@Composable fun currentSavetuneThemeProfile(): SavetuneThemeProfile = LocalSavetuneThemeProfile.current
 
 @Composable
 fun SavetuneTheme(
-    themeMode: SavetuneThemeMode,
+    themeProfile: SavetuneThemeProfile,
     content: @Composable () -> Unit,
 ) {
-    val baseScheme = when (themeMode) {
-        SavetuneThemeMode.NeonMint -> NeonMintDarkColorScheme
-        SavetuneThemeMode.CherryPulse -> CherryPulseDarkColorScheme
-    }
-
-    MaterialTheme(
-        colorScheme = baseScheme,
-        typography = Typography,
-        content = content,
+    val baseScheme = darkColorScheme(
+        primary = themeProfile.primary,
+        onPrimary = Color.Black,
+        secondary = themeProfile.secondary,
+        background = themeProfile.backgroundBottom,
+        surface = themeProfile.surface,
+        onSurface = themeProfile.onSurface,
     )
+
+    CompositionLocalProvider(LocalSavetuneThemeProfile provides themeProfile) {
+        MaterialTheme(
+            colorScheme = baseScheme,
+            typography = Typography,
+            content = content,
+        )
+    }
 }
