@@ -61,6 +61,7 @@ import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
 @Composable
 fun AnalyzeScreen(
     themeName: String,
+    onOpenPlayer: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val palette = currentBeatMyBeatThemeProfile()
@@ -104,6 +105,26 @@ fun AnalyzeScreen(
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.Top,
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Text(
+                    text = "Ir al reproductor",
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                            shape = RoundedCornerShape(999.dp),
+                        )
+                        .clickable { onOpenPlayer() }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Tabs Playlist / Song
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -29,7 +29,17 @@ class ThemeProfilesStore(private val context: Context) {
                 onSurfaceMuted = Color(o.optLong("onSurfaceMuted", NeonMintProfile.onSurfaceMuted.value.toLong())),
             )
         }
-        return if (out.isEmpty()) defaultProfiles() else out
+        if (out.isEmpty()) return defaultProfiles()
+        val sanitized = out.mapNotNull { profile ->
+            // Si es un perfil built-in, priorizamos la versión actual del código
+            // para reflejar cambios globales de paleta al instante.
+            when (profile.id) {
+                NeonMintProfile.id -> NeonMintProfile
+                "builtin-cherry" -> null
+                else -> profile
+            }
+        }
+        return if (sanitized.isEmpty()) defaultProfiles() else sanitized
     }
 
     fun saveProfiles(profiles: List<BeatMyBeatThemeProfile>) {
@@ -59,7 +69,7 @@ class ThemeProfilesStore(private val context: Context) {
         prefs.edit().putString(KEY_ACTIVE_ID, id).apply()
     }
 
-    fun defaultProfiles(): List<BeatMyBeatThemeProfile> = listOf(NeonMintProfile, CherryPulseProfile)
+    fun defaultProfiles(): List<BeatMyBeatThemeProfile> = listOf(NeonMintProfile)
 
     companion object {
         private const val KEY_PROFILES = "profiles_json"

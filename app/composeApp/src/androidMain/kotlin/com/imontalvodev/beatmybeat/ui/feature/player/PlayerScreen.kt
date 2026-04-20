@@ -110,6 +110,7 @@ import kotlin.random.Random
 fun PlayerScreen(
     modifier: Modifier = Modifier,
     onOpenProfile: () -> Unit = {},
+    onOpenDownloader: () -> Unit = {},
 ) {
     val palette = currentBeatMyBeatThemeProfile()
     val viewModel: PlayerViewModel = viewModel()
@@ -792,18 +793,35 @@ fun PlayerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(
-                        text = when (selectedSection) {
-                            PlayerSection.Songs -> "LISTA CANCIONES"
-                            PlayerSection.Favorites -> "FAVORITOS"
-                            PlayerSection.Playlist -> {
-                                val name = playlists.firstOrNull { it.id == selectedPlaylistId }?.name
-                                name ?: "PLAYLIST"
-                            }
-                        },
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            text = when (selectedSection) {
+                                PlayerSection.Songs -> "LISTA CANCIONES"
+                                PlayerSection.Favorites -> "FAVORITOS"
+                                PlayerSection.Playlist -> {
+                                    val name = playlists.firstOrNull { it.id == selectedPlaylistId }?.name
+                                    name ?: "PLAYLIST"
+                                }
+                            },
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "Downloader",
+                            modifier = Modifier
+                                .background(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                    shape = RoundedCornerShape(999.dp),
+                                )
+                                .clickable { onOpenDownloader() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     Box(
                         modifier = Modifier
                             .size(40.dp)

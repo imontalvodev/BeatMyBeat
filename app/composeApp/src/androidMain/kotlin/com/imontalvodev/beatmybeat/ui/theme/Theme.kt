@@ -22,7 +22,7 @@ data class BeatMyBeatThemeProfile(
 
 val NeonMintProfile = BeatMyBeatThemeProfile(
     id = "builtin-neon",
-    name = "Neon",
+    name = "Bluewave",
     backgroundTop = NeonBackgroundTop,
     backgroundBottom = NeonBackgroundBottom,
     primary = NeonPrimary,
@@ -31,19 +31,6 @@ val NeonMintProfile = BeatMyBeatThemeProfile(
     surface = NeonSurface,
     onSurface = NeonOnSurface,
     onSurfaceMuted = NeonOnSurfaceMuted,
-)
-
-val CherryPulseProfile = BeatMyBeatThemeProfile(
-    id = "builtin-cherry",
-    name = "Cherry",
-    backgroundTop = CherryBackgroundTop,
-    backgroundBottom = CherryBackgroundBottom,
-    primary = CherryPrimary,
-    primaryVariant = CherryPrimaryVariant,
-    secondary = CherrySecondary,
-    surface = CherrySurface,
-    onSurface = CherryOnSurface,
-    onSurfaceMuted = CherryOnSurfaceMuted,
 )
 
 val LocalBeatMyBeatThemeProfile = staticCompositionLocalOf { NeonMintProfile }
