@@ -6,6 +6,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
+import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -83,7 +84,7 @@ object AudioDownloader {
             val baseName = safeTitle.ifBlank { "track" }.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180)
             val tempFileName = "${baseName}.source.$sourceExt"
             val fileName = "${baseName}.mp3"
-            val dir = File(context.filesDir, ".music").also { if (!it.exists()) it.mkdirs() }
+            val dir = File(context.cacheDir, ".music_tmp").also { if (!it.exists()) it.mkdirs() }
             val tempFile = File(dir, tempFileName)
             val outFile = File(dir, fileName)
 
@@ -150,21 +151,63 @@ object AudioDownloader {
 
             // --- Paso 4: convertir a MP3 con FFmpeg ---
             outFile.delete()
-            val ffmpegCmd = "-y -i \"${tempFile.absolutePath}\" -vn -c:a mp3 -b:a 192k \"${outFile.absolutePath}\""
+            val artworkBytes = fetchArtworkBytes(resolvedThumbnail, downloadClient)
+            val artworkFile = artworkBytes?.let {
+                File(dir, "${baseName}.cover.jpg").also { f -> f.writeBytes(it) }
+            }
+            val escapedTitle = ffmpegEscape(safeTitle.ifBlank { "Track" })
+            val escapedArtist = ffmpegEscape(safeArtist.ifBlank { "Unknown artist" })
+            val escapedAlbum = ffmpegEscape(album.trim().ifBlank { safeTitle.ifBlank { "BeatMyBeat" } })
+            val ffmpegCmd = if (artworkFile != null && artworkFile.exists()) {
+                "-y -i \"${tempFile.absolutePath}\" -i \"${artworkFile.absolutePath}\" " +
+                    "-map 0:a -map 1:v -c:a mp3 -b:a 192k -c:v mjpeg -id3v2_version 3 " +
+                    "-metadata title=\"$escapedTitle\" -metadata artist=\"$escapedArtist\" -metadata album=\"$escapedAlbum\" " +
+                    "-metadata:s:v title=\"Album cover\" -metadata:s:v comment=\"Cover (front)\" " +
+                    "\"${outFile.absolutePath}\""
+            } else {
+                "-y -i \"${tempFile.absolutePath}\" -vn -c:a mp3 -b:a 192k -id3v2_version 3 " +
+                    "-metadata title=\"$escapedTitle\" -metadata artist=\"$escapedArtist\" -metadata album=\"$escapedAlbum\" " +
+                    "\"${outFile.absolutePath}\""
+            }
             val ffmpegSession = FFmpegKit.execute(ffmpegCmd)
             val ffmpegRc = ffmpegSession.returnCode
             if (!ReturnCode.isSuccess(ffmpegRc) || !outFile.exists() || outFile.length() <= 0L) {
                 tempFile.delete()
+                artworkFile?.delete()
                 outFile.delete()
                 BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo convertir el audio a MP3.")
                 return@withContext DownloadResult(false, null, "FfmpegConvertFailed:${ffmpegRc?.value}")
             }
             tempFile.delete()
+            artworkFile?.delete()
 
             // --- Paso 5: embeber metadatos en el archivo ---
             runCatching {
                 embedMetadata(outFile, safeTitle, safeArtist, album.trim(), resolvedThumbnail, downloadClient)
             }.onFailure { android.util.Log.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
+
+            val savedName = StorageSettings.saveAudioFromFile(
+                context = context,
+                source = outFile,
+                displayName = outFile.name,
+                title = safeTitle,
+                artist = safeArtist,
+                album = album.trim(),
+            )
+            if (savedName == null) {
+                tempFile.delete()
+                outFile.delete()
+                BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo guardar el archivo en la carpeta configurada.")
+                return@withContext DownloadResult(false, null, "SaveFailed")
+            }
+            val metaFile = File(outFile.parentFile, "${outFile.nameWithoutExtension}.meta.json")
+            if (metaFile.exists()) {
+                runCatching {
+                    StorageSettings.saveTextSidecar(context, metaFile.name, metaFile.readText())
+                }
+                metaFile.delete()
+            }
+            outFile.delete()
 
             ArtworkCache.clear()
 
@@ -177,8 +220,8 @@ object AudioDownloader {
                 }
             }
 
-            BeatMyBeatNotification.showDownloadCompleted(context, "Descarga completada", outFile.name)
-            return@withContext DownloadResult(true, outFile.name, null)
+            BeatMyBeatNotification.showDownloadCompleted(context, "Descarga completada", savedName)
+            return@withContext DownloadResult(true, savedName, null)
 
         } catch (e: Exception) {
             android.util.Log.e("NewPipeStream", "Download exception: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -227,9 +270,6 @@ object AudioDownloader {
                     return ZipDownloadResult(false, 0, body.ifBlank { "ServerErrorContentType:$contentType" })
                 }
 
-                val musicDir = File(context.filesDir, ".music")
-                if (!musicDir.exists()) musicDir.mkdirs()
-
                 val body = res.body ?: return ZipDownloadResult(false, 0, "EmptyBody")
                 var extracted = 0
                 ZipInputStream(body.byteStream()).use { zis ->
@@ -242,8 +282,8 @@ object AudioDownloader {
                             val ext = rawName.substringAfterLast('.', "").lowercase()
                             if (ext in allowedExt) {
                                 val safeName = rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                val outFile = File(musicDir, safeName)
-                                FileOutputStream(outFile).use { output ->
+                                val tmp = File.createTempFile("zip_track_", ".$ext", context.cacheDir)
+                                FileOutputStream(tmp).use { output ->
                                     var read = zis.read(buffer)
                                     while (read > 0) {
                                         output.write(buffer, 0, read)
@@ -251,7 +291,9 @@ object AudioDownloader {
                                     }
                                     output.flush()
                                 }
-                                extracted++
+                                val saved = StorageSettings.saveAudioFromFile(context, tmp, safeName)
+                                tmp.delete()
+                                if (saved != null) extracted++
                             }
                         }
                         zis.closeEntry()
@@ -359,32 +401,25 @@ object AudioDownloader {
         val body = res.body ?: return DownloadResult(false, null, "EmptyBody")
         val inputStream = body.byteStream()
 
-        // Carpeta interna privada: no aparece en MediaStore y se elimina al desinstalar.
-        val dir = File(context.filesDir, ".music")
-        if (!dir.exists()) dir.mkdirs()
-
         val fileNameFromHeader =
             res.header("Content-Disposition")
                 ?.substringAfter("filename=\"")
                 ?.substringBeforeLast("\"")
         val safeName = fileNameFromHeader?.takeIf { it.isNotBlank() }
             ?: (title.ifBlank { "track" } + ".mp3")
-
-        val outFile = File(dir, safeName)
-        FileOutputStream(outFile).use { output ->
-            val buffer = ByteArray(8 * 1024)
-            var bytes = inputStream.read(buffer)
-            while (bytes >= 0) {
-                if (bytes > 0) output.write(buffer, 0, bytes)
-                bytes = inputStream.read(buffer)
-            }
-            output.flush()
-        }
+        val saved = StorageSettings.saveRawAudioFromStream(
+            context = context,
+            input = inputStream,
+            displayName = safeName,
+            mimeType = "audio/mpeg",
+            title = title,
+        )
+        if (!saved) return DownloadResult(false, null, "SaveFailed")
 
         // Si el usuario descarga otro álbum/canciones, las IDs pueden repetirse
         // y ArtworkCache puede devolver una carátula vieja.
         ArtworkCache.clear()
-        return DownloadResult(true, outFile.name, null)
+        return DownloadResult(true, safeName, null)
     }
 
     private fun embedMetadata(
@@ -457,6 +492,27 @@ object AudioDownloader {
             }
         }
     }
+
+    private fun fetchArtworkBytes(thumbnailUrl: String, httpClient: OkHttpClient): ByteArray? {
+        if (thumbnailUrl.isBlank()) return null
+        return runCatching {
+            val urls = listOf(
+                thumbnailUrl,
+                thumbnailUrl.replace("maxresdefault", "hqdefault"),
+                thumbnailUrl.replace("maxresdefault", "mqdefault"),
+            )
+            urls.firstNotNullOfOrNull { url ->
+                runCatching {
+                    httpClient.newCall(Request.Builder().url(url).get().build()).execute().use { resp ->
+                        if (!resp.isSuccessful) return@use null
+                        resp.body?.bytes()?.takeIf { it.isNotEmpty() }
+                    }
+                }.getOrNull()
+            }
+        }.getOrNull()
+    }
+
+    private fun ffmpegEscape(raw: String): String = raw.replace("\"", "\\\"")
 
 }
 

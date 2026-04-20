@@ -36,6 +36,8 @@ fun ProfileScreen(
     onChangeLanguage: () -> Unit = {},
     onCustomizeBackground: () -> Unit = {},
     onCustomizeText: () -> Unit = {},
+    storageLocationLabel: String = "Music/BeatMyBeat/",
+    onPickStorageLocation: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val palette = currentBeatMyBeatThemeProfile()
@@ -89,6 +91,12 @@ fun ProfileScreen(
 
             ProfileOption(label = "Cambiar idioma", onClick = onChangeLanguage)
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ProfileOption(
+                label = "Ubicación de canciones",
+                subtitle = storageLocationLabel,
+                onClick = onPickStorageLocation,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(label = "Personalizar fondo", onClick = onCustomizeBackground)
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(label = "Personalizar texto", onClick = onCustomizeText)
@@ -97,7 +105,7 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun ProfileOption(label: String, onClick: () -> Unit) {
+private fun ProfileOption(label: String, subtitle: String? = null, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -105,10 +113,19 @@ private fun ProfileOption(label: String, onClick: () -> Unit) {
             .padding(vertical = 18.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                )
+            }
+        }
     }
 }

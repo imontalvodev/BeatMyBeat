@@ -2,6 +2,8 @@ package com.imontalvodev.beatmybeat.ui.feature.player
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.app.Activity
+import android.app.RecoverableSecurityException
 import android.media.AudioAttributes
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -61,6 +63,7 @@ import androidx.compose.material3.TextButton
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -85,6 +88,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.documentfile.provider.DocumentFile
+import android.provider.MediaStore
 import androidx.media3.common.Player
 import java.io.File
 import java.net.URLDecoder
@@ -205,6 +210,28 @@ fun PlayerScreen(
     var selectedSection by remember { mutableStateOf(PlayerSection.Songs) }
     var isExpanded by remember { mutableStateOf(false) }
     var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
+
+    var pendingDeleteTrack by remember { mutableStateOf<DeviceTrack?>(null) }
+    val deletionApprovalLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+        onResult = { result ->
+            val track = pendingDeleteTrack ?: return@rememberLauncherForActivityResult
+            if (result.resultCode == Activity.RESULT_OK) {
+                queue.removeAll { it.id == track.id }
+                if (currentTrack?.id == track.id) {
+                    currentTrack = null
+                    currentArtwork = null
+                    lyricsState = LyricsUiState.Empty("Selecciona una canción")
+                    BeatMyBeatForegroundService.stopPlayback(context)
+                }
+                viewModel.syncLibrary(auto = true)
+                Toast.makeText(context, "Canción eliminada.", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Eliminación cancelada.", Toast.LENGTH_SHORT).show()
+            }
+            pendingDeleteTrack = null
+        },
+    )
 
     // Si el usuario está viendo el overlay expandido (letra),
     // el botón Atrás debe cerrar el overlay en vez de navegar fuera del player.
@@ -737,50 +764,83 @@ fun PlayerScreen(
         }
     }
 
+    fun finishDeletion(track: DeviceTrack, showToast: Boolean = true) {
+        queue.removeAll { it.id == track.id }
+        if (currentTrack?.id == track.id) {
+            currentTrack = null
+            currentArtwork = null
+            lyricsState = LyricsUiState.Empty("Selecciona una canción")
+            BeatMyBeatForegroundService.stopPlayback(context)
+        }
+        viewModel.syncLibrary(auto = true)
+        if (showToast) Toast.makeText(context, "Canción eliminada.", Toast.LENGTH_SHORT).show()
+    }
+
+    fun isSafUri(uri: Uri): Boolean {
+        val auth = uri.authority ?: return false
+        return auth.contains("externalstorage") ||
+            auth.contains("downloads") ||
+            auth.contains("document") ||
+            uri.pathSegments.firstOrNull() == "tree" ||
+            uri.pathSegments.firstOrNull() == "document"
+    }
+
     fun deleteTrackFromDevice(
         track: DeviceTrack,
         syncAfter: Boolean = true,
         showToast: Boolean = true,
     ) {
-        try {
-            val uri = Uri.parse(track.uri)
-            val deleted = when (uri.scheme) {
-                "content" -> context.contentResolver.delete(uri, null, null) > 0
-                "file" -> {
-                    val path = uri.path
-                    if (path.isNullOrBlank()) false else File(path).delete()
-                }
-                else -> {
-                    // Por si viene como `file:///...` pero sin scheme reconocido
-                    val path = uri.path
-                    if (path.isNullOrBlank()) false else File(path).delete()
+        val uri = Uri.parse(track.uri)
+        when (uri.scheme) {
+            "file" -> {
+                val path = uri.path
+                val deleted = if (path.isNullOrBlank()) false else File(path).delete()
+                if (deleted) finishDeletion(track, showToast)
+                else if (showToast) Toast.makeText(context, "No se pudo eliminar la canción.", Toast.LENGTH_SHORT).show()
+            }
+            "content" -> {
+                if (isSafUri(uri)) {
+                    // URI de carpeta SAF: borrar via DocumentFile con permiso de árbol concedido
+                    val deleted = runCatching {
+                        DocumentFile.fromSingleUri(context, uri)?.delete() == true
+                    }.getOrDefault(false)
+                    if (deleted) finishDeletion(track, showToast)
+                    else if (showToast) Toast.makeText(context, "No se pudo eliminar (SAF).", Toast.LENGTH_SHORT).show()
+                } else {
+                    // URI de MediaStore: intentar borrado directo y si falla pedir permiso al usuario
+                    val directResult = runCatching {
+                        context.contentResolver.delete(uri, null, null) > 0
+                    }
+                    if (directResult.getOrDefault(false)) {
+                        finishDeletion(track, showToast)
+                        return
+                    }
+                    val ex = directResult.exceptionOrNull()
+                    // Pedir aprobación del sistema con el launcher correcto
+                    try {
+                        val sender = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            MediaStore.createDeleteRequest(context.contentResolver, listOf(uri)).intentSender
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && ex is RecoverableSecurityException) {
+                            ex.userAction.actionIntent.intentSender
+                        } else {
+                            if (showToast) Toast.makeText(context, "No se pudo eliminar la canción.", Toast.LENGTH_SHORT).show()
+                            return
+                        }
+                        pendingDeleteTrack = track
+                        deletionApprovalLauncher.launch(
+                            IntentSenderRequest.Builder(sender).build()
+                        )
+                        if (showToast) Toast.makeText(context, "Confirma la eliminación en el diálogo del sistema.", Toast.LENGTH_SHORT).show()
+                    } catch (_: Exception) {
+                        if (showToast) Toast.makeText(context, "Error solicitando permiso de eliminación.", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
-
-            if (!deleted) {
-                if (showToast) {
-                    Toast.makeText(context, "No se pudo eliminar la canción.", Toast.LENGTH_SHORT).show()
-                }
-                return
-            }
-
-            queue.removeAll { it.id == track.id }
-            if (currentTrack?.id == track.id) {
-                currentTrack = null
-                currentArtwork = null
-                lyricsState = LyricsUiState.Empty("Selecciona una canción")
-                BeatMyBeatForegroundService.stopPlayback(context)
-            }
-
-            if (syncAfter) {
-                viewModel.syncLibrary(auto = true)
-                if (showToast) {
-                    Toast.makeText(context, "Eliminado del teléfono.", Toast.LENGTH_SHORT).show()
-                }
-            }
-        } catch (_: Exception) {
-            if (showToast) {
-                Toast.makeText(context, "Error eliminando la canción.", Toast.LENGTH_SHORT).show()
+            else -> {
+                val path = uri.path
+                val deleted = if (path.isNullOrBlank()) false else File(path).delete()
+                if (deleted) finishDeletion(track, showToast)
+                else if (showToast) Toast.makeText(context, "No se pudo eliminar la canción.", Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -1,11 +1,14 @@
 package com.imontalvodev.beatmybeat
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -28,6 +31,7 @@ import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
 import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerScreen
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerSection
+import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatTheme
 import com.imontalvodev.beatmybeat.ui.theme.ThemeProfilesStore
 
@@ -50,11 +54,25 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val store = remember { ThemeProfilesStore(this) }
+            var storageLabel by remember { mutableStateOf(StorageSettings.getLocationLabel(this)) }
             var profiles by remember { mutableStateOf(store.loadProfiles()) }
             var activeProfileId by remember {
                 mutableStateOf(store.loadActiveProfileId() ?: profiles.first().id)
             }
             val activeProfile = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.first()
+
+            val storagePicker = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocumentTree(),
+            ) { uri: Uri? ->
+                if (uri != null) {
+                    val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    runCatching {
+                        contentResolver.takePersistableUriPermission(uri, flags)
+                    }
+                    StorageSettings.setCustomTreeUri(this, uri)
+                    storageLabel = StorageSettings.getLocationLabel(this)
+                }
+            }
 
             BeatMyBeatTheme(themeProfile = activeProfile) {
                 val navController = rememberNavController()
@@ -103,6 +121,8 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("profile") {
                             ProfileScreen(
+                                storageLocationLabel = storageLabel,
+                                onPickStorageLocation = { storagePicker.launch(null) },
                                 onCustomizeBackground = { navController.navigate("theme-customizer/background") },
                                 onCustomizeText = { navController.navigate("theme-customizer/text") },
                             )

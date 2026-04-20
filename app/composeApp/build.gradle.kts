@@ -37,6 +37,7 @@ kotlin {
             implementation(libs.androidx.media3.session)
             implementation(libs.androidx.media3.common)
             implementation(libs.androidx.navigation.compose)
+            implementation(libs.androidx.documentfile)
             implementation(compose.materialIconsExtended)
             implementation(libs.okhttp)
             implementation(libs.newpipeextractor)
