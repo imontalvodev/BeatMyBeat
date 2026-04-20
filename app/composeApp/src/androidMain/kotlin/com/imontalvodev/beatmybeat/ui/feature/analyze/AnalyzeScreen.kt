@@ -70,7 +70,7 @@ fun AnalyzeScreen(
         )
     }
 
-    var mode by remember { mutableStateOf("playlist") }
+    var mode by remember { mutableStateOf("song") }
     var playlistUrl by remember { mutableStateOf("") }
     var songTitle by remember { mutableStateOf("") }
     var songArtist by remember { mutableStateOf("") }
@@ -101,33 +101,27 @@ fun AnalyzeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 32.dp),
+                .padding(horizontal = 20.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.Top,
         ) {
+            // Tabs Playlist / Song
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(
-                    text = "BeatMyBeat",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                ModeChip(
+                    text = "Playlist",
+                    selected = mode == "playlist",
+                    onClick = { mode = "playlist" },
                 )
-                Text(
-                    text = themeName,
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(999.dp),
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                ModeChip(
+                    text = "Song",
+                    selected = mode == "song",
+                    onClick = { mode = "song" },
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -146,21 +140,6 @@ fun AnalyzeScreen(
                         .fillMaxWidth()
                         .padding(20.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        ModeChip(
-                            text = "Playlist",
-                            selected = mode == "playlist",
-                            onClick = { mode = "playlist" },
-                        )
-                        ModeChip(
-                            text = "Song",
-                            selected = mode == "song",
-                            onClick = { mode = "song" },
-                        )
-                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -179,33 +158,38 @@ fun AnalyzeScreen(
                         OutlinedTextField(
                             value = songTitle,
                             onValueChange = { songTitle = it },
-                            label = { Text("Song title") },
-                            placeholder = { Text("Song name") },
+                            placeholder = { Text("Song title") },
+                            singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         OutlinedTextField(
                             value = songArtist,
                             onValueChange = { songArtist = it },
-                            label = { Text("Artist (recommended)") },
-                            placeholder = { Text("Artist name") },
+                            placeholder = { Text("Artist (recommended)") },
+                            singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         OutlinedTextField(
                             value = songAlbum,
                             onValueChange = { songAlbum = it },
-                            label = { Text("Album (optional)") },
-                            placeholder = { Text("Album name") },
+                            placeholder = { Text("Album (optional)") },
+                            singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
                         )
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     PrimaryButton(
                         text = when {
-                            mode != "playlist" -> "ANALYZE SONG"
+                            mode == "song" -> "ANALYZE SONG"
                             playlistDownloadRunning -> "DESCARGANDO..."
                             else -> "ANALYZE PLAYLIST"
                         },

@@ -109,6 +109,7 @@ import kotlin.random.Random
 @Composable
 fun PlayerScreen(
     modifier: Modifier = Modifier,
+    onOpenProfile: () -> Unit = {},
 ) {
     val palette = currentBeatMyBeatThemeProfile()
     val viewModel: PlayerViewModel = viewModel()
@@ -809,7 +810,8 @@ fun PlayerScreen(
                             .background(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
                                 shape = RoundedCornerShape(20.dp),
-                            ),
+                            )
+                            .clickable { onOpenProfile() },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(

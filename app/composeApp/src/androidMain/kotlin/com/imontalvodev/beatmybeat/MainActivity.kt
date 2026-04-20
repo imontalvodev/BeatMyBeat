@@ -41,6 +41,8 @@ import androidx.core.content.ContextCompat
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.beatmybeat.ui.feature.playlist.PlaylistScreen
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
+import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
+import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerScreen
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatTheme
 import com.imontalvodev.beatmybeat.ui.theme.ThemeProfilesStore
@@ -147,7 +149,21 @@ class MainActivity : ComponentActivity() {
                         containerColor = androidx.compose.ui.graphics.Color.Transparent,
                     ) { innerPadding ->
                         Box(modifier = Modifier.padding(innerPadding)) {
-                            NavHost(navController = navController, startDestination = "analyze") {
+                            NavHost(navController = navController, startDestination = "splash") {
+                                composable("splash") {
+                                    SplashScreen(
+                                        onGoToDownloader = {
+                                            navController.navigate("analyze") {
+                                                popUpTo("splash") { inclusive = true }
+                                            }
+                                        },
+                                        onGoToPlayer = {
+                                            navController.navigate("player") {
+                                                popUpTo("splash") { inclusive = true }
+                                            }
+                                        },
+                                    )
+                                }
                                 composable("analyze") {
                                     AnalyzeScreen(themeName = activeProfile.name)
                                 }
@@ -167,7 +183,14 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                             composable("player") {
-                                PlayerScreen()
+                                PlayerScreen(
+                                    onOpenProfile = { navController.navigate("profile") },
+                                )
+                            }
+                            composable("profile") {
+                                ProfileScreen(
+                                    onCustomizeBackground = { navController.navigate("theme-customizer") },
+                                )
                             }
                             composable("theme-customizer") {
                                 ThemeCustomizerScreen(
