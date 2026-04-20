@@ -41,6 +41,7 @@ class PlaybackService : Service() {
         val durationMs: Long = 0L,
         val currentTitle: String = "",
         val currentArtist: String = "",
+        val currentMediaId: String = "",
     )
 
     private val binder = LocalBinder()
@@ -99,8 +100,8 @@ class PlaybackService : Service() {
         when (intent?.action) {
             ACTION_PLAY -> exoPlayer.play()
             ACTION_PAUSE -> exoPlayer.pause()
-            ACTION_NEXT -> exoPlayer.seekToNextMediaItem()
-            ACTION_PREV -> exoPlayer.seekToPreviousMediaItem()
+            ACTION_NEXT -> skipToNextSafe()
+            ACTION_PREV -> skipToPreviousSafe()
             ACTION_STOP -> {
                 exoPlayer.stop()
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -124,13 +125,36 @@ class PlaybackService : Service() {
         return START_STICKY
     }
 
+    private fun skipToNextSafe() {
+        if (exoPlayer.mediaItemCount <= 0) return
+        if (exoPlayer.hasNextMediaItem()) {
+            exoPlayer.seekToNextMediaItem()
+            return
+        }
+        // Evitar bloqueo al final de lista cuando repeat está OFF.
+        exoPlayer.seekToDefaultPosition(0)
+        if (exoPlayer.playWhenReady || exoPlayer.isPlaying) exoPlayer.play()
+    }
+
+    private fun skipToPreviousSafe() {
+        if (exoPlayer.mediaItemCount <= 0) return
+        if (exoPlayer.hasPreviousMediaItem()) {
+            exoPlayer.seekToPreviousMediaItem()
+            return
+        }
+        // Si estamos en la primera, volvemos a la última para navegación circular.
+        exoPlayer.seekToDefaultPosition(exoPlayer.mediaItemCount - 1)
+        if (exoPlayer.playWhenReady || exoPlayer.isPlaying) exoPlayer.play()
+    }
+
     /**
      * Carga la cola y empieza a reproducir.
      * Llamado directamente desde la UI tras ligar el servicio.
      */
-    fun loadQueue(queueJson: String, startIndex: Int) {
+    fun loadQueue(queueJson: String, startIndex: Int, shuffleEnabled: Boolean = false) {
         val items = parseQueue(queueJson)
         if (items.isEmpty()) return
+        exoPlayer.shuffleModeEnabled = shuffleEnabled
         exoPlayer.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
         exoPlayer.prepare()
         exoPlayer.play()
@@ -164,6 +188,7 @@ class PlaybackService : Service() {
             durationMs = dur,
             currentTitle = meta?.title?.toString() ?: "",
             currentArtist = meta?.artist?.toString() ?: "",
+            currentMediaId = exoPlayer.currentMediaItem?.mediaId ?: "",
         )
     }
 
@@ -213,6 +238,7 @@ class PlaybackService : Service() {
             val uri = o.optString("uri", "")
             if (uri.isBlank()) return@mapNotNull null
             MediaItem.Builder()
+                .setMediaId(o.optString("id", ""))
                 .setUri(android.net.Uri.parse(uri))
                 .setMediaMetadata(
                     MediaMetadata.Builder()

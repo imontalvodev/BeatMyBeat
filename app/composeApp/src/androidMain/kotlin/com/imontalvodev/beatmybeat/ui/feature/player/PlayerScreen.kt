@@ -84,6 +84,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.media3.common.Player
 import java.io.File
 import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -152,7 +153,7 @@ fun PlayerScreen(
     // Esto permite llamar player.seekTo(ms) sin ningún intent de por medio.
     var boundService by remember { mutableStateOf<PlaybackService?>(null) }
     // Cola pendiente si el usuario pulsa play antes de que el servicio esté ligado.
-    data class PendingPlay(val queueJson: String, val index: Int)
+    data class PendingPlay(val queueJson: String, val index: Int, val shuffleEnabled: Boolean)
     var pendingPlay by remember { mutableStateOf<PendingPlay?>(null) }
 
     DisposableEffect(context) {
@@ -163,7 +164,11 @@ fun PlayerScreen(
                 // Si había una reproducción pendiente, la ejecutamos ahora.
                 val pending = pendingPlay
                 if (svc != null && pending != null) {
-                    svc.loadQueue(pending.queueJson, pending.index)
+                    svc.loadQueue(
+                        queueJson = pending.queueJson,
+                        startIndex = pending.index,
+                        shuffleEnabled = pending.shuffleEnabled,
+                    )
                     pendingPlay = null
                 }
             }
@@ -182,6 +187,7 @@ fun PlayerScreen(
     val isPlaying = playbackState.isPlaying
     val playbackPositionMs = playbackState.positionMs
     val playbackDurationMs = playbackState.durationMs
+    val playbackMediaId = playbackState.currentMediaId
 
     // posición normalizada [0,1] que ve el Slider: mientras el usuario arrastra
     // usamos sliderDragPos; en cuanto suelta, el StateFlow vuelve a mandar.
@@ -209,6 +215,29 @@ fun PlayerScreen(
     var queueRepeatIndex by remember { mutableStateOf(-1) }
     var shuffleOrder by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
     var shuffleIndex by remember { mutableStateOf(-1) }
+
+    // Mantener el shuffle del servicio (notificación) en sincronía con la UI.
+    LaunchedEffect(boundService, shuffleOn) {
+        boundService?.player?.shuffleModeEnabled = shuffleOn
+    }
+
+    // Mantener el repeat del servicio (reproducción real) en sincronía con la UI.
+    LaunchedEffect(boundService, repeatMode) {
+        val player = boundService?.player ?: return@LaunchedEffect
+        player.repeatMode = when (repeatMode) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.LIST -> Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        }
+    }
+
+    // Sincronizar canción mostrada con la canción real del servicio/notificación.
+    LaunchedEffect(playbackMediaId, deviceTracks) {
+        val id = playbackMediaId.toLongOrNull() ?: return@LaunchedEffect
+        val track = deviceTracks.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        currentTrack = track
+        currentIndex = deviceTracks.indexOfFirst { it.id == id }
+    }
 
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     var selectedTrackIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
@@ -479,9 +508,9 @@ fun PlayerScreen(
     fun onToggleShuffle() {
         val next = !shuffleOn
         shuffleOn = next
-        if (next && repeatMode != RepeatMode.OFF) {
-            repeatMode = RepeatMode.OFF
-        }
+        // Sincronizar con ExoPlayer (servicio/notificación) para que Next/Prev
+        // en la barra del sistema respete el mismo modo aleatorio que la UI.
+        boundService?.player?.shuffleModeEnabled = next
         if (shuffleOn) {
             queueRepeatSnapshot = emptyList()
             queueRepeatIndex = -1
@@ -511,11 +540,6 @@ fun PlayerScreen(
             RepeatMode.ONE -> RepeatMode.OFF
         }
         repeatMode = next
-        if (next != RepeatMode.OFF && shuffleOn) {
-            shuffleOn = false
-            shuffleOrder = emptyList()
-            shuffleIndex = -1
-        }
 
         // Iniciar/limpiar snapshot de repetición de cola si aplica.
         if (next != RepeatMode.LIST || shuffleOn || currentTrack == null || queue.isEmpty()) {
@@ -556,6 +580,7 @@ fun PlayerScreen(
             val arr = JSONArray()
             baseList.forEach { t ->
                 val o = JSONObject()
+                o.put("id", t.id)
                 o.put("uri", t.uri)
                 o.put("title", t.title)
                 o.put("artist", t.artist)
@@ -566,14 +591,22 @@ fun PlayerScreen(
             val svc = boundService
             if (svc != null) {
                 // Ruta rápida: servicio ya ligado — seek directo garantizado.
-                svc.loadQueue(queueJson, idxInVisible)
+                svc.loadQueue(
+                    queueJson = queueJson,
+                    startIndex = idxInVisible,
+                    shuffleEnabled = shuffleOn,
+                )
             } else {
                 // El servicio aún no está ligado: arrancamos en foreground y
                 // guardamos la cola para cargarla en onServiceConnected.
                 androidx.core.content.ContextCompat.startForegroundService(
                     context, Intent(context, PlaybackService::class.java),
                 )
-                pendingPlay = PendingPlay(queueJson, idxInVisible)
+                pendingPlay = PendingPlay(
+                    queueJson = queueJson,
+                    index = idxInVisible,
+                    shuffleEnabled = shuffleOn,
+                )
             }
             currentTrack = track
             currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
@@ -1033,8 +1066,16 @@ fun PlayerScreen(
                         ),
                     )
                 },
-                onPrev = { playPrev() },
-                onNext = { playNext() },
+                onPrev = {
+                    context.startService(
+                        Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PREV),
+                    )
+                },
+                onNext = {
+                    context.startService(
+                        Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_NEXT),
+                    )
+                },
                 onSeekPreview = { newPos -> sliderDragPos = newPos },
                 onSeekCommit = { finalPos ->
                     if (playbackDurationMs > 0) {
@@ -1070,8 +1111,16 @@ fun PlayerScreen(
                             ),
                         )
                     },
-                    onPrev = { playPrev() },
-                    onNext = { playNext() },
+                    onPrev = {
+                        context.startService(
+                            Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PREV),
+                        )
+                    },
+                    onNext = {
+                        context.startService(
+                            Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_NEXT),
+                        )
+                    },
                     onSeekPreview = { newPos -> sliderDragPos = newPos },
                     onSeekCommit = { finalPos ->
                         if (playbackDurationMs > 0) {
