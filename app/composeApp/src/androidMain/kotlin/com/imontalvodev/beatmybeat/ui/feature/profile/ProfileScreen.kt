@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 
 @Composable
@@ -55,6 +56,10 @@ fun ProfileScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top,
         ) {
+            AppMiniBrand(modifier = Modifier.align(Alignment.Start))
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             // Avatar
             Box(
                 modifier = Modifier

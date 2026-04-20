@@ -27,6 +27,7 @@ import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
 import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
 import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerScreen
+import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerSection
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatTheme
 import com.imontalvodev.beatmybeat.ui.theme.ThemeProfilesStore
 
@@ -102,11 +103,13 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("profile") {
                             ProfileScreen(
-                                onCustomizeBackground = { navController.navigate("theme-customizer") },
+                                onCustomizeBackground = { navController.navigate("theme-customizer/background") },
+                                onCustomizeText = { navController.navigate("theme-customizer/text") },
                             )
                         }
-                        composable("theme-customizer") {
+                        composable("theme-customizer/background") {
                             ThemeCustomizerScreen(
+                                section = ThemeCustomizerSection.Background,
                                 profiles = profiles,
                                 activeProfileId = activeProfileId,
                                 onApplyProfile = { id ->
@@ -122,7 +125,40 @@ class MainActivity : ComponentActivity() {
                                     store.saveProfiles(profiles)
                                 },
                                 onSaveProfile = { profile ->
-                                    profiles = profiles + profile
+                                    profiles = if (profiles.any { it.id == profile.id }) {
+                                        profiles.map { existing -> if (existing.id == profile.id) profile else existing }
+                                    } else {
+                                        profiles + profile
+                                    }
+                                    store.saveProfiles(profiles)
+                                    activeProfileId = profile.id
+                                    store.saveActiveProfileId(profile.id)
+                                },
+                            )
+                        }
+                        composable("theme-customizer/text") {
+                            ThemeCustomizerScreen(
+                                section = ThemeCustomizerSection.Text,
+                                profiles = profiles,
+                                activeProfileId = activeProfileId,
+                                onApplyProfile = { id ->
+                                    activeProfileId = id
+                                    store.saveActiveProfileId(id)
+                                },
+                                onDeleteProfile = { id ->
+                                    profiles = profiles.filterNot { it.id == id }.ifEmpty { store.defaultProfiles() }
+                                    if (activeProfileId == id) {
+                                        activeProfileId = profiles.first().id
+                                        store.saveActiveProfileId(activeProfileId)
+                                    }
+                                    store.saveProfiles(profiles)
+                                },
+                                onSaveProfile = { profile ->
+                                    profiles = if (profiles.any { it.id == profile.id }) {
+                                        profiles.map { existing -> if (existing.id == profile.id) profile else existing }
+                                    } else {
+                                        profiles + profile
+                                    }
                                     store.saveProfiles(profiles)
                                     activeProfileId = profile.id
                                     store.saveActiveProfileId(profile.id)

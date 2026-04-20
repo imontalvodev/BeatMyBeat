@@ -49,6 +49,7 @@ import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
+import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -107,8 +108,10 @@ fun AnalyzeScreen(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                AppMiniBrand()
                 Text(
                     text = "Ir al reproductor",
                     modifier = Modifier

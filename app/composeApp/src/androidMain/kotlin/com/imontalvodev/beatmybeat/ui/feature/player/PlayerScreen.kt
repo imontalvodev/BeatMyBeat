@@ -95,6 +95,7 @@ import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
+import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.service.PlaybackService
 import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
 import kotlinx.coroutines.Dispatchers
@@ -788,6 +789,8 @@ fun PlayerScreen(
                     .fillMaxSize()
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
+                AppMiniBrand()
+                Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
