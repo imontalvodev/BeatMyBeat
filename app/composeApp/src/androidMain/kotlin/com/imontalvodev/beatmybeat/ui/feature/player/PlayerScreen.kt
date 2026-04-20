@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -245,6 +246,7 @@ fun PlayerScreen(
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     var selectedTrackIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     val selectionMode = selectedTrackIds.isNotEmpty()
+    var sortOption by remember { mutableStateOf(SortOption.NAME_ASC) }
 
     fun toggleTrackSelection(trackId: Long) {
         selectedTrackIds = if (selectedTrackIds.contains(trackId)) {
@@ -505,6 +507,13 @@ fun PlayerScreen(
                     it.artist.lowercase().contains(q) ||
                     (it.album ?: "").lowercase().contains(q)
             }
+        }
+    }.let { tracks ->
+        when (sortOption) {
+            SortOption.NAME_ASC -> tracks.sortedBy { it.title.lowercase() }
+            SortOption.NAME_DESC -> tracks.sortedByDescending { it.title.lowercase() }
+            SortOption.NEWEST_FIRST -> tracks.sortedByDescending { it.dateAddedMs }
+            SortOption.OLDEST_FIRST -> tracks.sortedBy { it.dateAddedMs }
         }
     }
 
@@ -852,6 +861,13 @@ fun PlayerScreen(
                     singleLine = true,
                     placeholder = { Text("Buscador") },
                     shape = RoundedCornerShape(18.dp),
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                SortOptionsBar(
+                    selected = sortOption,
+                    onSelect = { sortOption = it },
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1691,7 +1707,9 @@ private fun SectionChips(
     onSelect: (PlayerSection) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SectionChip(
@@ -2278,6 +2296,73 @@ private fun ExpandedPlayerOverlay(
 private enum class RepeatMode { OFF, LIST, ONE }
 
 private enum class PlayerSection { Songs, Favorites, Playlist }
+
+private enum class SortOption {
+    NAME_ASC,
+    NAME_DESC,
+    NEWEST_FIRST,
+    OLDEST_FIRST,
+}
+
+@Composable
+private fun SortOptionsBar(
+    selected: SortOption,
+    onSelect: (SortOption) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SortChip(
+            text = "Nombre A-Z",
+            selected = selected == SortOption.NAME_ASC,
+            onClick = { onSelect(SortOption.NAME_ASC) },
+        )
+        SortChip(
+            text = "Nombre Z-A",
+            selected = selected == SortOption.NAME_DESC,
+            onClick = { onSelect(SortOption.NAME_DESC) },
+        )
+        SortChip(
+            text = "Recientes",
+            selected = selected == SortOption.NEWEST_FIRST,
+            onClick = { onSelect(SortOption.NEWEST_FIRST) },
+        )
+        SortChip(
+            text = "Antiguas",
+            selected = selected == SortOption.OLDEST_FIRST,
+            onClick = { onSelect(SortOption.OLDEST_FIRST) },
+        )
+    }
+}
+
+@Composable
+private fun SortChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+    else Color.Black.copy(alpha = 0.18f)
+    val border = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+    Box(
+        modifier = Modifier
+            .background(bg, RoundedCornerShape(14.dp))
+            .border(1.dp, border, RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(vertical = 7.dp, horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
 
 private sealed interface LyricsUiState {
     data object Idle : LyricsUiState

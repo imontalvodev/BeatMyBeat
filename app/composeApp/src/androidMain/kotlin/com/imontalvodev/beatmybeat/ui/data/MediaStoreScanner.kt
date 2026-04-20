@@ -13,6 +13,7 @@ data class DeviceTrack(
     val artist: String,
     val album: String?,
     val durationMs: Long,
+    val dateAddedMs: Long = 0L,
 )
 
 class MediaStoreScanner(private val context: Context) {
@@ -30,6 +31,7 @@ class MediaStoreScanner(private val context: Context) {
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.RELATIVE_PATH,
+            MediaStore.Audio.Media.DATE_ADDED,
         )
 
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
@@ -56,6 +58,7 @@ class MediaStoreScanner(private val context: Context) {
                 val displayNameCol = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
                 val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
                 val relativePathCol = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
+                val dateAddedCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
@@ -67,6 +70,8 @@ class MediaStoreScanner(private val context: Context) {
                     val displayName = cursor.optString(displayNameCol).lowercase(Locale.ROOT)
                     val absolutePath = cursor.optString(dataCol).lowercase(Locale.ROOT)
                     val relativePath = cursor.optString(relativePathCol).lowercase(Locale.ROOT)
+                    val dateAddedSeconds = cursor.optLong(dateAddedCol)
+                    val dateAddedMs = if (dateAddedSeconds > 0L) dateAddedSeconds * 1000L else 0L
                     val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
                         .buildUpon()
                         .appendPath(id.toString())
@@ -87,6 +92,7 @@ class MediaStoreScanner(private val context: Context) {
                         artist = artist,
                         album = album,
                         durationMs = duration,
+                        dateAddedMs = dateAddedMs,
                     )
                 }
             }
@@ -149,6 +155,7 @@ class MediaStoreScanner(private val context: Context) {
                                 artist = artist,
                                 album = album,
                                 durationMs = durationMs,
+                                dateAddedMs = file.lastModified(),
                             )
                         }
                     }
@@ -184,6 +191,11 @@ class MediaStoreScanner(private val context: Context) {
     private fun android.database.Cursor.optString(columnIndex: Int): String {
         if (columnIndex < 0) return ""
         return runCatching { getString(columnIndex) ?: "" }.getOrDefault("")
+    }
+
+    private fun android.database.Cursor.optLong(columnIndex: Int): Long {
+        if (columnIndex < 0) return 0L
+        return runCatching { getLong(columnIndex) }.getOrDefault(0L)
     }
 }
 
