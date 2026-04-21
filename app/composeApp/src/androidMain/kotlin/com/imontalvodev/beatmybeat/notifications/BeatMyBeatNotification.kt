@@ -5,13 +5,24 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import android.Manifest
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.imontalvodev.beatmybeat.MainActivity
 import com.imontalvodev.beatmybeat.R
 
 object BeatMyBeatNotification {
+    fun canPostNotifications(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     private const val CHANNEL_DOWNLOAD = "beatmybeat_downloads"
     private const val CHANNEL_PLAYBACK = "beatmybeat_playback"
 
@@ -61,6 +72,7 @@ object BeatMyBeatNotification {
         notificationId: Int = DOWNLOAD_NOTIFICATION_ID,
     ) {
         ensureChannels(context)
+        if (!canPostNotifications(context)) return
         val nm = NotificationManagerCompat.from(context)
 
         val notification = buildDownloadInProgressNotification(
@@ -69,7 +81,7 @@ object BeatMyBeatNotification {
             subtitle = subtitle,
         )
 
-        nm.notify(notificationId, notification)
+        runCatching { nm.notify(notificationId, notification) }
     }
 
     fun buildDownloadInProgressNotification(
@@ -93,6 +105,7 @@ object BeatMyBeatNotification {
         notificationId: Int = DOWNLOAD_NOTIFICATION_ID,
     ) {
         ensureChannels(context)
+        if (!canPostNotifications(context)) return
         val nm = NotificationManagerCompat.from(context)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_DOWNLOAD)
@@ -106,7 +119,7 @@ object BeatMyBeatNotification {
             .setProgress(0, 0, false)
             .build()
 
-        nm.notify(notificationId, notification)
+        runCatching { nm.notify(notificationId, notification) }
     }
 
     fun showDownloadFailed(
@@ -116,6 +129,7 @@ object BeatMyBeatNotification {
         notificationId: Int = DOWNLOAD_NOTIFICATION_ID,
     ) {
         ensureChannels(context)
+        if (!canPostNotifications(context)) return
         val nm = NotificationManagerCompat.from(context)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_DOWNLOAD)
@@ -129,7 +143,7 @@ object BeatMyBeatNotification {
             .setProgress(0, 0, false)
             .build()
 
-        nm.notify(notificationId, notification)
+        runCatching { nm.notify(notificationId, notification) }
     }
 
     fun showPlaybackOngoing(
@@ -139,6 +153,7 @@ object BeatMyBeatNotification {
         notificationId: Int = PLAYBACK_NOTIFICATION_ID,
     ) {
         ensureChannels(context)
+        if (!canPostNotifications(context)) return
         val nm = NotificationManagerCompat.from(context)
 
         val notification = buildPlaybackNotification(
@@ -147,7 +162,7 @@ object BeatMyBeatNotification {
             subtitle = subtitle,
         )
 
-        nm.notify(notificationId, notification)
+        runCatching { nm.notify(notificationId, notification) }
     }
 
     fun buildPlaybackNotification(

@@ -46,6 +46,8 @@ import com.imontalvodev.beatmybeat.ui.network.RemoteArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.SongSuggestion
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchClient
 import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
+import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
+import com.imontalvodev.beatmybeat.service.SongDownloadService
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
@@ -58,6 +60,7 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
+import android.widget.Toast
 
 @Composable
 fun AnalyzeScreen(
@@ -83,6 +86,7 @@ fun AnalyzeScreen(
     var selectedSuggestion by remember { mutableStateOf<SongSuggestion?>(null) }
     var downloadingSuggestion by remember { mutableStateOf(false) }
     var downloadError by remember { mutableStateOf<String?>(null) }
+    var songDownloadInfo by remember { mutableStateOf<String?>(null) }
     var playlistInputError by remember { mutableStateOf<String?>(null) }
     var playlistDownloadRunning by remember { mutableStateOf(false) }
     var playlistDownloadTotal by remember { mutableStateOf(0) }
@@ -284,6 +288,11 @@ fun AnalyzeScreen(
                                                     playlistDownloadDone = 0
                                                     playlistDownloadFailed = 0
                                                     playlistCurrentTitle = "Preparando descargas..."
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Descarga de playlist iniciada en segundo plano.",
+                                                        Toast.LENGTH_SHORT,
+                                                    ).show()
                                                     BeatMyBeatForegroundService.startDownload(
                                                         context = context,
                                                         title = "Descargando playlist",
@@ -317,8 +326,24 @@ fun AnalyzeScreen(
                                                     }
                                                     if (downloaded <= 0) {
                                                         playlistInputError = "No se pudo descargar ninguna canción de esa playlist."
+                                                        Toast.makeText(
+                                                            context,
+                                                            "No se pudo descargar ninguna canción.",
+                                                            Toast.LENGTH_SHORT,
+                                                        ).show()
                                                     } else if (failed > 0) {
                                                         playlistInputError = "Descargadas $downloaded de ${videoIds.size}. Fallidas: $failed."
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Playlist completada: $downloaded descargadas, $failed fallidas.",
+                                                            Toast.LENGTH_SHORT,
+                                                        ).show()
+                                                    } else {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Playlist descargada: $downloaded canciones.",
+                                                            Toast.LENGTH_SHORT,
+                                                        ).show()
                                                     }
                                                 } catch (_: Exception) {
                                                     playlistInputError =
@@ -335,18 +360,18 @@ fun AnalyzeScreen(
                                                 val metadata = withContext(Dispatchers.IO) {
                                                     fetchYouTubeSongMetadata(parsed.videoId)
                                                 }
-                                                val result = AudioDownloader.downloadAutoToAppMusic(
+                                                SongDownloadService.enqueueDownload(
                                                     context = context,
-                                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
                                                     title = metadata.title,
                                                     artist = metadata.artist,
                                                     album = "",
                                                     videoId = parsed.videoId,
                                                     thumbnailUrl = metadata.thumbnailUrl,
                                                 )
-                                                if (!result.success) {
-                                                    playlistInputError =
-                                                        result.error ?: "No se pudo descargar la canción desde esa URL."
+                                                songDownloadInfo = if (BeatMyBeatNotification.canPostNotifications(context)) {
+                                                    "Descarga de canción iniciada en segundo plano."
+                                                } else {
+                                                    "Descarga iniciada sin notificaciones (permiso denegado)."
                                                 }
                                             }
                                         }
@@ -363,6 +388,15 @@ fun AnalyzeScreen(
                             text = playlistInputError!!,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
+                    if (mode == "song" && songDownloadInfo != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = songDownloadInfo!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                         )
                     }
 
@@ -396,6 +430,13 @@ fun AnalyzeScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         )
+                        if (!BeatMyBeatNotification.canPostNotifications(context)) {
+                            Text(
+                                text = "Permiso de notificaciones denegado: el progreso solo se muestra dentro de la app.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            )
+                        }
                     }
 
                     if (mode == "song") {
@@ -502,19 +543,19 @@ fun AnalyzeScreen(
                             downloadingSuggestion = true
                             downloadError = null
                             try {
-                                val result = AudioDownloader.downloadAutoToAppMusic(
+                                SongDownloadService.enqueueDownload(
                                     context = context,
-                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
                                     title = suggestion.title,
                                     artist = suggestion.artist,
                                     album = "",
                                     videoId = suggestion.videoId,
                                     thumbnailUrl = suggestion.thumbnailUrl,
                                 )
-                                if (!result.success) {
-                                    downloadError = result.error ?: "Error desconocido"
+                                selectedSuggestion = null
+                                songDownloadInfo = if (BeatMyBeatNotification.canPostNotifications(context)) {
+                                    "Descarga de canción iniciada en segundo plano."
                                 } else {
-                                    selectedSuggestion = null
+                                    "Descarga iniciada sin notificaciones (permiso denegado)."
                                 }
                             } catch (e: Exception) {
                                 android.util.Log.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
