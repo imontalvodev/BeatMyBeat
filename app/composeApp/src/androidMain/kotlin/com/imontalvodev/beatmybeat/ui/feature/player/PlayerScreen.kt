@@ -28,8 +28,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,8 +46,10 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.Shuffle
@@ -88,6 +92,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -166,6 +171,23 @@ fun PlayerScreen(
     // Con bindService obtenemos una referencia al objeto PlaybackService en memoria.
     // Esto permite llamar player.seekTo(ms) sin ningún intent de por medio.
     var boundService by remember { mutableStateOf<PlaybackService?>(null) }
+
+    // Serializa la cola local y la envía al servicio para que la notificación (Next/Prev)
+    // navegue por exactamente los mismos ítems que ve la UI.
+    fun syncQueueToService() {
+        val svc = boundService ?: return
+        val arr = JSONArray()
+        queue.forEach { t ->
+            val o = JSONObject()
+            o.put("id", t.id)
+            o.put("uri", t.uri)
+            o.put("title", t.title)
+            o.put("artist", t.artist)
+            arr.put(o)
+        }
+        svc.syncNextItems(arr.toString())
+    }
+
     // Cola pendiente si el usuario pulsa play antes de que el servicio esté ligado.
     data class PendingPlay(val queueJson: String, val index: Int, val shuffleEnabled: Boolean)
     var pendingPlay by remember { mutableStateOf<PendingPlay?>(null) }
@@ -227,6 +249,7 @@ fun PlayerScreen(
             val track = pendingDeleteTrack ?: return@rememberLauncherForActivityResult
             if (result.resultCode == Activity.RESULT_OK) {
                 queue.removeAll { it.id == track.id }
+                syncQueueToService()
                 if (currentTrack?.id == track.id) {
                     currentTrack = null
                     currentArtwork = null
@@ -272,9 +295,21 @@ fun PlayerScreen(
     }
 
     // Sincronizar canción mostrada con la canción real del servicio/notificación.
+    // Cuando la notificación avanza (Next/Prev), el servicio emite un nuevo mediaId;
+    // si ese id coincide con el primer ítem de la cola local, lo consumimos para
+    // que la UI refleje correctamente cuántas canciones quedan.
     LaunchedEffect(playbackMediaId, deviceTracks) {
         val id = playbackMediaId.toLongOrNull() ?: return@LaunchedEffect
         val track = deviceTracks.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        if (currentTrack?.id != id) {
+            // El servicio avanzó externamente (notificación); consumir de la cola local
+            // solo si el nuevo ítem era el siguiente previsto.
+            if (queue.firstOrNull()?.id == id) {
+                queue.removeAt(0)
+                // No llamamos syncQueueToService aquí porque ExoPlayer ya avanzó
+                // internamente; solo actualizamos la representación local.
+            }
+        }
         currentTrack = track
         currentIndex = deviceTracks.indexOfFirst { it.id == id }
     }
@@ -309,11 +344,13 @@ fun PlayerScreen(
     // Al cambiar de sección/playlist limpiamos la cola para evitar saltos raros
     LaunchedEffect(selectedSection, selectedPlaylistId) {
         queue.clear()
+        syncQueueToService()
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
         selectedTrackIds = emptySet()
     }
 
+    var queueSheetOpen by remember { mutableStateOf(false) }
     var addToPlaylistDialogOpen by remember { mutableStateOf(false) }
     var addToPlaylistTracks by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
     var addToPlaylistExistingId by remember { mutableStateOf<Long?>(null) }
@@ -776,6 +813,7 @@ fun PlayerScreen(
 
     fun finishDeletion(track: DeviceTrack, showToast: Boolean = true) {
         queue.removeAll { it.id == track.id }
+        syncQueueToService()
         if (currentTrack?.id == track.id) {
             currentTrack = null
             currentArtwork = null
@@ -970,6 +1008,7 @@ fun PlayerScreen(
                         val first = visibleTracks.first()
                         playTrack(first, clearQueue = true)
                         queue.addAll(visibleTracks.drop(1))
+                        syncQueueToService()
                         if (!shuffleOn && repeatMode == RepeatMode.LIST) {
                             // Cola completa = [cancion actual] + resto
                             queueRepeatSnapshot = listOf(first) + queue.toList()
@@ -1057,22 +1096,41 @@ fun PlayerScreen(
                                     playTrack(track, clearQueue = true)
                                 }
                             },
-                                            onQueue = {
-                                                queue.add(track)
-                                                if (!shuffleOn && repeatMode == RepeatMode.LIST) {
-                                                    val ct = currentTrack
-                                                    if (ct != null) {
-                                                        if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
-                                                            // Empezamos a repetir la cola desde el inicio.
-                                                            queueRepeatSnapshot = listOf(ct) + queue.toList()
-                                                            queueRepeatIndex = 0
-                                                        } else {
-                                                            // La cola es la "parte pendiente"; mantenemos snapshot extendido.
-                                                            queueRepeatSnapshot = queueRepeatSnapshot + track
-                                                        }
-                                                    }
-                                                }
-                                            },
+                            onQueue = {
+                                queue.add(track)
+                                syncQueueToService()
+                                if (!shuffleOn && repeatMode == RepeatMode.LIST) {
+                                    val ct = currentTrack
+                                    if (ct != null) {
+                                        if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
+                                            queueRepeatSnapshot = listOf(ct) + queue.toList()
+                                            queueRepeatIndex = 0
+                                        } else {
+                                            queueRepeatSnapshot = queueRepeatSnapshot + track
+                                        }
+                                    }
+                                }
+                                Toast.makeText(context, "Añadido al final de la cola.", Toast.LENGTH_SHORT).show()
+                            },
+                            onPlayNext = {
+                                queue.add(0, track)
+                                syncQueueToService()
+                                if (!shuffleOn && repeatMode == RepeatMode.LIST) {
+                                    val ct = currentTrack
+                                    if (ct != null) {
+                                        if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
+                                            queueRepeatSnapshot = listOf(ct) + queue.toList()
+                                            queueRepeatIndex = 0
+                                        } else {
+                                            val insertAt = (queueRepeatIndex + 1).coerceAtMost(queueRepeatSnapshot.size)
+                                            val mutable = queueRepeatSnapshot.toMutableList()
+                                            mutable.add(insertAt, track)
+                                            queueRepeatSnapshot = mutable
+                                        }
+                                    }
+                                }
+                                Toast.makeText(context, "Reproducirá a continuación.", Toast.LENGTH_SHORT).show()
+                            },
                             onToggleFavorite = { viewModel.toggleFavorite(track) },
                             onAddToPlaylist = {
                                 addToPlaylistDialogOpen = true
@@ -1084,6 +1142,7 @@ fun PlayerScreen(
                             onBulkQueue = {
                                 if (selectedTracksOrdered.isEmpty()) return@TrackRow
                                 queue.addAll(selectedTracksOrdered)
+                                syncQueueToService()
                                 Toast.makeText(
                                     context,
                                     if (selectedTracksOrdered.size == 1) "Canción añadida a la cola." else "Canciones añadidas a la cola.",
@@ -1162,6 +1221,7 @@ fun PlayerScreen(
                 artwork = currentArtwork,
                 shuffleOn = shuffleOn,
                 repeatMode = repeatMode,
+                queueSize = queue.size,
                 onTogglePlay = {
                     currentTrack ?: return@MiniPlayerBar
                     context.startService(
@@ -1188,6 +1248,7 @@ fun PlayerScreen(
                     sliderDragPos = null
                 },
                 onOpenExpanded = { isExpanded = true },
+                onOpenQueue = { queueSheetOpen = true },
                 onToggleShuffle = { onToggleShuffle() },
                 onToggleRepeat = { onCycleRepeatMode() },
             )
@@ -1241,6 +1302,199 @@ fun PlayerScreen(
                         currentTrack?.let { downloadLyricsIfNeeded(it) }
                     },
                 )
+            }
+
+            // SHEET: Cola de reproducción en tiempo real
+            if (queueSheetOpen) {
+                ModalBottomSheet(
+                    onDismissRequest = { queueSheetOpen = false },
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 32.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "Cola de reproducción",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (queue.isNotEmpty()) {
+                                TextButton(onClick = {
+                                    queue.clear()
+                                    syncQueueToService()
+                                }) {
+                                    Text("Limpiar")
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        if (currentTrack != null) {
+                            Text(
+                                text = "Sonando ahora",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                ),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                                    ) {
+                                        ArtworkThumbnail(track = currentTrack!!, sizeDp = 36)
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = currentTrack!!.title.toTitleCaseSimple(),
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = currentTrack!!.artist.toTitleCaseSimple(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
+                        if (queue.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "La cola está vacía.\nUsa los 3 puntos de una canción para añadirla.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "A continuación (${queue.size})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = 420.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                items(queue.size, key = { idx -> queue[idx].id.toString() + idx }) { idx ->
+                                    val t = queue[idx]
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = Color.Black.copy(alpha = 0.28f),
+                                        ),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            Text(
+                                                text = "${idx + 1}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                                                modifier = Modifier.width(20.dp),
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .background(Color.White.copy(alpha = 0.10f), RoundedCornerShape(7.dp)),
+                                            ) {
+                                                ArtworkThumbnail(track = t, sizeDp = 34)
+                                            }
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = t.title.toTitleCaseSimple(),
+                                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                                Text(
+                                                    text = t.artist.toTitleCaseSimple(),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                            // Saltar directamente a esta canción
+                                            IconButton(
+                                                onClick = {
+                                                    val remaining = queue.drop(idx + 1)
+                                                    repeat(queue.size) { queue.removeAt(0) }
+                                                    queue.addAll(remaining)
+                                                    // syncQueueToService se llama dentro de playTrack vía loadQueue
+                                                    playTrack(t, clearQueue = false)
+                                                    syncQueueToService()
+                                                },
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.PlayArrow,
+                                                    contentDescription = "Reproducir ya",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            }
+                                            // Quitar de la cola
+                                            IconButton(
+                                                onClick = {
+                                                    queue.removeAt(idx)
+                                                    syncQueueToService()
+                                                },
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Close,
+                                                    contentDescription = "Quitar de cola",
+                                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                                    modifier = Modifier.size(18.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // DIALOG: Añadir a playlist (crear o seleccionar)
@@ -1602,6 +1856,7 @@ private fun TrackRow(
     onLongPress: () -> Unit,
     onClick: () -> Unit,
     onQueue: () -> Unit,
+    onPlayNext: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDeleteFromDevice: () -> Unit,
@@ -1679,6 +1934,7 @@ private fun TrackRow(
             if (showOverflowMenu) {
                 TrackOverflowMenu(
                     onQueue = onQueue,
+                    onPlayNext = onPlayNext,
                     onToggleFavorite = onToggleFavorite,
                     onAddToPlaylist = onAddToPlaylist,
                     onHide = { /* TODO */ },
@@ -1816,6 +2072,7 @@ private fun ArtworkThumbnail(
 @Composable
 private fun TrackOverflowMenu(
     onQueue: () -> Unit,
+    onPlayNext: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onHide: () -> Unit,
@@ -1840,6 +2097,10 @@ private fun TrackOverflowMenu(
             DropdownMenuItem(
                 text = { Text("Poner en cola") },
                 onClick = { expanded = false; onQueue() },
+            )
+            DropdownMenuItem(
+                text = { Text("Reproducir a continuación") },
+                onClick = { expanded = false; onPlayNext() },
             )
             DropdownMenuItem(
                 text = {
@@ -2145,12 +2406,14 @@ private fun MiniPlayerBar(
     artwork: Bitmap?,
     shuffleOn: Boolean,
     repeatMode: RepeatMode,
+    queueSize: Int,
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onSeekPreview: (Float) -> Unit,
     onSeekCommit: (Float) -> Unit,
     onOpenExpanded: () -> Unit,
+    onOpenQueue: () -> Unit,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
 ) {
@@ -2200,12 +2463,42 @@ private fun MiniPlayerBar(
                     )
                 }
 
-                IconButton(onClick = onOpenExpanded) {
-                    Icon(
-                        imageVector = Icons.Filled.Visibility,
-                        contentDescription = "Ver letra",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box {
+                        IconButton(onClick = onOpenQueue) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = "Cola",
+                                tint = if (queueSize > 0) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            )
+                        }
+                        if (queueSize > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                                    .align(Alignment.TopEnd)
+                                    .padding(2.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = if (queueSize > 99) "99+" else queueSize.toString(),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp)
+                                    ),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            }
+                        }
+                    }
+                    IconButton(onClick = onOpenExpanded) {
+                        Icon(
+                            imageVector = Icons.Filled.Visibility,
+                            contentDescription = "Ver letra",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
             }
 

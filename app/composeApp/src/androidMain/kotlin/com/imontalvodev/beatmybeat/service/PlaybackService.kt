@@ -163,6 +163,26 @@ class PlaybackService : Service() {
     }
 
     /**
+     * Reemplaza los ítems pendientes (después del índice actual) con la nueva cola.
+     * La canción en curso no se interrumpe. Permite que la notificación (Next/Prev)
+     * navegue por la misma cola que ve la UI.
+     */
+    fun syncNextItems(queueJson: String) {
+        val newItems = parseQueue(queueJson)
+        val currentIdx = exoPlayer.currentMediaItemIndex
+        val total = exoPlayer.mediaItemCount
+        // Eliminar todo lo que hay después del ítem actual.
+        for (i in total - 1 downTo currentIdx + 1) {
+            exoPlayer.removeMediaItem(i)
+        }
+        // Insertar la cola actualizada a continuación.
+        newItems.forEachIndexed { offset, item ->
+            exoPlayer.addMediaItem(currentIdx + 1 + offset, item)
+        }
+        updateNotification()
+    }
+
+    /**
      * Seek directo. Sin intents, sin delays, sin posibilidad de que Android lo descarte.
      * Preserva el estado play/pause: si estaba reproduciendo, sigue reproduciendo.
      */
