@@ -1,11 +1,14 @@
 package com.imontalvodev.beatmybeat
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
+import android.provider.DocumentsContract
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -123,6 +126,44 @@ class MainActivity : ComponentActivity() {
                             ProfileScreen(
                                 storageLocationLabel = storageLabel,
                                 onPickStorageLocation = { storagePicker.launch(null) },
+                                onOpenStorageFolder = {
+                                    val customTree = StorageSettings.getCustomTreeUri(this@MainActivity)
+                                    val targetTreeUri = customTree
+                                        ?: Uri.parse("content://com.android.externalstorage.documents/tree/primary%3AMusic%2FBeatMyBeat")
+                                    val targetDocUri = runCatching {
+                                        val treeId = DocumentsContract.getTreeDocumentId(targetTreeUri)
+                                        DocumentsContract.buildDocumentUriUsingTree(targetTreeUri, treeId)
+                                    }.getOrDefault(targetTreeUri)
+
+                                    val opened = runCatching {
+                                        startActivity(
+                                            Intent(Intent.ACTION_VIEW).apply {
+                                                setDataAndType(targetDocUri, DocumentsContract.Document.MIME_TYPE_DIR)
+                                                addFlags(
+                                                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                                                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
+                                                )
+                                            },
+                                        )
+                                        true
+                                    }.recoverCatching {
+                                        startActivity(
+                                            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                                                putExtra(DocumentsContract.EXTRA_INITIAL_URI, targetTreeUri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            },
+                                        )
+                                        true
+                                    }.getOrDefault(false)
+                                    if (!opened) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "No se pudo abrir la carpeta en este dispositivo.",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                },
                                 onCustomizeBackground = { navController.navigate("theme-customizer/background") },
                                 onCustomizeText = { navController.navigate("theme-customizer/text") },
                             )
