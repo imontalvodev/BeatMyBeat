@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -214,6 +215,10 @@ fun PlayerScreen(
     var selectedSection by remember { mutableStateOf(PlayerSection.Songs) }
     var isExpanded by remember { mutableStateOf(false) }
     var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
+    // Mantener scroll independiente por pestaña para no perder posición al alternar.
+    val songsListState = rememberLazyListState()
+    val favoritesListState = rememberLazyListState()
+    val playlistListState = rememberLazyListState()
 
     var pendingDeleteTrack by remember { mutableStateOf<DeviceTrack?>(null) }
     val deletionApprovalLauncher = rememberLauncherForActivityResult(
@@ -1009,6 +1014,11 @@ fun PlayerScreen(
                 }
 
                 LazyColumn(
+                    state = when (selectedSection) {
+                        PlayerSection.Songs -> songsListState
+                        PlayerSection.Favorites -> favoritesListState
+                        PlayerSection.Playlist -> playlistListState
+                    },
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     // El mini-player está anclado abajo en un `Box`, así que reservamos
