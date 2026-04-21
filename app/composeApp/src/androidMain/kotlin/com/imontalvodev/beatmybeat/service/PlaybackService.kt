@@ -166,19 +166,19 @@ class PlaybackService : Service() {
      * Reemplaza los ítems pendientes (después del índice actual) con la nueva cola.
      * La canción en curso no se interrumpe. Permite que la notificación (Next/Prev)
      * navegue por la misma cola que ve la UI.
+     *
+     * Usa replaceMediaItems() — operación atómica de Media3 que evita N remove + N add
+     * en bucle sobre el hilo principal (causa de ANR con listas grandes).
      */
     fun syncNextItems(queueJson: String) {
         val newItems = parseQueue(queueJson)
-        val currentIdx = exoPlayer.currentMediaItemIndex
+        val currentIdx = exoPlayer.currentMediaItemIndex.coerceAtLeast(0)
         val total = exoPlayer.mediaItemCount
-        // Eliminar todo lo que hay después del ítem actual.
-        for (i in total - 1 downTo currentIdx + 1) {
-            exoPlayer.removeMediaItem(i)
-        }
-        // Insertar la cola actualizada a continuación.
-        newItems.forEachIndexed { offset, item ->
-            exoPlayer.addMediaItem(currentIdx + 1 + offset, item)
-        }
+        exoPlayer.replaceMediaItems(
+            /* fromIndex = */ currentIdx + 1,
+            /* toIndex   = */ total,
+            /* mediaItems= */ newItems,
+        )
         updateNotification()
     }
 

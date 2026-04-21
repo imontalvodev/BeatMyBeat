@@ -659,38 +659,35 @@ fun PlayerScreen(
                 queueRepeatSnapshot = emptyList()
                 queueRepeatIndex = -1
             }
-            // Montar cola visible actual para que el servicio pueda controlar prev/next.
-            val baseList = visibleTracks
-            val idxInVisible = baseList.indexOfFirst { it.id == track.id }.let { if (it < 0) 0 else it }
-
-            val arr = JSONArray()
-            baseList.forEach { t ->
-                val o = JSONObject()
-                o.put("id", t.id)
-                o.put("uri", t.uri)
-                o.put("title", t.title)
-                o.put("artist", t.artist)
-                arr.put(o)
+            // Cargamos en el servicio SOLO [track actual] + [cola manual].
+            // Antes cargábamos visibleTracks entero (hasta cientos de canciones),
+            // lo que forzaba después un syncNextItems() con N removes sobre el hilo
+            // principal → causa directa del ANR con listas grandes.
+            fun DeviceTrack.toJsonObject() = JSONObject().also { o ->
+                o.put("id", id)
+                o.put("uri", uri)
+                o.put("title", title)
+                o.put("artist", artist)
             }
+            val arr = JSONArray()
+            arr.put(track.toJsonObject())
+            queue.forEach { t -> arr.put(t.toJsonObject()) }
 
             val queueJson = arr.toString()
             val svc = boundService
             if (svc != null) {
-                // Ruta rápida: servicio ya ligado — seek directo garantizado.
                 svc.loadQueue(
                     queueJson = queueJson,
-                    startIndex = idxInVisible,
+                    startIndex = 0,
                     shuffleEnabled = shuffleOn,
                 )
             } else {
-                // El servicio aún no está ligado: arrancamos en foreground y
-                // guardamos la cola para cargarla en onServiceConnected.
                 androidx.core.content.ContextCompat.startForegroundService(
                     context, Intent(context, PlaybackService::class.java),
                 )
                 pendingPlay = PendingPlay(
                     queueJson = queueJson,
-                    index = idxInVisible,
+                    index = 0,
                     shuffleEnabled = shuffleOn,
                 )
             }
@@ -1006,9 +1003,10 @@ fun PlayerScreen(
                     onClick = {
                         if (visibleTracks.isEmpty()) return@PrimaryPillButton
                         val first = visibleTracks.first()
-                        playTrack(first, clearQueue = true)
+                        // Añadimos a la cola ANTES de playTrack para que loadQueue
+                        // ya incluya todos los temas en su primera llamada al servicio.
                         queue.addAll(visibleTracks.drop(1))
-                        syncQueueToService()
+                        playTrack(first, clearQueue = false)
                         if (!shuffleOn && repeatMode == RepeatMode.LIST) {
                             // Cola completa = [cancion actual] + resto
                             queueRepeatSnapshot = listOf(first) + queue.toList()
@@ -1462,9 +1460,8 @@ fun PlayerScreen(
                                                     val remaining = queue.drop(idx + 1)
                                                     repeat(queue.size) { queue.removeAt(0) }
                                                     queue.addAll(remaining)
-                                                    // syncQueueToService se llama dentro de playTrack vía loadQueue
+                                                    // playTrack ya carga [t] + queue en el servicio
                                                     playTrack(t, clearQueue = false)
-                                                    syncQueueToService()
                                                 },
                                             ) {
                                                 Icon(
