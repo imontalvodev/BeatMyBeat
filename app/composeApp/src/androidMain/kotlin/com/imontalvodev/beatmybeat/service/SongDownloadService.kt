@@ -30,6 +30,7 @@ class SongDownloadService : Service() {
         val album = intent.getStringExtra(EXTRA_ALBUM).orEmpty()
         val videoId = intent.getStringExtra(EXTRA_VIDEO_ID).orEmpty()
         val thumbnailUrl = intent.getStringExtra(EXTRA_THUMBNAIL_URL).orEmpty()
+        val format = AudioDownloader.DownloadFormat.fromId(intent.getStringExtra(EXTRA_FORMAT))
 
         if (BeatMyBeatNotification.canPostNotifications(this)) {
             runCatching {
@@ -52,6 +53,7 @@ class SongDownloadService : Service() {
                     title = title,
                     artist = artist,
                     album = album,
+                    format = format,
                     videoId = videoId,
                     thumbnailUrl = thumbnailUrl,
                 )
@@ -59,7 +61,7 @@ class SongDownloadService : Service() {
             Handler(Looper.getMainLooper()).post {
                 val msg = when {
                     result == null -> "Error descargando canción."
-                    result.success -> "Canción descargada: ${result.fileName ?: title}"
+                    result.success -> "Descargada (${format.label}): ${result.fileName ?: title}"
                     else -> "No se pudo descargar la canción."
                 }
                 Toast.makeText(this@SongDownloadService, msg, Toast.LENGTH_SHORT).show()
@@ -83,6 +85,7 @@ class SongDownloadService : Service() {
         private const val EXTRA_ALBUM = "extra_album"
         private const val EXTRA_VIDEO_ID = "extra_video_id"
         private const val EXTRA_THUMBNAIL_URL = "extra_thumbnail_url"
+        private const val EXTRA_FORMAT = "extra_format"
 
         fun enqueueDownload(
             context: Context,
@@ -91,6 +94,7 @@ class SongDownloadService : Service() {
             album: String = "",
             videoId: String = "",
             thumbnailUrl: String = "",
+            format: AudioDownloader.DownloadFormat = AudioDownloader.DownloadFormat.MP3,
         ) {
             val intent = Intent(context, SongDownloadService::class.java).apply {
                 action = ACTION_DOWNLOAD_SINGLE
@@ -99,6 +103,7 @@ class SongDownloadService : Service() {
                 putExtra(EXTRA_ALBUM, album)
                 putExtra(EXTRA_VIDEO_ID, videoId)
                 putExtra(EXTRA_THUMBNAIL_URL, thumbnailUrl)
+                putExtra(EXTRA_FORMAT, format.id)
             }
             runCatching { ContextCompat.startForegroundService(context, intent) }
         }
