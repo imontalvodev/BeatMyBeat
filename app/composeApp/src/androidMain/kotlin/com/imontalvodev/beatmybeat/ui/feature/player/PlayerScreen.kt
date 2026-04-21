@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Visibility
@@ -936,100 +937,25 @@ fun PlayerScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                val selectedTracksOrdered = visibleTracks.filter { selectedTrackIds.contains(it.id) }
                 if (selectionMode) {
-                    val selectedTracksOrdered = visibleTracks.filter { selectedTrackIds.contains(it.id) }
-                    val count = selectedTracksOrdered.size
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.28f)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                        ) {
-                            Text(
-                                text = "$count seleccionada(s)",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                ActionPillButton(
-                                    text = "Fav",
-                                    modifier = Modifier.weight(1f),
-                                    onClick = {
-                                        selectedTracksOrdered.forEach { viewModel.toggleFavorite(it) }
-                                        clearTrackSelection()
-                                    },
-                                )
-                                ActionPillButton(
-                                    text = "Eliminar",
-                                    modifier = Modifier.weight(1f),
-                                    onClick = {
-                                        selectedTracksOrdered.forEach {
-                                            deleteTrackFromDevice(it, syncAfter = false, showToast = false)
-                                        }
-                                        viewModel.syncLibrary(auto = true)
-                                        Toast.makeText(
-                                            context,
-                                            "Eliminadas $count canciones del teléfono.",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                        clearTrackSelection()
-                                    },
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                ActionPillButton(
-                                    text = "Cola",
-                                    modifier = Modifier.weight(1f),
-                                    onClick = {
-                                        queue.addAll(selectedTracksOrdered)
-                                        clearTrackSelection()
-                                    },
-                                )
-                                if (selectedSection == PlayerSection.Playlist && selectedPlaylistId != null) {
-                                    ActionPillButton(
-                                        text = "Quitar",
-                                        modifier = Modifier.weight(1f),
-                                        onClick = {
-                                            selectedTracksOrdered.forEach { tr ->
-                                                viewModel.removeSongFromPlaylist(
-                                                    trackId = tr.id,
-                                                    playlistId = selectedPlaylistId!!,
-                                                    removeAllOccurrences = true,
-                                                )
-                                            }
-                                            clearTrackSelection()
-                                        },
-                                    )
-                                } else {
-                                    ActionPillButton(
-                                        text = "Playlist",
-                                        modifier = Modifier.weight(1f),
-                                        onClick = {
-                                            addToPlaylistDialogOpen = true
-                                            addToPlaylistTracks = selectedTracksOrdered
-                                            addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
-                                            addToPlaylistNewName = ""
-                                            addToPlaylistPickerExpanded = false
-                                        },
-                                    )
-                                }
-                            }
+                        Text(
+                            text = "${selectedTracksOrdered.size} seleccionada(s)",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                        )
+                        TextButton(onClick = { clearTrackSelection() }) {
+                            Text("Cancelar")
                         }
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
                 PrimaryPillButton(
@@ -1102,7 +1028,18 @@ fun PlayerScreen(
                             isCurrent = currentTrack?.id == track.id,
                             isSelected = selectedTrackIds.contains(track.id),
                             showOverflowMenu = !selectionMode,
-                            onLongPress = { toggleTrackSelection(track.id) },
+                            showSelectedActionsMenu = selectionMode && selectedTrackIds.contains(track.id),
+                            onLongPress = {
+                                val wasSelectionMode = selectionMode
+                                toggleTrackSelection(track.id)
+                                if (!wasSelectionMode) {
+                                    Toast.makeText(
+                                        context,
+                                        "Modo selección activado.",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            },
                             onClick = {
                                 if (selectionMode) {
                                     toggleTrackSelection(track.id)
@@ -1134,6 +1071,60 @@ fun PlayerScreen(
                                 addToPlaylistNewName = ""
                             },
                             onDeleteFromDevice = { deleteTrackFromDevice(track) },
+                            onBulkQueue = {
+                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
+                                queue.addAll(selectedTracksOrdered)
+                                Toast.makeText(
+                                    context,
+                                    if (selectedTracksOrdered.size == 1) "Canción añadida a la cola." else "Canciones añadidas a la cola.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                clearTrackSelection()
+                            },
+                            onBulkToggleFavorite = {
+                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
+                                selectedTracksOrdered.forEach { viewModel.toggleFavorite(it) }
+                                clearTrackSelection()
+                            },
+                            onBulkAddToPlaylist = {
+                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
+                                addToPlaylistDialogOpen = true
+                                addToPlaylistTracks = selectedTracksOrdered
+                                addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
+                                addToPlaylistNewName = ""
+                                addToPlaylistPickerExpanded = false
+                            },
+                            onBulkDeleteFromDevice = {
+                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
+                                selectedTracksOrdered.forEach {
+                                    deleteTrackFromDevice(it, syncAfter = false, showToast = false)
+                                }
+                                viewModel.syncLibrary(auto = true)
+                                Toast.makeText(
+                                    context,
+                                    "Eliminadas ${selectedTracksOrdered.size} canciones del teléfono.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                clearTrackSelection()
+                            },
+                            showBulkRemoveFromPlaylist = selectedSection == PlayerSection.Playlist && selectedPlaylistId != null,
+                            onBulkRemoveFromPlaylist = {
+                                val pid = selectedPlaylistId ?: return@TrackRow
+                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
+                                selectedTracksOrdered.forEach { tr ->
+                                    viewModel.removeSongFromPlaylist(
+                                        trackId = tr.id,
+                                        playlistId = pid,
+                                        removeAllOccurrences = true,
+                                    )
+                                }
+                                Toast.makeText(
+                                    context,
+                                    if (selectedTracksOrdered.size == 1) "Canción quitada de la playlist." else "Canciones quitadas de la playlist.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                clearTrackSelection()
+                            },
                             isFavorite = isFavorite,
                             showRemoveFromPlaylist = showRemoveFromPlaylist,
                             onRemoveFromPlaylist = {
@@ -1597,12 +1588,19 @@ private fun TrackRow(
     isCurrent: Boolean,
     isSelected: Boolean,
     showOverflowMenu: Boolean,
+    showSelectedActionsMenu: Boolean,
     onLongPress: () -> Unit,
     onClick: () -> Unit,
     onQueue: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDeleteFromDevice: () -> Unit,
+    onBulkQueue: () -> Unit,
+    onBulkToggleFavorite: () -> Unit,
+    onBulkAddToPlaylist: () -> Unit,
+    onBulkDeleteFromDevice: () -> Unit,
+    showBulkRemoveFromPlaylist: Boolean,
+    onBulkRemoveFromPlaylist: () -> Unit,
     isFavorite: Boolean,
     showRemoveFromPlaylist: Boolean,
     onRemoveFromPlaylist: () -> Unit,
@@ -1636,6 +1634,20 @@ private fun TrackRow(
                     .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
             ) {
                 ArtworkThumbnail(track = track, sizeDp = 36)
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Seleccionada",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
             Spacer(modifier = Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -1665,7 +1677,64 @@ private fun TrackRow(
                     showRemoveFromPlaylist = showRemoveFromPlaylist,
                     onRemoveFromPlaylist = onRemoveFromPlaylist,
                 )
+            } else if (showSelectedActionsMenu) {
+                TrackSelectionOverflowMenu(
+                    onQueue = onBulkQueue,
+                    onToggleFavorite = onBulkToggleFavorite,
+                    onAddToPlaylist = onBulkAddToPlaylist,
+                    onDeleteFromDevice = onBulkDeleteFromDevice,
+                    showRemoveFromPlaylist = showBulkRemoveFromPlaylist,
+                    onRemoveFromPlaylist = onBulkRemoveFromPlaylist,
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun TrackSelectionOverflowMenu(
+    onQueue: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onDeleteFromDevice: () -> Unit,
+    showRemoveFromPlaylist: Boolean,
+    onRemoveFromPlaylist: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "Acciones selección",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("Añadir a cola") },
+                onClick = { expanded = false; onQueue() },
+            )
+            DropdownMenuItem(
+                text = { Text("Favoritos") },
+                onClick = { expanded = false; onToggleFavorite() },
+            )
+            DropdownMenuItem(
+                text = { Text("Añadir a playlist") },
+                onClick = { expanded = false; onAddToPlaylist() },
+            )
+            if (showRemoveFromPlaylist) {
+                DropdownMenuItem(
+                    text = { Text("Quitar de playlist") },
+                    onClick = { expanded = false; onRemoveFromPlaylist() },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("Eliminar del teléfono") },
+                onClick = { expanded = false; onDeleteFromDevice() },
+            )
         }
     }
 }
