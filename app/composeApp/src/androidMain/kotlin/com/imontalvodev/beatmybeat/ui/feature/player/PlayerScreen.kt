@@ -52,9 +52,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -114,6 +116,7 @@ import org.json.JSONObject
 import kotlin.random.Random
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun PlayerScreen(
     modifier: Modifier = Modifier,
     onOpenProfile: () -> Unit = {},
@@ -436,7 +439,8 @@ fun PlayerScreen(
     fun sanitizeTitle(input: String): String {
         return input
             .replace(Regex("\\s*[\\(\\[].*?[\\)\\]]\\s*"), " ")
-            .replace(Regex("(?i)\\b(remastered|remaster|official|audio|video|lyrics|live)\\b"), " ")
+            .replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring)\\b.*$"), " ")
+            .replace(Regex("(?i)\\b(remastered|remaster|official|audio|video|videolyrics|lyrics|live|prod\\.?|produced)\\b"), " ")
             .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
@@ -1127,7 +1131,7 @@ fun PlayerScreen(
                                 addToPlaylistDialogOpen = true
                                 addToPlaylistTracks = listOf(track)
                                 addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
-                                addToPlaylistNewName = " "
+                                addToPlaylistNewName = ""
                             },
                             onDeleteFromDevice = { deleteTrackFromDevice(track) },
                             isFavorite = isFavorite,
@@ -1245,95 +1249,105 @@ fun PlayerScreen(
                     ?: selectedPlaylistId
                     ?: playlists.firstOrNull()?.id
 
-                AlertDialog(
+                ModalBottomSheet(
                     onDismissRequest = {
                         addToPlaylistDialogOpen = false
                         addToPlaylistPickerExpanded = false
                         addToPlaylistTracks = emptyList()
                         duplicateDialog = null
                     },
-                    title = { Text("Añadir a playlist") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            if (playlists.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        text = "Playlist objetivo: ${
-                                            playlists.firstOrNull { it.id == currentSelectedId }?.name
-                                                ?: "Ninguna"
-                                        }",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                                    )
-                                    IconButton(
-                                        onClick = { addToPlaylistPickerExpanded = !addToPlaylistPickerExpanded },
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.KeyboardArrowDown,
-                                            contentDescription = "Elegir playlist",
-                                        )
-                                    }
-                                }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "Añadir a playlist",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
 
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                if (addToPlaylistPickerExpanded) {
-                                    Column(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        if (playlists.isNotEmpty()) {
+                            Text(
+                                text = "Playlist objetivo",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                            )
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                playlists.forEach { p ->
+                                    val selected = p.id == (addToPlaylistExistingId ?: currentSelectedId)
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { addToPlaylistExistingId = p.id },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (selected) {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                            } else {
+                                                Color.Black.copy(alpha = 0.25f)
+                                            },
+                                        ),
                                     ) {
-                                        playlists.forEach { p ->
-                                            val selected = p.id == (addToPlaylistExistingId ?: currentSelectedId)
-                                            Card(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable {
-                                                        addToPlaylistExistingId = p.id
-                                                        addToPlaylistPickerExpanded = false
-                                                    },
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = CardDefaults.cardColors(
-                                                    containerColor = if (selected) {
-                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                                    } else {
-                                                        Color.Black.copy(alpha = 0.25f)
-                                                    },
-                                                ),
-                                            ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                text = "${p.name} (Canciones: ${p.songIds.size})",
+                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            if (selected) {
                                                 Text(
-                                                    text = "${p.name} (Canciones: ${p.songIds.size})",
-                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    text = "Seleccionada",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
                                                 )
                                             }
                                         }
                                     }
                                 }
                             }
-
-                            OutlinedTextField(
-                                value = addToPlaylistNewName,
-                                onValueChange = { addToPlaylistNewName = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Nueva playlist (opcional)") },
-                                placeholder = { Text("Ej: Mis favoritos Chill") },
-                            )
-
-                            Text(
-                                text = "Si no pones nombre nuevo, se añade a la playlist seleccionada.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                            )
                         }
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
+
+                        OutlinedTextField(
+                            value = addToPlaylistNewName,
+                            onValueChange = { addToPlaylistNewName = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Nueva playlist (opcional)") },
+                            placeholder = { Text("Ej: Mis favoritos Chill") },
+                        )
+
+                        Text(
+                            text = "Si no pones nombre nuevo, se añade a la playlist seleccionada.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    addToPlaylistDialogOpen = false
+                                    addToPlaylistTracks = emptyList()
+                                    duplicateDialog = null
+                                },
+                            ) {
+                                Text("Cancelar")
+                            }
+                            TextButton(
+                                onClick = {
                                 val newName = addToPlaylistNewName.trim()
                                 val chosenId =
                                     addToPlaylistExistingId
@@ -1345,6 +1359,11 @@ fun PlayerScreen(
                                     when (res) {
                                         is PlayerViewModel.CreatePlaylistResult.Created -> {
                                             selectedPlaylistId = res.id
+                                            Toast.makeText(
+                                                context,
+                                                "Playlist \"$newName\" creada.",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
                                             res.id
                                         }
 
@@ -1361,14 +1380,25 @@ fun PlayerScreen(
                                 } else {
                                     val existingId = chosenId
                                     if (existingId == null) {
-                                        Toast.makeText(
-                                            context,
-                                            "Elige una playlist o escribe un nombre para crear una nueva.",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                        return@TextButton
+                                        // UX: si no hay playlist todavía, crear una por defecto y continuar.
+                                        when (val created = viewModel.createPlaylist("Mi playlist")) {
+                                            is PlayerViewModel.CreatePlaylistResult.Created -> {
+                                                selectedPlaylistId = created.id
+                                                Toast.makeText(
+                                                    context,
+                                                    "Playlist \"Mi playlist\" creada.",
+                                                    Toast.LENGTH_SHORT,
+                                                ).show()
+                                                created.id
+                                            }
+                                            is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
+                                                selectedPlaylistId = created.id
+                                                created.id
+                                            }
+                                        }
+                                    } else {
+                                        existingId
                                     }
-                                    existingId
                                 }
 
                                 val duplicateIds = mutableListOf<Long>()
@@ -1401,25 +1431,21 @@ fun PlayerScreen(
                                         playlistId = targetPlaylistId,
                                     )
                                 } else if (anyAdded) {
+                                    Toast.makeText(
+                                        context,
+                                        if (tracksToAdd.size == 1) "Canción añadida a la playlist."
+                                        else "Canciones añadidas a la playlist.",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
                                     clearTrackSelection()
                                 }
+                                },
+                            ) {
+                                Text("Añadir")
                             }
-                        ) {
-                            Text("Añadir")
                         }
-                    },
-                    dismissButton = {
-                        TextButton(
-                            onClick = {
-                                addToPlaylistDialogOpen = false
-                                addToPlaylistTracks = emptyList()
-                                duplicateDialog = null
-                            }
-                        ) {
-                            Text("Cancelar")
-                        }
-                    },
-                )
+                    }
+                }
             }
 
             // DIALOG: confirmación duplicado en playlist
@@ -1445,6 +1471,11 @@ fun PlayerScreen(
                                         allowDuplicate = true,
                                     )
                                 }
+                                Toast.makeText(
+                                    context,
+                                    "Duplicados añadidos a la playlist.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                                 duplicateDialog = null
                                 clearTrackSelection()
                             },
@@ -1456,6 +1487,11 @@ fun PlayerScreen(
                         TextButton(
                             onClick = {
                                 duplicateDialog = null
+                                Toast.makeText(
+                                    context,
+                                    "Se han omitido las canciones duplicadas.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                                 clearTrackSelection()
                             },
                         ) {
@@ -1853,12 +1889,22 @@ private fun PlaylistPickerBar(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        PrimaryPillButton(
-            text = "Crear una playlist",
-            onClick = onCreateEmpty,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "Mis playlists",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            TextButton(onClick = onCreateEmpty) {
+                Text("Crear")
+            }
+        }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         playlists.forEach { p ->
             val selected = p.id == selectedPlaylistId
@@ -1869,32 +1915,59 @@ private fun PlaylistPickerBar(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = if (selected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
                     } else {
-                        Color.Black.copy(alpha = 0.25f)
+                        Color.Black.copy(alpha = 0.28f)
                     },
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 10.dp else 0.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    width = 1.dp,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+                    },
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 8.dp else 2.dp),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(
-                        text = p.name,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "${p.songIds.size} canciones",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text(
+                            text = p.name,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = "${p.songIds.size} canciones",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (selected) {
+                                Text(
+                                    text = "Activa",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
                     var menuExpanded by remember { mutableStateOf(false) }
                     Box {
                         IconButton(
