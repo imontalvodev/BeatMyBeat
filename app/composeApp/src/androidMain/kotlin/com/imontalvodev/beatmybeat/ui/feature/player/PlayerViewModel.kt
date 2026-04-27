@@ -278,11 +278,26 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putString(PREF_PLAYLISTS_JSON, root.toString()).apply()
     }
 
+    // ── Persistencia de sección y ordenación del reproductor ───────────────
+    fun saveSection(section: String) {
+        prefs.edit().putString(PREF_SECTION, section).apply()
+    }
+
+    fun loadSection(): String = prefs.getString(PREF_SECTION, "songs") ?: "songs"
+
+    fun saveSortOption(sort: String) {
+        prefs.edit().putString(PREF_SORT, sort).apply()
+    }
+
+    fun loadSortOption(): String = prefs.getString(PREF_SORT, "name_asc") ?: "name_asc"
+
     companion object {
         private const val PREF_FAVORITES = "favorites_ids"
         // Legacy (migración)
         private const val PREF_PLAYLIST = "playlist_ids"
         private const val PREF_PLAYLISTS_JSON = "playlists_json"
+        private const val PREF_SECTION = "player_section"
+        private const val PREF_SORT = "player_sort"
     }
 }
 

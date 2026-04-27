@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -172,22 +173,6 @@ fun PlayerScreen(
     // Esto permite llamar player.seekTo(ms) sin ningún intent de por medio.
     var boundService by remember { mutableStateOf<PlaybackService?>(null) }
 
-    // Serializa la cola local y la envía al servicio para que la notificación (Next/Prev)
-    // navegue por exactamente los mismos ítems que ve la UI.
-    fun syncQueueToService() {
-        val svc = boundService ?: return
-        val arr = JSONArray()
-        queue.forEach { t ->
-            val o = JSONObject()
-            o.put("id", t.id)
-            o.put("uri", t.uri)
-            o.put("title", t.title)
-            o.put("artist", t.artist)
-            arr.put(o)
-        }
-        svc.syncNextItems(arr.toString())
-    }
-
     // Cola pendiente si el usuario pulsa play antes de que el servicio esté ligado.
     data class PendingPlay(val queueJson: String, val index: Int, val shuffleEnabled: Boolean)
     var pendingPlay by remember { mutableStateOf<PendingPlay?>(null) }
@@ -234,13 +219,51 @@ fun PlayerScreen(
     var currentArtwork by remember { mutableStateOf<Bitmap?>(null) }
 
     var query by remember { mutableStateOf("") }
-    var selectedSection by remember { mutableStateOf(PlayerSection.Songs) }
+    var selectedSection by remember {
+        mutableStateOf(
+            when (viewModel.loadSection()) {
+                "favorites" -> PlayerSection.Favorites
+                "playlist"  -> PlayerSection.Playlist
+                else        -> PlayerSection.Songs
+            }
+        )
+    }
     var isExpanded by remember { mutableStateOf(false) }
     var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
     // Mantener scroll independiente por pestaña para no perder posición al alternar.
     val songsListState = rememberLazyListState()
     val favoritesListState = rememberLazyListState()
     val playlistListState = rememberLazyListState()
+
+    var shuffleOn by remember { mutableStateOf(false) }
+    var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
+    // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
+    var queueRepeatSnapshot by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
+    var queueRepeatIndex by remember { mutableStateOf(-1) }
+    var shuffleOrder by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
+    var shuffleIndex by remember { mutableStateOf(-1) }
+
+    // Serializa la cola de "próximas canciones" y la envía al servicio para que
+    // la notificación (Next/Prev) navegue por los mismos ítems que ve la UI.
+    // En modo shuffle usa el resto de shuffleOrder; en modo normal, la cola manual.
+    fun syncQueueToService() {
+        val svc = boundService ?: return
+        val nextTracks = if (shuffleOn && shuffleOrder.isNotEmpty()) {
+            shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0))
+        } else {
+            queue.toList()
+        }
+        val arr = JSONArray()
+        nextTracks.forEach { t ->
+            val o = JSONObject()
+            o.put("id", t.id)
+            o.put("uri", t.uri)
+            o.put("title", t.title)
+            o.put("artist", t.artist)
+            arr.put(o)
+        }
+        svc.syncNextItems(arr.toString())
+    }
 
     var pendingDeleteTrack by remember { mutableStateOf<DeviceTrack?>(null) }
     val deletionApprovalLauncher = rememberLauncherForActivityResult(
@@ -270,14 +293,6 @@ fun PlayerScreen(
     BackHandler(enabled = isExpanded) {
         isExpanded = false
     }
-
-    var shuffleOn by remember { mutableStateOf(false) }
-    var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
-    // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
-    var queueRepeatSnapshot by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
-    var queueRepeatIndex by remember { mutableStateOf(-1) }
-    var shuffleOrder by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
-    var shuffleIndex by remember { mutableStateOf(-1) }
 
     // Mantener el shuffle del servicio (notificación) en sincronía con la UI.
     LaunchedEffect(boundService, shuffleOn) {
@@ -317,7 +332,16 @@ fun PlayerScreen(
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     var selectedTrackIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     val selectionMode = selectedTrackIds.isNotEmpty()
-    var sortOption by remember { mutableStateOf(SortOption.NAME_ASC) }
+    var sortOption by remember {
+        mutableStateOf(
+            when (viewModel.loadSortOption()) {
+                "name_desc"    -> SortOption.NAME_DESC
+                "newest_first" -> SortOption.NEWEST_FIRST
+                "oldest_first" -> SortOption.OLDEST_FIRST
+                else           -> SortOption.NAME_ASC
+            }
+        )
+    }
 
     fun toggleTrackSelection(trackId: Long) {
         selectedTrackIds = if (selectedTrackIds.contains(trackId)) {
@@ -339,6 +363,29 @@ fun PlayerScreen(
         if (!stillExists) {
             selectedPlaylistId = playlists.first().id
         }
+    }
+
+    // Persistir sección activa cada vez que cambia
+    LaunchedEffect(selectedSection) {
+        viewModel.saveSection(
+            when (selectedSection) {
+                PlayerSection.Songs     -> "songs"
+                PlayerSection.Favorites -> "favorites"
+                PlayerSection.Playlist  -> "playlist"
+            }
+        )
+    }
+
+    // Persistir opción de ordenación cada vez que cambia
+    LaunchedEffect(sortOption) {
+        viewModel.saveSortOption(
+            when (sortOption) {
+                SortOption.NAME_ASC    -> "name_asc"
+                SortOption.NAME_DESC   -> "name_desc"
+                SortOption.NEWEST_FIRST -> "newest_first"
+                SortOption.OLDEST_FIRST -> "oldest_first"
+            }
+        )
     }
 
     // Al cambiar de sección/playlist limpiamos la cola para evitar saltos raros
@@ -608,12 +655,16 @@ fun PlayerScreen(
             shuffleIndex =
                 currentTrack?.id?.let { id -> shuffleOrder.indexOfFirst { it.id == id } } ?: -1
             if (shuffleIndex < 0 && shuffleOrder.isNotEmpty()) shuffleIndex = 0
+            // Sincronizar el nuevo orden con el servicio para que la notificación
+            // pueda avanzar por las canciones en el mismo orden aleatorio que la UI.
+            syncQueueToService()
         } else {
             shuffleOrder = emptyList()
             shuffleIndex = -1
             // Al salir de random, limpiamos estados derivados para volver
             // a navegación normal por lista desde la canción actual.
             queue.clear()
+            syncQueueToService()
             queueRepeatSnapshot = emptyList()
             queueRepeatIndex = -1
         }
@@ -669,9 +720,20 @@ fun PlayerScreen(
                 o.put("title", title)
                 o.put("artist", artist)
             }
+            // En shuffle: cargamos [track] + resto de shuffleOrder para que la
+            // notificación pueda avanzar sin repeticiones.
+            // En modo normal: [track] + cola manual.
+            val pendingShuffleIdx = if (shuffleOn) shuffleOrder.indexOfFirst { it.id == track.id } else -1
+            val nextItems = when {
+                shuffleOn && pendingShuffleIdx >= 0 ->
+                    shuffleOrder.drop(pendingShuffleIdx + 1)
+                shuffleOn && shuffleOrder.isNotEmpty() ->
+                    shuffleOrder  // fallback: toda la lista si el track no está en shuffleOrder
+                else -> queue.toList()
+            }
             val arr = JSONArray()
             arr.put(track.toJsonObject())
-            queue.forEach { t -> arr.put(t.toJsonObject()) }
+            nextItems.forEach { t -> arr.put(t.toJsonObject()) }
 
             val queueJson = arr.toString()
             val svc = boundService
@@ -779,6 +841,18 @@ fun PlayerScreen(
             if (nextIndex < shuffleOrder.size) {
                 playTrack(shuffleOrder[nextIndex], clearQueue = false)
             } else if (repeatMode == RepeatMode.LIST && shuffleOrder.isNotEmpty()) {
+                // Final de la lista aleatoria: re-barajar para que la nueva pasada
+                // no empiece por el mismo tema que terminó la anterior.
+                val lastId = shuffleOrder.last().id
+                val base = visibleTracks.toMutableList()
+                currentTrack?.let { ct -> if (base.none { it.id == ct.id }) base.add(ct) }
+                var newOrder = base.shuffled(Random(System.currentTimeMillis()))
+                if (newOrder.firstOrNull()?.id == lastId && newOrder.size > 1) {
+                    newOrder = newOrder.drop(1) + newOrder.first()
+                }
+                shuffleOrder = newOrder
+                shuffleIndex = 0
+                syncQueueToService()
                 playTrack(shuffleOrder.first(), clearQueue = false)
             }
             return
@@ -1219,7 +1293,9 @@ fun PlayerScreen(
                 artwork = currentArtwork,
                 shuffleOn = shuffleOn,
                 repeatMode = repeatMode,
-                queueSize = queue.size,
+                queueSize = if (shuffleOn && shuffleOrder.isNotEmpty())
+                    (shuffleOrder.size - (shuffleIndex + 1).coerceAtLeast(0)).coerceAtLeast(0)
+                else queue.size,
                 onTogglePlay = {
                     currentTrack ?: return@MiniPlayerBar
                     context.startService(
@@ -1323,9 +1399,24 @@ fun PlayerScreen(
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
-                            if (queue.isNotEmpty()) {
+                            // displayQueue: en shuffle muestra el resto del orden aleatorio;
+                            // en modo normal muestra la cola manual.
+                            val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty())
+                                shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0))
+                            else
+                                queue.toList()
+
+                            if (displayQueue.isNotEmpty()) {
                                 TextButton(onClick = {
                                     queue.clear()
+                                    if (shuffleOn) {
+                                        // En shuffle, "limpiar" solo deja la canción actual
+                                        // y reconstruye shuffleOrder vacío tras el índice actual
+                                        shuffleOrder = if (shuffleIndex >= 0 && shuffleIndex < shuffleOrder.size)
+                                            listOf(shuffleOrder[shuffleIndex])
+                                        else emptyList()
+                                        shuffleIndex = 0
+                                    }
                                     syncQueueToService()
                                 }) {
                                     Text("Limpiar")
@@ -1334,6 +1425,11 @@ fun PlayerScreen(
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
+
+                        val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty())
+                            shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0))
+                        else
+                            queue.toList()
 
                         if (currentTrack != null) {
                             Text(
@@ -1384,7 +1480,7 @@ fun PlayerScreen(
                             Spacer(modifier = Modifier.height(12.dp))
                         }
 
-                        if (queue.isEmpty()) {
+                        if (displayQueue.isEmpty()) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1400,17 +1496,18 @@ fun PlayerScreen(
                             }
                         } else {
                             Text(
-                                text = "A continuación (${queue.size})",
+                                text = "A continuación (${displayQueue.size})" +
+                                    if (shuffleOn) " • Aleatorio" else "",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             LazyColumn(
-                                modifier = Modifier.heightIn(max = 420.dp),
+                                modifier = Modifier.fillMaxHeight(0.6f),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                items(queue.size, key = { idx -> queue[idx].id.toString() + idx }) { idx ->
-                                    val t = queue[idx]
+                                items(displayQueue.size, key = { idx -> displayQueue[idx].id.toString() + idx }) { idx ->
+                                    val t = displayQueue[idx]
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(12.dp),
@@ -1457,10 +1554,15 @@ fun PlayerScreen(
                                             // Saltar directamente a esta canción
                                             IconButton(
                                                 onClick = {
-                                                    val remaining = queue.drop(idx + 1)
-                                                    repeat(queue.size) { queue.removeAt(0) }
-                                                    queue.addAll(remaining)
-                                                    // playTrack ya carga [t] + queue en el servicio
+                                                    if (shuffleOn) {
+                                                        // En shuffle: ajustar shuffleIndex al ítem pulsado
+                                                        val absIdx = shuffleOrder.indexOfFirst { it.id == t.id }
+                                                        if (absIdx >= 0) shuffleIndex = absIdx - 1
+                                                    } else {
+                                                        val remaining = queue.drop(idx + 1)
+                                                        repeat(queue.size) { queue.removeAt(0) }
+                                                        queue.addAll(remaining)
+                                                    }
                                                     playTrack(t, clearQueue = false)
                                                 },
                                             ) {
@@ -1471,19 +1573,21 @@ fun PlayerScreen(
                                                     modifier = Modifier.size(20.dp),
                                                 )
                                             }
-                                            // Quitar de la cola
-                                            IconButton(
-                                                onClick = {
-                                                    queue.removeAt(idx)
-                                                    syncQueueToService()
-                                                },
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Close,
-                                                    contentDescription = "Quitar de cola",
-                                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                                    modifier = Modifier.size(18.dp),
-                                                )
+                                            // Quitar de la cola (solo en modo no-shuffle)
+                                            if (!shuffleOn) {
+                                                IconButton(
+                                                    onClick = {
+                                                        queue.removeAt(idx)
+                                                        syncQueueToService()
+                                                    },
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Close,
+                                                        contentDescription = "Quitar de cola",
+                                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
                                             }
                                         }
                                     }

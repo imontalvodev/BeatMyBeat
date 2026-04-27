@@ -53,6 +53,7 @@ object AudioDownloader {
         imageUrl: String = "",
         videoId: String = "",
         thumbnailUrl: String = "",
+        onPhaseUpdate: ((phase: String) -> Unit)? = null,
     ): DownloadResult = withContext(Dispatchers.IO) {
         val safeTitle = title.trim()
         val safeArtist = artist.trim()
@@ -63,6 +64,7 @@ object AudioDownloader {
         )
         try {
             // --- Paso 1: resolver videoId y thumbnail si no se proporcionaron ---
+            onPhaseUpdate?.invoke("Buscando vídeo…")
             var resolvedThumbnail = thumbnailUrl
             val resolvedVideoId = if (videoId.length == 11) {
                 videoId
@@ -82,6 +84,7 @@ object AudioDownloader {
             android.util.Log.d("NewPipeStream", "title='$safeTitle' artist='$safeArtist' thumbnail='$resolvedThumbnail'")
 
             // --- Paso 2: extraer URL de stream con NewPipe ---
+            onPhaseUpdate?.invoke("Obteniendo enlace de audio…")
             val streamInfo = try {
                 NewPipeStreamExtractor.extractBestAudioStream(resolvedVideoId)
             } catch (e: Exception) {
@@ -91,6 +94,7 @@ object AudioDownloader {
             }
 
             // --- Paso 3: descargar por rangos para evitar bloqueo con streams chunked ---
+            onPhaseUpdate?.invoke("Descargando audio…")
             val sourceExt = when {
                 streamInfo.mimeType.contains("mp4") || streamInfo.mimeType.contains("m4a") -> "m4a"
                 streamInfo.mimeType.contains("webm") || streamInfo.mimeType.contains("opus") -> "webm"
@@ -152,6 +156,10 @@ object AudioDownloader {
                     out.write(bytes)
                     totalWritten += bytes.size
                     offset += bytes.size
+                    if (totalBytes > 0) {
+                        val pct = (totalWritten * 100L / totalBytes).toInt().coerceIn(0, 99)
+                        onPhaseUpdate?.invoke("Descargando audio… $pct%")
+                    }
                     if (bytes.size < chunkSize) break
                 }
                 out.flush()
@@ -166,6 +174,7 @@ object AudioDownloader {
             }
 
             // --- Paso 4: crear MP3 master con metadata/carátula ---
+            onPhaseUpdate?.invoke("Procesando metadatos…")
             outFile.delete()
             masterMp3.delete()
             val artworkBytes = fetchArtworkBytes(resolvedThumbnail, downloadClient)
@@ -203,6 +212,7 @@ object AudioDownloader {
             }.onFailure { android.util.Log.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
 
             // --- Paso 5: si no es MP3, convertir desde master al formato final ---
+            onPhaseUpdate?.invoke("Convirtiendo a ${format.label}…")
             if (format == DownloadFormat.MP3) {
                 masterMp3.copyTo(outFile, overwrite = true)
             } else {

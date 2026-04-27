@@ -7,6 +7,7 @@ import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
@@ -56,6 +57,20 @@ class SongDownloadService : Service() {
                     format = format,
                     videoId = videoId,
                     thumbnailUrl = thumbnailUrl,
+                    onPhaseUpdate = { phase ->
+                        if (BeatMyBeatNotification.canPostNotifications(this@SongDownloadService)) {
+                            runCatching {
+                                NotificationManagerCompat.from(this@SongDownloadService).notify(
+                                    BeatMyBeatNotification.DOWNLOAD_NOTIFICATION_ID,
+                                    BeatMyBeatNotification.buildDownloadInProgressNotification(
+                                        context = this@SongDownloadService,
+                                        title = title.ifBlank { "Descargando canción" },
+                                        subtitle = phase,
+                                    ),
+                                )
+                            }
+                        }
+                    },
                 )
             }.getOrNull()
             Handler(Looper.getMainLooper()).post {
