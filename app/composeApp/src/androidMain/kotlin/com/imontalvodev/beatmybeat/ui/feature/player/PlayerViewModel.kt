@@ -7,7 +7,9 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.data.MediaStoreScanner
 import org.json.JSONArray
@@ -52,7 +54,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun syncLibrary(auto: Boolean) {
         viewModelScope.launch {
-            val scanned = scanner.scanAudio()
+            val scanned = withContext(Dispatchers.IO) { scanner.scanAudio() }
             _tracks.value = scanned
 
             // Mantener playlists coherentes con el contenido real del teléfono

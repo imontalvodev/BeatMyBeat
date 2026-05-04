@@ -2,6 +2,7 @@ package com.imontalvodev.beatmybeat.ui.data
 
 import android.content.Context
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
@@ -20,6 +21,27 @@ data class DeviceTrack(
 
 class MediaStoreScanner(private val context: Context) {
 
+    /**
+     * MediaStore suele devolver DURATION = 0 hasta que el indexador termina.
+     * Intentamos leer la duración real; si sigue en 0, no descartamos por duración
+     * (evita perder pistas válidas que sí aparecen en la biblioteca del sistema).
+     */
+    private fun resolveDurationMs(mediaUri: Uri, mediaStoreDuration: Long): Long {
+        if (mediaStoreDuration > 0L) return mediaStoreDuration
+        return runCatching {
+            val r = MediaMetadataRetriever()
+            try {
+                r.setDataSource(context, mediaUri)
+                r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } finally {
+                r.release()
+            }
+        }.getOrDefault(0L)
+    }
+
+    private fun isTooShortForLibrary(durationMs: Long, minMusicDurationMs: Long): Boolean =
+        durationMs in 1 until minMusicDurationMs
+
     suspend fun scanAudio(): List<DeviceTrack> {
         val minMusicDurationMs = 30_000L
         val projection = arrayOf(
@@ -37,7 +59,9 @@ class MediaStoreScanner(private val context: Context) {
         )
 
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= ?"
+        // Incluir DURATION = 0: MediaStore a menudo aún no ha indexado la duración; la resolvemos con MetadataRetriever.
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
+            "(${MediaStore.Audio.Media.DURATION} >= ? OR IFNULL(${MediaStore.Audio.Media.DURATION}, 0) = 0)"
         val selectionArgs = arrayOf(minMusicDurationMs.toString())
 
         val tracks = mutableListOf<DeviceTrack>()
@@ -76,17 +100,18 @@ class MediaStoreScanner(private val context: Context) {
                     val relativePath = cursor.optString(relativePathCol).lowercase(Locale.ROOT)
                     val dateAddedSeconds = cursor.optLong(dateAddedCol)
                     val dateAddedMs = if (dateAddedSeconds > 0L) dateAddedSeconds * 1000L else 0L
-                    val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                    val contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
                         .buildUpon()
                         .appendPath(id.toString())
                         .build()
-                        .toString()
+                    val uri = contentUri.toString()
 
                     val searchableText = listOf(title, artist, album, displayName, absolutePath, relativePath)
                         .joinToString(" ")
                         .lowercase(Locale.ROOT)
 
-                    if (duration < minMusicDurationMs) continue
+                    val durationResolved = resolveDurationMs(contentUri, duration)
+                    if (isTooShortForLibrary(durationResolved, minMusicDurationMs)) continue
                     if (isLikelyNonMusicAudio(searchableText, mimeType)) continue
 
                     // Guardar el displayName real para deduplicar contra SAF después
@@ -98,7 +123,7 @@ class MediaStoreScanner(private val context: Context) {
                         title = title,
                         artist = artist,
                         album = album,
-                        durationMs = duration,
+                        durationMs = durationResolved,
                         dateAddedMs = dateAddedMs,
                     )
                 }
@@ -202,7 +227,7 @@ class MediaStoreScanner(private val context: Context) {
                 retriever.release()
             }
 
-            if (durationMs < minMusicDurationMs) return@forEachIndexed
+            if (isTooShortForLibrary(durationMs, minMusicDurationMs)) return@forEachIndexed
             tracks += DeviceTrack(
                 id = Long.MAX_VALUE - index,
                 uri = uriString,
