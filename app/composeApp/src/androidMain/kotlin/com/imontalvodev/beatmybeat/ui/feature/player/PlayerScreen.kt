@@ -266,27 +266,6 @@ fun PlayerScreen(
     }
 
     var pendingDeleteTrack by remember { mutableStateOf<DeviceTrack?>(null) }
-    val deletionApprovalLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartIntentSenderForResult(),
-        onResult = { result ->
-            val track = pendingDeleteTrack ?: return@rememberLauncherForActivityResult
-            if (result.resultCode == Activity.RESULT_OK) {
-                queue.removeAll { it.id == track.id }
-                syncQueueToService()
-                if (currentTrack?.id == track.id) {
-                    currentTrack = null
-                    currentArtwork = null
-                    lyricsState = LyricsUiState.Empty("Selecciona una canción")
-                    BeatMyBeatForegroundService.stopPlayback(context)
-                }
-                viewModel.syncLibrary(auto = true)
-                Toast.makeText(context, "Canción eliminada.", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "Eliminación cancelada.", Toast.LENGTH_SHORT).show()
-            }
-            pendingDeleteTrack = null
-        },
-    )
 
     // Si el usuario está viendo el overlay expandido (letra),
     // el botón Atrás debe cerrar el overlay en vez de navegar fuera del player.
@@ -302,26 +281,6 @@ fun PlayerScreen(
             RepeatMode.LIST -> Player.REPEAT_MODE_ALL
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
         }
-    }
-
-    // Sincronizar canción mostrada con la canción real del servicio/notificación.
-    // Cuando la notificación avanza (Next/Prev), el servicio emite un nuevo mediaId;
-    // si ese id coincide con el primer ítem de la cola local, lo consumimos para
-    // que la UI refleje correctamente cuántas canciones quedan.
-    LaunchedEffect(playbackMediaId, deviceTracks) {
-        val id = playbackMediaId.toLongOrNull() ?: return@LaunchedEffect
-        val track = deviceTracks.firstOrNull { it.id == id } ?: return@LaunchedEffect
-        if (currentTrack?.id != id) {
-            // El servicio avanzó externamente (notificación); consumir de la cola local
-            // solo si el nuevo ítem era el siguiente previsto.
-            if (queue.firstOrNull()?.id == id) {
-                queue.removeAt(0)
-                // No llamamos syncQueueToService aquí porque ExoPlayer ya avanzó
-                // internamente; solo actualizamos la representación local.
-            }
-        }
-        currentTrack = track
-        currentIndex = deviceTracks.indexOfFirst { it.id == id }
     }
 
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
@@ -607,29 +566,56 @@ fun PlayerScreen(
         }
     }
 
+    /**
+     * Pool de shuffle = [visibleTracks] (canciones / favoritos / playlist activa).
+     * [shuffleOrder] es una permutación única de ese pool; [queue] espeja siempre
+     * lo pendiente: shuffleOrder.drop(shuffleIndex + 1).
+     */
+    fun refreshShuffleQueueMirror() {
+        if (!shuffleOn || shuffleOrder.isEmpty()) return
+        queue.clear()
+        queue.addAll(shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0)))
+    }
+
+    /**
+     * Nueva permutación aleatoria del pool [visibleTracks].
+     * [playbackAnchor] si no es null (p. ej. tema que vamos a reproducir antes de asignar [currentTrack]),
+     * determina [shuffleIndex]; si no, se usa [currentTrack].
+     */
+    fun rebuildShuffleOrderFromPool(playbackAnchor: DeviceTrack? = null) {
+        if (!shuffleOn) return
+        val base = visibleTracks.toMutableList()
+        val anchor = playbackAnchor ?: currentTrack
+        anchor?.let { a ->
+            if (base.none { it.id == a.id }) base.add(a)
+        }
+        if (base.isEmpty()) {
+            shuffleOrder = emptyList()
+            shuffleIndex = -1
+            queue.clear()
+            syncQueueToService()
+            return
+        }
+        shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
+        shuffleIndex = when {
+            shuffleOrder.isEmpty() -> -1
+            anchor == null -> 0
+            else -> shuffleOrder.indexOfFirst { it.id == anchor.id }.takeIf { it >= 0 } ?: 0
+        }
+        refreshShuffleQueueMirror()
+        syncQueueToService()
+    }
+
     fun onToggleShuffle() {
         val next = !shuffleOn
         shuffleOn = next
-        // El orden aleatorio va en la cola JSON (syncQueueToService / playTrack); ExoPlayer queda lineal.
         if (shuffleOn) {
             queueRepeatSnapshot = emptyList()
             queueRepeatIndex = -1
-            val base = visibleTracks.toMutableList()
-            currentTrack?.let { ct ->
-                if (base.none { it.id == ct.id }) base.add(ct)
-            }
-            shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
-            shuffleIndex =
-                currentTrack?.id?.let { id -> shuffleOrder.indexOfFirst { it.id == id } } ?: -1
-            if (shuffleIndex < 0 && shuffleOrder.isNotEmpty()) shuffleIndex = 0
-            // Sincronizar el nuevo orden con el servicio para que la notificación
-            // pueda avanzar por las canciones en el mismo orden aleatorio que la UI.
-            syncQueueToService()
+            rebuildShuffleOrderFromPool()
         } else {
             shuffleOrder = emptyList()
             shuffleIndex = -1
-            // Al salir de random, limpiamos estados derivados para volver
-            // a navegación normal por lista desde la canción actual.
             queue.clear()
             syncQueueToService()
             queueRepeatSnapshot = emptyList()
@@ -656,28 +642,34 @@ fun PlayerScreen(
         }
     }
 
-    // Si cambia la lista visible (filtros/búsqueda/playlist) y Shuffle está ON,
-    // regeneramos el orden aleatorio sin tocar el track actual.
-    LaunchedEffect(visibleTracks, shuffleOn) {
-        if (!shuffleOn) return@LaunchedEffect
-        val base = visibleTracks.toMutableList()
-        currentTrack?.let { ct ->
-            if (base.none { it.id == ct.id }) base.add(ct)
-        }
-        shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
-        val id = currentTrack?.id
-        shuffleIndex = if (id == null) -1 else shuffleOrder.indexOfFirst { it.id == id }
-        if (shuffleIndex < 0 && shuffleOrder.isNotEmpty()) shuffleIndex = 0
-    }
-
-    // Después de regenerar shuffleOrder (efecto anterior), limpiamos cola local y
-    // sincronizamos ExoPlayer para no enviar un orden aleatorio obsoleto de otra sección.
+    // Cambio de sección/playlist: vaciar cola manual; si shuffle ON, nueva permutación del pool actual.
     LaunchedEffect(selectedSection, selectedPlaylistId) {
         queue.clear()
-        syncQueueToService()
+        if (shuffleOn) rebuildShuffleOrderFromPool()
+        else syncQueueToService()
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
         selectedTrackIds = emptySet()
+    }
+
+    // Sincronizar UI con ExoPlayer (notificación / lock screen): misma estructura shuffle o consumo de cola.
+    LaunchedEffect(playbackMediaId, deviceTracks) {
+        val id = playbackMediaId.toLongOrNull() ?: return@LaunchedEffect
+        val track = deviceTracks.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        if (currentTrack?.id != id) {
+            if (shuffleOn && shuffleOrder.isNotEmpty()) {
+                val idx = shuffleOrder.indexOfFirst { it.id == id }
+                if (idx >= 0) {
+                    shuffleIndex = idx
+                    refreshShuffleQueueMirror()
+                    syncQueueToService()
+                }
+            } else if (queue.firstOrNull()?.id == id) {
+                queue.removeAt(0)
+            }
+        }
+        currentTrack = track
+        currentIndex = deviceTracks.indexOfFirst { it.id == id }
     }
 
     fun playTrack(track: DeviceTrack, clearQueue: Boolean = false) {
@@ -697,16 +689,23 @@ fun PlayerScreen(
                 o.put("title", title)
                 o.put("artist", artist)
             }
-            // En shuffle: cargamos [track] + resto de shuffleOrder para que la
-            // notificación pueda avanzar sin repeticiones.
-            // En modo normal: [track] + cola manual.
-            val pendingShuffleIdx = if (shuffleOn) shuffleOrder.indexOfFirst { it.id == track.id } else -1
-            val nextItems = when {
-                shuffleOn && pendingShuffleIdx >= 0 ->
-                    shuffleOrder.drop(pendingShuffleIdx + 1)
-                shuffleOn && shuffleOrder.isNotEmpty() ->
-                    shuffleOrder  // fallback: toda la lista si el track no está en shuffleOrder
-                else -> queue.toList()
+            // Shuffle: misma lista [shuffleOrder] que la UI; si el tema no está (p. ej. pool cambió), rehacer permutación.
+            val pendingShuffleIdx = if (!shuffleOn) {
+                -1
+            } else {
+                var idx = shuffleOrder.indexOfFirst { it.id == track.id }
+                if (idx < 0) {
+                    rebuildShuffleOrderFromPool(playbackAnchor = track)
+                    idx = shuffleOrder.indexOfFirst { it.id == track.id }
+                }
+                idx
+            }
+            val nextItems = if (shuffleOn && shuffleOrder.isNotEmpty() && pendingShuffleIdx >= 0) {
+                shuffleOrder.drop(pendingShuffleIdx + 1)
+            } else if (shuffleOn && shuffleOrder.isNotEmpty()) {
+                shuffleOrder.drop(1)
+            } else {
+                queue.toList()
             }
             val arr = JSONArray()
             arr.put(track.toJsonObject())
@@ -734,16 +733,11 @@ fun PlayerScreen(
             currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
             // isPlaying se actualiza automáticamente vía PlaybackService.state
 
-            // Si Shuffle está activado, ajustamos el índice sin rebarajar para mantener bidireccionalidad.
-            if (shuffleOn) {
-                shuffleIndex = shuffleOrder.indexOfFirst { it.id == track.id }
-                if (shuffleIndex < 0) {
-                    val base = visibleTracks.toMutableList()
-                    if (currentTrack != null && base.none { it.id == currentTrack!!.id }) {
-                        base.add(currentTrack!!)
-                    }
-                    shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
-                    shuffleIndex = shuffleOrder.indexOfFirst { it.id == track.id }
+            if (shuffleOn && shuffleOrder.isNotEmpty()) {
+                val si = shuffleOrder.indexOfFirst { it.id == track.id }
+                if (si >= 0) {
+                    shuffleIndex = si
+                    refreshShuffleQueueMirror()
                 }
             }
         } catch (e: Exception) {
@@ -818,17 +812,15 @@ fun PlayerScreen(
             if (nextIndex < shuffleOrder.size) {
                 playTrack(shuffleOrder[nextIndex], clearQueue = false)
             } else if (repeatMode == RepeatMode.LIST && shuffleOrder.isNotEmpty()) {
-                // Final de la lista aleatoria: re-barajar para que la nueva pasada
-                // no empiece por el mismo tema que terminó la anterior.
                 val lastId = shuffleOrder.last().id
-                val base = visibleTracks.toMutableList()
-                currentTrack?.let { ct -> if (base.none { it.id == ct.id }) base.add(ct) }
-                var newOrder = base.shuffled(Random(System.currentTimeMillis()))
-                if (newOrder.firstOrNull()?.id == lastId && newOrder.size > 1) {
-                    newOrder = newOrder.drop(1) + newOrder.first()
+                rebuildShuffleOrderFromPool()
+                var order = shuffleOrder
+                if (order.size > 1 && order.first().id == lastId) {
+                    order = order.drop(1) + order.take(1)
+                    shuffleOrder = order
                 }
-                shuffleOrder = newOrder
                 shuffleIndex = 0
+                refreshShuffleQueueMirror()
                 syncQueueToService()
                 playTrack(shuffleOrder.first(), clearQueue = false)
             }
@@ -861,6 +853,18 @@ fun PlayerScreen(
 
     fun finishDeletion(track: DeviceTrack, showToast: Boolean = true) {
         queue.removeAll { it.id == track.id }
+        if (shuffleOn) {
+            val curId = currentTrack?.id
+            val wasCurrent = curId == track.id
+            shuffleOrder = shuffleOrder.filter { it.id != track.id }
+            if (shuffleOrder.isEmpty() || wasCurrent) {
+                shuffleIndex = -1
+                queue.clear()
+            } else if (curId != null) {
+                shuffleIndex = shuffleOrder.indexOfFirst { it.id == curId }.takeIf { it >= 0 } ?: 0
+                refreshShuffleQueueMirror()
+            }
+        }
         syncQueueToService()
         if (currentTrack?.id == track.id) {
             currentTrack = null
@@ -871,6 +875,19 @@ fun PlayerScreen(
         viewModel.syncLibrary(auto = true)
         if (showToast) Toast.makeText(context, "Canción eliminada.", Toast.LENGTH_SHORT).show()
     }
+
+    val deletionApprovalLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+        onResult = { result ->
+            val track = pendingDeleteTrack ?: return@rememberLauncherForActivityResult
+            if (result.resultCode == Activity.RESULT_OK) {
+                finishDeletion(track)
+            } else {
+                Toast.makeText(context, "Eliminación cancelada.", Toast.LENGTH_SHORT).show()
+            }
+            pendingDeleteTrack = null
+        },
+    )
 
     fun isSafUri(uri: Uri): Boolean {
         val auth = uri.authority ?: return false
@@ -1055,14 +1072,13 @@ fun PlayerScreen(
                         if (visibleTracks.isEmpty()) return@PrimaryPillButton
                         queue.clear()
                         if (shuffleOn) {
-                            // Con shuffle, el orden real es shuffleOrder; usar visibleTracks.first()
-                            // desincroniza la cola del mini reproductor y deja pocos “siguientes”.
                             val base = visibleTracks.toMutableList()
+                            if (base.isEmpty()) return@PrimaryPillButton
                             shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
                             shuffleIndex = 0
-                            val first = shuffleOrder.first()
-                            queue.addAll(shuffleOrder.drop(1))
-                            playTrack(first, clearQueue = false)
+                            refreshShuffleQueueMirror()
+                            syncQueueToService()
+                            playTrack(shuffleOrder.first(), clearQueue = false)
                         } else {
                             val first = visibleTracks.first()
                             queue.addAll(visibleTracks.drop(1))
@@ -1396,12 +1412,11 @@ fun PlayerScreen(
                                 TextButton(onClick = {
                                     queue.clear()
                                     if (shuffleOn) {
-                                        // En shuffle, "limpiar" solo deja la canción actual
-                                        // y reconstruye shuffleOrder vacío tras el índice actual
                                         shuffleOrder = if (shuffleIndex >= 0 && shuffleIndex < shuffleOrder.size)
                                             listOf(shuffleOrder[shuffleIndex])
                                         else emptyList()
                                         shuffleIndex = 0
+                                        refreshShuffleQueueMirror()
                                     }
                                     syncQueueToService()
                                 }) {
@@ -1540,11 +1555,7 @@ fun PlayerScreen(
                                             // Saltar directamente a esta canción
                                             IconButton(
                                                 onClick = {
-                                                    if (shuffleOn) {
-                                                        // En shuffle: ajustar shuffleIndex al ítem pulsado
-                                                        val absIdx = shuffleOrder.indexOfFirst { it.id == t.id }
-                                                        if (absIdx >= 0) shuffleIndex = absIdx - 1
-                                                    } else {
+                                                    if (!shuffleOn) {
                                                         val remaining = queue.drop(idx + 1)
                                                         repeat(queue.size) { queue.removeAt(0) }
                                                         queue.addAll(remaining)
