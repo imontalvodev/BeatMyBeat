@@ -4,7 +4,9 @@ import android.app.Notification
 import android.app.Service
 import android.content.Intent
 import android.os.Binder
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -18,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.Executors
 import androidx.core.app.NotificationCompat
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
@@ -47,6 +50,8 @@ class PlaybackService : Service() {
     private val binder = LocalBinder()
     private lateinit var exoPlayer: ExoPlayer
     private lateinit var mediaSession: MediaSession
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val artworkExecutor = Executors.newSingleThreadExecutor()
 
     /** Referencia pública al player para seek directo desde la UI. */
     val player: ExoPlayer get() = exoPlayer
@@ -74,6 +79,8 @@ class PlaybackService : Service() {
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 pushState()
                 updateNotification()
+                scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
+                scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
             }
             override fun onPositionDiscontinuity(
                 old: Player.PositionInfo,
@@ -109,7 +116,7 @@ class PlaybackService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_TOGGLE_SHUFFLE -> {
-                exoPlayer.shuffleModeEnabled = !exoPlayer.shuffleModeEnabled
+                // Shuffle lo resuelve la UI con cola JSON preordenada; no activar shuffle de Media3.
                 updateNotification()
             }
             ACTION_CYCLE_REPEAT -> {
@@ -151,15 +158,22 @@ class PlaybackService : Service() {
      * Carga la cola y empieza a reproducir.
      * Llamado directamente desde la UI tras ligar el servicio.
      */
-    fun loadQueue(queueJson: String, startIndex: Int, shuffleEnabled: Boolean = false) {
+    /**
+     * @param shuffleEnabled ignorado: la cola JSON ya llega en el orden definitivo (incluido “shuffle” de la UI).
+     * Activar [Player.shuffleModeEnabled] encima de esa cola hace que Media3 reordene de nuevo y rompe
+     * [Player.hasNextMediaItem] / avance desde la notificación o el reproductor del sistema.
+     */
+    fun loadQueue(queueJson: String, startIndex: Int, @Suppress("UNUSED_PARAMETER") shuffleEnabled: Boolean = false) {
         val items = parseQueue(queueJson)
         if (items.isEmpty()) return
-        exoPlayer.shuffleModeEnabled = shuffleEnabled
+        exoPlayer.shuffleModeEnabled = false
         exoPlayer.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
         exoPlayer.prepare()
         exoPlayer.play()
         startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
         pushState()
+        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
+        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
     }
 
     /**
@@ -172,14 +186,44 @@ class PlaybackService : Service() {
      */
     fun syncNextItems(queueJson: String) {
         val newItems = parseQueue(queueJson)
-        val currentIdx = exoPlayer.currentMediaItemIndex.coerceAtLeast(0)
         val total = exoPlayer.mediaItemCount
+        // Sin cola en ExoPlayer (p. ej. usuario cambia de pestaña antes de reproducir):
+        // replaceMediaItems(current+1, 0, …) viola fromIndex <= toIndex y lanza IllegalArgumentException.
+        if (total == 0) return
+        val rawIdx = exoPlayer.currentMediaItemIndex
+        val currentIdx = if (rawIdx in 0 until total) rawIdx else 0
+        val fromIndex = currentIdx + 1
+        if (fromIndex > total) return
         exoPlayer.replaceMediaItems(
-            /* fromIndex = */ currentIdx + 1,
+            /* fromIndex = */ fromIndex,
             /* toIndex   = */ total,
             /* mediaItems= */ newItems,
         )
         updateNotification()
+        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
+        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
+    }
+
+    private fun scheduleArtworkForIndex(index: Int) {
+        if (index < 0 || index >= exoPlayer.mediaItemCount) return
+        val item = exoPlayer.getMediaItemAt(index)
+        val uri = item.localConfiguration?.uri ?: return
+        if (item.mediaMetadata.artworkData != null) return
+        val mediaId = item.mediaId
+        val uriStr = uri.toString()
+        artworkExecutor.execute {
+            val bytes = PlaybackArtworkHelper.resolveArtworkBytes(this@PlaybackService, uriStr) ?: return@execute
+            mainHandler.post {
+                if (index >= exoPlayer.mediaItemCount) return@post
+                val current = exoPlayer.getMediaItemAt(index)
+                if (current.mediaId != mediaId) return@post
+                if (current.mediaMetadata.artworkData != null) return@post
+                val newMeta = current.mediaMetadata.withArtworkBytes(bytes)
+                val updated = current.buildUpon().setMediaMetadata(newMeta).build()
+                exoPlayer.replaceMediaItem(index, updated)
+                if (index == exoPlayer.currentMediaItemIndex) updateNotification()
+            }
+        }
     }
 
     /**
@@ -271,6 +315,7 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        artworkExecutor.shutdownNow()
         mediaSession.release()
         exoPlayer.release()
         _state.value = PlaybackState()
@@ -289,4 +334,14 @@ class PlaybackService : Service() {
         private val _state = MutableStateFlow(PlaybackState())
         val state: StateFlow<PlaybackState> = _state.asStateFlow()
     }
+}
+
+private fun MediaMetadata.withArtworkBytes(bytes: ByteArray): MediaMetadata {
+    val b = MediaMetadata.Builder()
+    title?.let { b.setTitle(it) }
+    artist?.let { b.setArtist(it) }
+    albumTitle?.let { b.setAlbumTitle(it) }
+    albumArtist?.let { b.setAlbumArtist(it) }
+    displayTitle?.let { b.setDisplayTitle(it) }
+    return b.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER).build()
 }

@@ -294,11 +294,6 @@ fun PlayerScreen(
         isExpanded = false
     }
 
-    // Mantener el shuffle del servicio (notificación) en sincronía con la UI.
-    LaunchedEffect(boundService, shuffleOn) {
-        boundService?.player?.shuffleModeEnabled = shuffleOn
-    }
-
     // Mantener el repeat del servicio (reproducción real) en sincronía con la UI.
     LaunchedEffect(boundService, repeatMode) {
         val player = boundService?.player ?: return@LaunchedEffect
@@ -388,15 +383,6 @@ fun PlayerScreen(
         )
     }
 
-    // Al cambiar de sección/playlist limpiamos la cola para evitar saltos raros
-    LaunchedEffect(selectedSection, selectedPlaylistId) {
-        queue.clear()
-        syncQueueToService()
-        queueRepeatSnapshot = emptyList()
-        queueRepeatIndex = -1
-        selectedTrackIds = emptySet()
-    }
-
     var queueSheetOpen by remember { mutableStateOf(false) }
     var addToPlaylistDialogOpen by remember { mutableStateOf(false) }
     var addToPlaylistTracks by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
@@ -463,29 +449,12 @@ fun PlayerScreen(
         }
 
         val loaded = withContext(Dispatchers.IO) {
-            // 1) Tags embebidos en el archivo
-            val embedded = runCatching {
-                val retriever = MediaMetadataRetriever()
-                try {
-                    retriever.setDataSource(context, Uri.parse(currentTrack!!.uri))
-                    val data = retriever.embeddedPicture
-                    if (data != null) BitmapFactory.decodeByteArray(data, 0, data.size) else null
-                } finally { retriever.release() }
-            }.getOrNull()
-
-            if (embedded != null) return@withContext embedded
-
-            // 2) Fallback: artworkBase64 en el .meta.json del .music privado
-            runCatching {
-                val uri = Uri.parse(currentTrack!!.uri)
-                val audioFile = java.io.File(uri.path ?: return@runCatching null)
-                val metaFile = java.io.File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.meta.json")
-                if (!metaFile.exists()) return@runCatching null
-                val b64 = org.json.JSONObject(metaFile.readText()).optString("artworkBase64")
-                if (b64.isBlank()) return@runCatching null
-                val bytes = android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }.getOrNull()
+            val bytes = com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
+                .resolveArtworkBytes(context, currentTrack!!.uri)
+            if (bytes != null && bytes.isNotEmpty()) {
+                return@withContext BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }
+            null
         }
 
         currentArtwork = loaded
@@ -641,9 +610,7 @@ fun PlayerScreen(
     fun onToggleShuffle() {
         val next = !shuffleOn
         shuffleOn = next
-        // Sincronizar con ExoPlayer (servicio/notificación) para que Next/Prev
-        // en la barra del sistema respete el mismo modo aleatorio que la UI.
-        boundService?.player?.shuffleModeEnabled = next
+        // El orden aleatorio va en la cola JSON (syncQueueToService / playTrack); ExoPlayer queda lineal.
         if (shuffleOn) {
             queueRepeatSnapshot = emptyList()
             queueRepeatIndex = -1
@@ -701,6 +668,16 @@ fun PlayerScreen(
         val id = currentTrack?.id
         shuffleIndex = if (id == null) -1 else shuffleOrder.indexOfFirst { it.id == id }
         if (shuffleIndex < 0 && shuffleOrder.isNotEmpty()) shuffleIndex = 0
+    }
+
+    // Después de regenerar shuffleOrder (efecto anterior), limpiamos cola local y
+    // sincronizamos ExoPlayer para no enviar un orden aleatorio obsoleto de otra sección.
+    LaunchedEffect(selectedSection, selectedPlaylistId) {
+        queue.clear()
+        syncQueueToService()
+        queueRepeatSnapshot = emptyList()
+        queueRepeatIndex = -1
+        selectedTrackIds = emptySet()
     }
 
     fun playTrack(track: DeviceTrack, clearQueue: Boolean = false) {
@@ -1076,15 +1053,24 @@ fun PlayerScreen(
                     text = "PLAY ALL TRACKS",
                     onClick = {
                         if (visibleTracks.isEmpty()) return@PrimaryPillButton
-                        val first = visibleTracks.first()
-                        // Añadimos a la cola ANTES de playTrack para que loadQueue
-                        // ya incluya todos los temas en su primera llamada al servicio.
-                        queue.addAll(visibleTracks.drop(1))
-                        playTrack(first, clearQueue = false)
-                        if (!shuffleOn && repeatMode == RepeatMode.LIST) {
-                            // Cola completa = [cancion actual] + resto
-                            queueRepeatSnapshot = listOf(first) + queue.toList()
-                            queueRepeatIndex = 0
+                        queue.clear()
+                        if (shuffleOn) {
+                            // Con shuffle, el orden real es shuffleOrder; usar visibleTracks.first()
+                            // desincroniza la cola del mini reproductor y deja pocos “siguientes”.
+                            val base = visibleTracks.toMutableList()
+                            shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
+                            shuffleIndex = 0
+                            val first = shuffleOrder.first()
+                            queue.addAll(shuffleOrder.drop(1))
+                            playTrack(first, clearQueue = false)
+                        } else {
+                            val first = visibleTracks.first()
+                            queue.addAll(visibleTracks.drop(1))
+                            playTrack(first, clearQueue = false)
+                            if (repeatMode == RepeatMode.LIST) {
+                                queueRepeatSnapshot = listOf(first) + queue.toList()
+                                queueRepeatIndex = 0
+                            }
                         }
                     },
                 )
