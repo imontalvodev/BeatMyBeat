@@ -2,3 +2,4 @@
 !app/
 !app/**
 !.gitignore
+*.apk

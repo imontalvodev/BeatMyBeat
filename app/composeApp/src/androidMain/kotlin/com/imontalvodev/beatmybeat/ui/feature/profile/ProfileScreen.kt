@@ -38,6 +38,7 @@ fun ProfileScreen(
     onCustomizeText: () -> Unit = {},
     storageLocationLabel: String = "Music/BeatMyBeat/",
     onPickStorageLocation: () -> Unit = {},
+    onOpenStorageFolder: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val palette = currentBeatMyBeatThemeProfile()
@@ -95,6 +96,12 @@ fun ProfileScreen(
                 label = "Ubicación de canciones",
                 subtitle = storageLocationLabel,
                 onClick = onPickStorageLocation,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ProfileOption(
+                label = "Ver carpeta de canciones",
+                subtitle = "Abrir en explorador de archivos",
+                onClick = onOpenStorageFolder,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(label = "Personalizar fondo", onClick = onCustomizeBackground)

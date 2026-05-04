@@ -17,6 +17,20 @@ import java.util.zip.ZipInputStream
 import java.util.concurrent.TimeUnit
 
 object AudioDownloader {
+    enum class DownloadFormat(val id: String, val extension: String, val label: String) {
+        MP3("mp3", "mp3", "MP3"),
+        M4A("m4a", "m4a", "M4A"),
+        AAC("aac", "aac", "AAC"),
+        OGG("ogg", "ogg", "OGG"),
+        FLAC("flac", "flac", "FLAC"),
+        WAV("wav", "wav", "WAV");
+
+        companion object {
+            fun fromId(raw: String?): DownloadFormat =
+                entries.firstOrNull { it.id.equals(raw.orEmpty(), ignoreCase = true) } ?: MP3
+        }
+    }
+
     data class DownloadResult(
         val success: Boolean,
         val fileName: String?,
@@ -35,9 +49,11 @@ object AudioDownloader {
         title: String,
         artist: String,
         album: String,
+        format: DownloadFormat = DownloadFormat.MP3,
         imageUrl: String = "",
         videoId: String = "",
         thumbnailUrl: String = "",
+        onPhaseUpdate: ((phase: String) -> Unit)? = null,
     ): DownloadResult = withContext(Dispatchers.IO) {
         val safeTitle = title.trim()
         val safeArtist = artist.trim()
@@ -48,6 +64,7 @@ object AudioDownloader {
         )
         try {
             // --- Paso 1: resolver videoId y thumbnail si no se proporcionaron ---
+            onPhaseUpdate?.invoke("Buscando vídeo…")
             var resolvedThumbnail = thumbnailUrl
             val resolvedVideoId = if (videoId.length == 11) {
                 videoId
@@ -67,6 +84,7 @@ object AudioDownloader {
             android.util.Log.d("NewPipeStream", "title='$safeTitle' artist='$safeArtist' thumbnail='$resolvedThumbnail'")
 
             // --- Paso 2: extraer URL de stream con NewPipe ---
+            onPhaseUpdate?.invoke("Obteniendo enlace de audio…")
             val streamInfo = try {
                 NewPipeStreamExtractor.extractBestAudioStream(resolvedVideoId)
             } catch (e: Exception) {
@@ -76,6 +94,7 @@ object AudioDownloader {
             }
 
             // --- Paso 3: descargar por rangos para evitar bloqueo con streams chunked ---
+            onPhaseUpdate?.invoke("Descargando audio…")
             val sourceExt = when {
                 streamInfo.mimeType.contains("mp4") || streamInfo.mimeType.contains("m4a") -> "m4a"
                 streamInfo.mimeType.contains("webm") || streamInfo.mimeType.contains("opus") -> "webm"
@@ -83,10 +102,11 @@ object AudioDownloader {
             }
             val baseName = safeTitle.ifBlank { "track" }.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180)
             val tempFileName = "${baseName}.source.$sourceExt"
-            val fileName = "${baseName}.mp3"
+            val fileName = "${baseName}.${format.extension}"
             val dir = File(context.cacheDir, ".music_tmp").also { if (!it.exists()) it.mkdirs() }
             val tempFile = File(dir, tempFileName)
             val outFile = File(dir, fileName)
+            val masterMp3 = File(dir, "${baseName}.master.mp3")
 
             android.util.Log.d("NewPipeStream", "Downloading: ${streamInfo.url.take(100)} mimeType=${streamInfo.mimeType}")
 
@@ -136,6 +156,10 @@ object AudioDownloader {
                     out.write(bytes)
                     totalWritten += bytes.size
                     offset += bytes.size
+                    if (totalBytes > 0) {
+                        val pct = (totalWritten * 100L / totalBytes).toInt().coerceIn(0, 99)
+                        onPhaseUpdate?.invoke("Descargando audio… $pct%")
+                    }
                     if (bytes.size < chunkSize) break
                 }
                 out.flush()
@@ -149,8 +173,10 @@ object AudioDownloader {
                 return@withContext DownloadResult(false, null, "ZeroBytes")
             }
 
-            // --- Paso 4: convertir a MP3 con FFmpeg ---
+            // --- Paso 4: crear MP3 master con metadata/carátula ---
+            onPhaseUpdate?.invoke("Procesando metadatos…")
             outFile.delete()
+            masterMp3.delete()
             val artworkBytes = fetchArtworkBytes(resolvedThumbnail, downloadClient)
             val artworkFile = artworkBytes?.let {
                 File(dir, "${baseName}.cover.jpg").also { f -> f.writeBytes(it) }
@@ -158,33 +184,74 @@ object AudioDownloader {
             val escapedTitle = ffmpegEscape(safeTitle.ifBlank { "Track" })
             val escapedArtist = ffmpegEscape(safeArtist.ifBlank { "Unknown artist" })
             val escapedAlbum = ffmpegEscape(album.trim().ifBlank { safeTitle.ifBlank { "BeatMyBeat" } })
-            val ffmpegCmd = if (artworkFile != null && artworkFile.exists()) {
-                "-y -i \"${tempFile.absolutePath}\" -i \"${artworkFile.absolutePath}\" " +
-                    "-map 0:a -map 1:v -c:a mp3 -b:a 192k -c:v mjpeg -id3v2_version 3 " +
-                    "-metadata title=\"$escapedTitle\" -metadata artist=\"$escapedArtist\" -metadata album=\"$escapedAlbum\" " +
-                    "-metadata:s:v title=\"Album cover\" -metadata:s:v comment=\"Cover (front)\" " +
-                    "\"${outFile.absolutePath}\""
-            } else {
-                "-y -i \"${tempFile.absolutePath}\" -vn -c:a mp3 -b:a 192k -id3v2_version 3 " +
-                    "-metadata title=\"$escapedTitle\" -metadata artist=\"$escapedArtist\" -metadata album=\"$escapedAlbum\" " +
-                    "\"${outFile.absolutePath}\""
-            }
-            val ffmpegSession = FFmpegKit.execute(ffmpegCmd)
-            val ffmpegRc = ffmpegSession.returnCode
-            if (!ReturnCode.isSuccess(ffmpegRc) || !outFile.exists() || outFile.length() <= 0L) {
+            val masterCmd = buildMp3MasterCommand(
+                inputPath = tempFile.absolutePath,
+                outputPath = masterMp3.absolutePath,
+                artworkPath = artworkFile?.takeIf { it.exists() }?.absolutePath,
+                escapedTitle = escapedTitle,
+                escapedArtist = escapedArtist,
+                escapedAlbum = escapedAlbum,
+            )
+            val masterSession = FFmpegKit.execute(masterCmd)
+            val masterRc = masterSession.returnCode
+            if (!ReturnCode.isSuccess(masterRc) || !masterMp3.exists() || masterMp3.length() <= 0L) {
                 tempFile.delete()
                 artworkFile?.delete()
                 outFile.delete()
-                BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo convertir el audio a MP3.")
-                return@withContext DownloadResult(false, null, "FfmpegConvertFailed:${ffmpegRc?.value}")
+                masterMp3.delete()
+                BeatMyBeatNotification.showDownloadFailed(
+                    context,
+                    "Error en la descarga",
+                    "No se pudo crear el archivo master de audio.",
+                )
+                return@withContext DownloadResult(false, null, "FfmpegMasterFailed:${masterRc?.value}")
+            }
+            // Reutilizamos la lógica existente para sidecar/artwork metadata.
+            runCatching {
+                embedMetadata(masterMp3, safeTitle, safeArtist, album.trim(), resolvedThumbnail, downloadClient)
+            }.onFailure { android.util.Log.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
+
+            // --- Paso 5: si no es MP3, convertir desde master al formato final ---
+            onPhaseUpdate?.invoke("Convirtiendo a ${format.label}…")
+            if (format == DownloadFormat.MP3) {
+                masterMp3.copyTo(outFile, overwrite = true)
+            } else {
+                val finalCmd = buildFormatFromMasterCommand(
+                    masterPath = masterMp3.absolutePath,
+                    outputPath = outFile.absolutePath,
+                    format = format,
+                    artworkPath = artworkFile?.takeIf { it.exists() }?.absolutePath,
+                    escapedTitle = escapedTitle,
+                    escapedArtist = escapedArtist,
+                    escapedAlbum = escapedAlbum,
+                )
+                val finalSession = FFmpegKit.execute(finalCmd)
+                val finalRc = finalSession.returnCode
+                if (!ReturnCode.isSuccess(finalRc) || !outFile.exists() || outFile.length() <= 0L) {
+                    tempFile.delete()
+                    artworkFile?.delete()
+                    outFile.delete()
+                    masterMp3.delete()
+                    BeatMyBeatNotification.showDownloadFailed(
+                        context,
+                        "Error en la descarga",
+                        "No se pudo convertir el audio a ${format.label}.",
+                    )
+                    return@withContext DownloadResult(false, null, "FfmpegFinalFailed:${finalRc?.value}")
+                }
+                // Renombrar sidecar del master para que acompañe al archivo final.
+                val masterMeta = File(masterMp3.parentFile, "${masterMp3.nameWithoutExtension}.meta.json")
+                if (masterMeta.exists()) {
+                    val finalMeta = File(outFile.parentFile, "${outFile.nameWithoutExtension}.meta.json")
+                    runCatching {
+                        if (finalMeta.exists()) finalMeta.delete()
+                        masterMeta.copyTo(finalMeta, overwrite = true)
+                    }
+                }
             }
             tempFile.delete()
             artworkFile?.delete()
-
-            // --- Paso 5: embeber metadatos en el archivo ---
-            runCatching {
-                embedMetadata(outFile, safeTitle, safeArtist, album.trim(), resolvedThumbnail, downloadClient)
-            }.onFailure { android.util.Log.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
+            masterMp3.delete()
 
             val savedName = StorageSettings.saveAudioFromFile(
                 context = context,
@@ -513,6 +580,66 @@ object AudioDownloader {
     }
 
     private fun ffmpegEscape(raw: String): String = raw.replace("\"", "\\\"")
+
+    private fun buildMp3MasterCommand(
+        inputPath: String,
+        outputPath: String,
+        artworkPath: String?,
+        escapedTitle: String,
+        escapedArtist: String,
+        escapedAlbum: String,
+    ): String {
+        val metadata = "-metadata title=\"$escapedTitle\" -metadata artist=\"$escapedArtist\" -metadata album=\"$escapedAlbum\""
+        return if (!artworkPath.isNullOrBlank()) {
+            "-y -i \"$inputPath\" -i \"$artworkPath\" " +
+                "-map 0:a -map 1:v -c:a mp3 -b:a 192k -c:v mjpeg -id3v2_version 3 " +
+                "$metadata -metadata:s:v title=\"Album cover\" -metadata:s:v comment=\"Cover (front)\" " +
+                "\"$outputPath\""
+        } else {
+            "-y -i \"$inputPath\" -vn -c:a mp3 -b:a 192k -id3v2_version 3 $metadata \"$outputPath\""
+        }
+    }
+
+    private fun buildFormatFromMasterCommand(
+        masterPath: String,
+        outputPath: String,
+        format: DownloadFormat,
+        artworkPath: String?,
+        escapedTitle: String,
+        escapedArtist: String,
+        escapedAlbum: String,
+    ): String {
+        val metadata = "-metadata title=\"$escapedTitle\" -metadata artist=\"$escapedArtist\" -metadata album=\"$escapedAlbum\""
+        return when (format) {
+            DownloadFormat.MP3 ->
+                "-y -i \"$masterPath\" -vn -c:a mp3 -b:a 192k -id3v2_version 3 $metadata \"$outputPath\""
+            DownloadFormat.M4A -> {
+                if (!artworkPath.isNullOrBlank()) {
+                    "-y -i \"$masterPath\" -i \"$artworkPath\" " +
+                        "-map 0:a -map 1:v -map_metadata 0 -c:a aac -b:a 192k -c:v mjpeg -disposition:v:0 attached_pic " +
+                        "$metadata \"$outputPath\""
+                } else {
+                    "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a aac -b:a 192k $metadata \"$outputPath\""
+                }
+            }
+            DownloadFormat.AAC ->
+                "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a aac -b:a 192k -f adts $metadata \"$outputPath\""
+            DownloadFormat.OGG ->
+                "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a libvorbis -q:a 5 $metadata \"$outputPath\""
+            DownloadFormat.FLAC -> {
+                if (!artworkPath.isNullOrBlank()) {
+                    // FLAC requiere insertar explícitamente la portada en la conversión final.
+                    "-y -i \"$masterPath\" -i \"$artworkPath\" " +
+                        "-map 0:a -map 1:v -map_metadata 0 -c:a flac -c:v mjpeg -disposition:v:0 attached_pic " +
+                        "$metadata \"$outputPath\""
+                } else {
+                    "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a flac $metadata \"$outputPath\""
+                }
+            }
+            DownloadFormat.WAV ->
+                "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a pcm_s16le $metadata \"$outputPath\""
+        }
+    }
 
 }
 

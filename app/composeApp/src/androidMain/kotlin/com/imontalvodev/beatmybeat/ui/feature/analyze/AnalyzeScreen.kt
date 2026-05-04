@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -93,6 +94,7 @@ fun AnalyzeScreen(
     var playlistDownloadDone by remember { mutableStateOf(0) }
     var playlistDownloadFailed by remember { mutableStateOf(0) }
     var playlistCurrentTitle by remember { mutableStateOf("") }
+    var selectedFormat by remember { mutableStateOf(AudioDownloader.DownloadFormat.MP3) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -211,6 +213,27 @@ fun AnalyzeScreen(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Formato de descarga",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        AudioDownloader.DownloadFormat.entries.forEach { format ->
+                            ModeChip(
+                                text = format.label,
+                                selected = selectedFormat == format,
+                                onClick = { selectedFormat = format },
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(20.dp))
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -317,6 +340,7 @@ fun AnalyzeScreen(
                                                             title = metadata.title,
                                                             artist = metadata.artist,
                                                             album = "",
+                                                            format = selectedFormat,
                                                             videoId = videoId,
                                                             thumbnailUrl = metadata.thumbnailUrl,
                                                         )
@@ -367,11 +391,12 @@ fun AnalyzeScreen(
                                                     album = "",
                                                     videoId = parsed.videoId,
                                                     thumbnailUrl = metadata.thumbnailUrl,
+                                                    format = selectedFormat,
                                                 )
                                                 songDownloadInfo = if (BeatMyBeatNotification.canPostNotifications(context)) {
-                                                    "Descarga de canción iniciada en segundo plano."
+                                                    "Descarga (${selectedFormat.label}) iniciada en segundo plano."
                                                 } else {
-                                                    "Descarga iniciada sin notificaciones (permiso denegado)."
+                                                    "Descarga (${selectedFormat.label}) iniciada sin notificaciones (permiso denegado)."
                                                 }
                                             }
                                         }
@@ -550,12 +575,13 @@ fun AnalyzeScreen(
                                     album = "",
                                     videoId = suggestion.videoId,
                                     thumbnailUrl = suggestion.thumbnailUrl,
+                                    format = selectedFormat,
                                 )
                                 selectedSuggestion = null
                                 songDownloadInfo = if (BeatMyBeatNotification.canPostNotifications(context)) {
-                                    "Descarga de canción iniciada en segundo plano."
+                                    "Descarga (${selectedFormat.label}) iniciada en segundo plano."
                                 } else {
-                                    "Descarga iniciada sin notificaciones (permiso denegado)."
+                                    "Descarga (${selectedFormat.label}) iniciada sin notificaciones (permiso denegado)."
                                 }
                             } catch (e: Exception) {
                                 android.util.Log.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
