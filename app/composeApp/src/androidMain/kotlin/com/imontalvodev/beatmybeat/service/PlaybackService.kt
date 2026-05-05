@@ -1,6 +1,7 @@
 package com.imontalvodev.beatmybeat.service
 
 import android.app.Notification
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.Binder
@@ -13,6 +14,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.imontalvodev.beatmybeat.MainActivity
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,7 +73,9 @@ class PlaybackService : Service() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        mediaSession = MediaSession.Builder(this, exoPlayer).build()
+        mediaSession = MediaSession.Builder(this, exoPlayer)
+            .setSessionActivity(buildContentIntent())
+            .build()
 
         exoPlayer.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) = pushState()
@@ -277,6 +281,7 @@ class PlaybackService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(artist)
+            .setContentIntent(buildContentIntent())
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setOngoing(isPlaying)
@@ -292,6 +297,14 @@ class PlaybackService : Service() {
                     .setShowActionsInCompactView(0, 1, 2),
             )
             .build()
+    }
+
+    private fun buildContentIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getActivity(this, 1000, intent, flags)
     }
 
     private fun parseQueue(json: String): List<MediaItem> {

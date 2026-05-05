@@ -92,6 +92,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -536,6 +537,12 @@ fun PlayerScreen(
     // (Helper eliminado: ya no se usa en el fallback de letras bajo demanda)
 
     val bgBrush = Brush.verticalGradient(colors = listOf(palette.backgroundTop, palette.backgroundBottom))
+    val cannotPlayFileText = stringResource(R.string.player_error_cannot_play_file)
+    val songDeletedText = stringResource(R.string.player_song_deleted)
+    val deleteCancelledText = stringResource(R.string.player_delete_cancelled)
+    val selectionModeEnabledText = stringResource(R.string.player_selection_mode_enabled)
+    val queueAddedText = stringResource(R.string.player_added_to_queue_end)
+    val playNextAddedText = stringResource(R.string.player_play_next_added)
 
     val visibleTracks = remember(deviceTracks, favoriteIds, playlists, selectedPlaylistId, query, selectedSection) {
         val trackById = deviceTracks.associateBy { it.id }
@@ -741,7 +748,38 @@ fun PlayerScreen(
                 }
             }
         } catch (e: Exception) {
-            Toast.makeText(context, "No se pudo reproducir este archivo.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, cannotPlayFileText, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun startPlaybackFromCollection(startTrack: DeviceTrack) {
+        val pool = visibleTracks.toList()
+        if (pool.isEmpty()) return
+        queueRepeatSnapshot = emptyList()
+        queueRepeatIndex = -1
+        if (shuffleOn) {
+            shuffleOrder = pool.shuffled(Random(System.currentTimeMillis()))
+            var startIndex = shuffleOrder.indexOfFirst { it.id == startTrack.id }
+            if (startIndex < 0) {
+                shuffleOrder = (listOf(startTrack) + pool.filterNot { it.id == startTrack.id })
+                    .shuffled(Random(System.currentTimeMillis()))
+                startIndex = shuffleOrder.indexOfFirst { it.id == startTrack.id }
+            }
+            if (startIndex < 0) startIndex = 0
+            shuffleIndex = startIndex
+            refreshShuffleQueueMirror()
+            syncQueueToService()
+            playTrack(shuffleOrder[shuffleIndex], clearQueue = false)
+            return
+        }
+
+        val startIndex = pool.indexOfFirst { it.id == startTrack.id }.coerceAtLeast(0)
+        queue.clear()
+        queue.addAll(pool.drop(startIndex + 1))
+        playTrack(pool[startIndex], clearQueue = false)
+        if (repeatMode == RepeatMode.LIST) {
+            queueRepeatSnapshot = listOf(pool[startIndex]) + queue.toList()
+            queueRepeatIndex = 0
         }
     }
 
@@ -873,7 +911,7 @@ fun PlayerScreen(
             BeatMyBeatForegroundService.stopPlayback(context)
         }
         viewModel.syncLibrary(auto = true)
-        if (showToast) Toast.makeText(context, "Canción eliminada.", Toast.LENGTH_SHORT).show()
+        if (showToast) Toast.makeText(context, songDeletedText, Toast.LENGTH_SHORT).show()
     }
 
     val deletionApprovalLauncher = rememberLauncherForActivityResult(
@@ -883,7 +921,7 @@ fun PlayerScreen(
             if (result.resultCode == Activity.RESULT_OK) {
                 finishDeletion(track)
             } else {
-                Toast.makeText(context, "Eliminación cancelada.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, deleteCancelledText, Toast.LENGTH_SHORT).show()
             }
             pendingDeleteTrack = null
         },
@@ -984,18 +1022,18 @@ fun PlayerScreen(
                     ) {
                         Text(
                             text = when (selectedSection) {
-                                PlayerSection.Songs -> "LISTA CANCIONES"
-                                PlayerSection.Favorites -> "FAVORITOS"
+                                PlayerSection.Songs -> stringResource(R.string.player_header_songs)
+                                PlayerSection.Favorites -> stringResource(R.string.player_header_favorites)
                                 PlayerSection.Playlist -> {
                                     val name = playlists.firstOrNull { it.id == selectedPlaylistId }?.name
-                                    name ?: "PLAYLIST"
+                                    name ?: stringResource(R.string.player_header_playlist_fallback)
                                 }
                             },
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = "Downloader",
+                            text = stringResource(R.string.player_downloader_button),
                             modifier = Modifier
                                 .background(
                                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
@@ -1032,7 +1070,7 @@ fun PlayerScreen(
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("Buscador") },
+                    placeholder = { Text(stringResource(R.string.player_search_placeholder)) },
                     shape = RoundedCornerShape(18.dp),
                 )
 
@@ -1060,34 +1098,22 @@ fun PlayerScreen(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                         )
                         TextButton(onClick = { clearTrackSelection() }) {
-                            Text("Cancelar")
+                            Text(stringResource(R.string.common_cancel))
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
                 PrimaryPillButton(
-                    text = "PLAY ALL TRACKS",
+                    text = stringResource(R.string.player_play_all_tracks),
                     onClick = {
                         if (visibleTracks.isEmpty()) return@PrimaryPillButton
-                        queue.clear()
-                        if (shuffleOn) {
-                            val base = visibleTracks.toMutableList()
-                            if (base.isEmpty()) return@PrimaryPillButton
-                            shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
-                            shuffleIndex = 0
-                            refreshShuffleQueueMirror()
-                            syncQueueToService()
-                            playTrack(shuffleOrder.first(), clearQueue = false)
+                        val startTrack = if (shuffleOn) {
+                            visibleTracks.shuffled(Random(System.currentTimeMillis())).first()
                         } else {
-                            val first = visibleTracks.first()
-                            queue.addAll(visibleTracks.drop(1))
-                            playTrack(first, clearQueue = false)
-                            if (repeatMode == RepeatMode.LIST) {
-                                queueRepeatSnapshot = listOf(first) + queue.toList()
-                                queueRepeatIndex = 0
-                            }
+                            visibleTracks.first()
                         }
+                        startPlaybackFromCollection(startTrack)
                     },
                 )
 
@@ -1158,7 +1184,7 @@ fun PlayerScreen(
                                 if (!wasSelectionMode) {
                                     Toast.makeText(
                                         context,
-                                        "Modo selección activado.",
+                                        selectionModeEnabledText,
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 }
@@ -1167,7 +1193,7 @@ fun PlayerScreen(
                                 if (selectionMode) {
                                     toggleTrackSelection(track.id)
                                 } else {
-                                    playTrack(track, clearQueue = true)
+                                    startPlaybackFromCollection(track)
                                 }
                             },
                             onQueue = {
@@ -1184,7 +1210,7 @@ fun PlayerScreen(
                                         }
                                     }
                                 }
-                                Toast.makeText(context, "Añadido al final de la cola.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, queueAddedText, Toast.LENGTH_SHORT).show()
                             },
                             onPlayNext = {
                                 queue.add(0, track)
@@ -1203,7 +1229,7 @@ fun PlayerScreen(
                                         }
                                     }
                                 }
-                                Toast.makeText(context, "Reproducirá a continuación.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, playNextAddedText, Toast.LENGTH_SHORT).show()
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(track) },
                             onAddToPlaylist = {
@@ -1697,7 +1723,7 @@ fun PlayerScreen(
                                     duplicateDialog = null
                                 },
                             ) {
-                                Text("Cancelar")
+                                Text(stringResource(R.string.common_cancel))
                             }
                             TextButton(
                                 onClick = {
@@ -1881,7 +1907,7 @@ fun PlayerScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { playlistDeleteDialogId = null }) {
-                            Text("Cancelar")
+                            Text(stringResource(R.string.common_cancel))
                         }
                     },
                 )
@@ -1935,7 +1961,7 @@ fun PlayerScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { playlistRenameDialogId = null }) {
-                            Text("Cancelar")
+                            Text(stringResource(R.string.common_cancel))
                         }
                     },
                 )
@@ -2247,17 +2273,17 @@ private fun SectionChips(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SectionChip(
-            text = "Canciones",
+            text = stringResource(R.string.player_section_songs),
             selected = selected == PlayerSection.Songs,
             onClick = { onSelect(PlayerSection.Songs) },
         )
         SectionChip(
-            text = "Favoritos",
+            text = stringResource(R.string.player_section_favorites),
             selected = selected == PlayerSection.Favorites,
             onClick = { onSelect(PlayerSection.Favorites) },
         )
         SectionChip(
-            text = "Playlist",
+            text = stringResource(R.string.player_section_playlist),
             selected = selected == PlayerSection.Playlist,
             onClick = { onSelect(PlayerSection.Playlist) },
         )
@@ -2917,22 +2943,22 @@ private fun SortOptionsBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SortChip(
-            text = "Nombre A-Z",
+            text = stringResource(R.string.player_sort_name_asc),
             selected = selected == SortOption.NAME_ASC,
             onClick = { onSelect(SortOption.NAME_ASC) },
         )
         SortChip(
-            text = "Nombre Z-A",
+            text = stringResource(R.string.player_sort_name_desc),
             selected = selected == SortOption.NAME_DESC,
             onClick = { onSelect(SortOption.NAME_DESC) },
         )
         SortChip(
-            text = "Recientes",
+            text = stringResource(R.string.player_sort_recent),
             selected = selected == SortOption.NEWEST_FIRST,
             onClick = { onSelect(SortOption.NEWEST_FIRST) },
         )
         SortChip(
-            text = "Antiguas",
+            text = stringResource(R.string.player_sort_oldest),
             selected = selected == SortOption.OLDEST_FIRST,
             onClick = { onSelect(SortOption.OLDEST_FIRST) },
         )

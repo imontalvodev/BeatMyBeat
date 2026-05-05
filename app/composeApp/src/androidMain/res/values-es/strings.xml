@@ -3,7 +3,6 @@
     <string name="common_cancel">Cancelar</string>
     <string name="common_apply">Aplicar</string>
     <string name="common_delete">Borrar</string>
-
     <string name="player_play_all_tracks">PLAY ALL TRACKS</string>
     <string name="player_header_songs">LISTA CANCIONES</string>
     <string name="player_header_favorites">FAVORITOS</string>
@@ -23,13 +22,11 @@
     <string name="player_error_cannot_play_file">No se pudo reproducir este archivo.</string>
     <string name="player_song_deleted">Canción eliminada.</string>
     <string name="player_delete_cancelled">Eliminación cancelada.</string>
-
     <string name="download_song_title">Descargando canción</string>
     <string name="download_processing">Procesando...</string>
     <string name="download_song_error">Error descargando canción.</string>
     <string name="download_song_success">Descargada (%1$s): %2$s</string>
     <string name="download_song_failed">No se pudo descargar la canción.</string>
-
     <string name="analyze_go_to_player">Ir al reproductor</string>
     <string name="analyze_tab_playlist">Playlist</string>
     <string name="analyze_tab_song">Song</string>
@@ -42,7 +39,6 @@
     <string name="analyze_cta_song">ANALYZE SONG</string>
     <string name="analyze_cta_downloading">DESCARGANDO...</string>
     <string name="analyze_cta_playlist">ANALYZE PLAYLIST</string>
-
     <string name="theme_tab_background">Fondo</string>
     <string name="theme_tab_text">Texto</string>
     <string name="theme_customize_background">Personalizar fondo y acentos</string>

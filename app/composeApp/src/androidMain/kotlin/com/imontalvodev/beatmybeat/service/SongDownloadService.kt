@@ -9,6 +9,7 @@ import android.os.Looper
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
@@ -39,8 +40,8 @@ class SongDownloadService : Service() {
                     BeatMyBeatNotification.DOWNLOAD_NOTIFICATION_ID,
                     BeatMyBeatNotification.buildDownloadInProgressNotification(
                         context = this,
-                        title = "Descargando canción",
-                        subtitle = title.ifBlank { "Procesando..." },
+                        title = getString(R.string.download_song_title),
+                        subtitle = title.ifBlank { getString(R.string.download_processing) },
                     ),
                 )
             }
@@ -64,7 +65,7 @@ class SongDownloadService : Service() {
                                     BeatMyBeatNotification.DOWNLOAD_NOTIFICATION_ID,
                                     BeatMyBeatNotification.buildDownloadInProgressNotification(
                                         context = this@SongDownloadService,
-                                        title = title.ifBlank { "Descargando canción" },
+                                        title = title.ifBlank { getString(R.string.download_song_title) },
                                         subtitle = phase,
                                     ),
                                 )
@@ -75,9 +76,13 @@ class SongDownloadService : Service() {
             }.getOrNull()
             Handler(Looper.getMainLooper()).post {
                 val msg = when {
-                    result == null -> "Error descargando canción."
-                    result.success -> "Descargada (${format.label}): ${result.fileName ?: title}"
-                    else -> "No se pudo descargar la canción."
+                    result == null -> getString(R.string.download_song_error)
+                    result.success -> getString(
+                        R.string.download_song_success,
+                        format.label,
+                        (result.fileName ?: title),
+                    )
+                    else -> getString(R.string.download_song_failed)
                 }
                 Toast.makeText(this@SongDownloadService, msg, Toast.LENGTH_SHORT).show()
             }

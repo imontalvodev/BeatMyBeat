@@ -15,12 +15,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,7 +39,7 @@ import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 
 @Composable
 fun ProfileScreen(
-    onChangeLanguage: () -> Unit = {},
+    onChangeLanguage: (languageTag: String) -> Unit = {},
     onCustomizeBackground: () -> Unit = {},
     onCustomizeText: () -> Unit = {},
     storageLocationLabel: String = "Music/BeatMyBeat/",
@@ -45,6 +51,17 @@ fun ProfileScreen(
     val bgBrush = Brush.verticalGradient(
         colors = listOf(palette.backgroundTop, palette.backgroundBottom),
     )
+
+    var showLanguageDialog by remember { mutableStateOf(false) }
+    val languageOptions = remember {
+        listOf(
+            "es" to "Español",
+            "en" to "English",
+            "pt" to "Português",
+            "de" to "Deutsch",
+            "hr" to "Hrvatski",
+        )
+    }
 
     Surface(
         modifier = modifier
@@ -90,7 +107,7 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            ProfileOption(label = "Cambiar idioma", onClick = onChangeLanguage)
+            ProfileOption(label = "Cambiar idioma", onClick = { showLanguageDialog = true })
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(
                 label = "Ubicación de canciones",
@@ -108,6 +125,33 @@ fun ProfileScreen(
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(label = "Personalizar texto", onClick = onCustomizeText)
         }
+    }
+
+    if (showLanguageDialog) {
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = { Text("Selecciona un idioma") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    languageOptions.forEach { (tag, name) ->
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                onChangeLanguage(tag)
+                                showLanguageDialog = false
+                            },
+                        ) {
+                            Text(name, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text("Cancelar")
+                }
+            },
+        )
     }
 }
 

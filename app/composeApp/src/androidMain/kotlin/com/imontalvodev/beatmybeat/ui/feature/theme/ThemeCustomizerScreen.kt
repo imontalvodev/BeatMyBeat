@@ -43,8 +43,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
@@ -123,12 +125,12 @@ fun ThemeCustomizerScreen(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeChip(
-                    text = "Fondo",
+                    text = stringResource(R.string.theme_tab_background),
                     selected = section == ThemeCustomizerSection.Background,
                     onClick = {},
                 )
                 ModeChip(
-                    text = "Texto",
+                    text = stringResource(R.string.theme_tab_text),
                     selected = section == ThemeCustomizerSection.Text,
                     onClick = {},
                 )
@@ -136,9 +138,9 @@ fun ThemeCustomizerScreen(
 
             Text(
                 text = if (section == ThemeCustomizerSection.Background) {
-                    "Personalizar fondo y acentos"
+                    stringResource(R.string.theme_customize_background)
                 } else {
-                    "Personalizar texto"
+                    stringResource(R.string.theme_customize_text)
                 },
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -152,7 +154,7 @@ fun ThemeCustomizerScreen(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Perfiles guardados", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.theme_saved_profiles), style = MaterialTheme.typography.titleMedium)
                     profiles.forEach { profile ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -164,9 +166,9 @@ fun ThemeCustomizerScreen(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Row {
-                                TextButton(onClick = { onApplyProfile(profile.id) }) { Text("Aplicar") }
+                                TextButton(onClick = { onApplyProfile(profile.id) }) { Text(stringResource(R.string.common_apply)) }
                                 if (!profile.id.startsWith("builtin-")) {
-                                    TextButton(onClick = { onDeleteProfile(profile.id) }) { Text("Borrar") }
+                                    TextButton(onClick = { onDeleteProfile(profile.id) }) { Text(stringResource(R.string.common_delete)) }
                                 }
                             }
                         }
@@ -178,7 +180,7 @@ fun ThemeCustomizerScreen(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Nombre del perfil") },
+                label = { Text(stringResource(R.string.theme_profile_name)) },
                 singleLine = true,
             )
 
@@ -187,10 +189,10 @@ fun ThemeCustomizerScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 TextButton(onClick = { activeProfile?.let { loadProfile(it, keepId = !it.id.startsWith("builtin-")) } }) {
-                    Text("Cargar activo")
+                    Text(stringResource(R.string.theme_load_active))
                 }
                 TextButton(onClick = { editingProfileId = null; name = "Mi tema" }) {
-                    Text("Nuevo perfil")
+                    Text(stringResource(R.string.theme_new_profile))
                 }
             }
 
@@ -221,7 +223,7 @@ fun ThemeCustomizerScreen(
             }
 
             PrimaryButton(
-                text = if (editingProfileId == null) "Guardar como nuevo" else "Aplicar cambios",
+                text = if (editingProfileId == null) stringResource(R.string.theme_save_as_new) else stringResource(R.string.theme_apply_changes),
                 onClick = {
                     val profile = BeatMyBeatThemeProfile(
                         id = editingProfileId ?: UUID.randomUUID().toString(),

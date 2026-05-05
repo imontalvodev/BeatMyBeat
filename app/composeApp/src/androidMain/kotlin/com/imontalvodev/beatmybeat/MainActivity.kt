@@ -26,7 +26,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.beatmybeat.ui.feature.playlist.PlaylistScreen
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
@@ -37,8 +39,13 @@ import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerSection
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatTheme
 import com.imontalvodev.beatmybeat.ui.theme.ThemeProfilesStore
-
 class MainActivity : ComponentActivity() {
+    private fun applyLanguage(languageTag: String) {
+        if (languageTag.isBlank()) return
+        val locales = LocaleListCompat.forLanguageTags(languageTag)
+        AppCompatDelegate.setApplicationLocales(locales)
+    }
+
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             // No hacemos nada: si deniega, simplemente no se verán notificaciones.
@@ -124,6 +131,9 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("profile") {
                             ProfileScreen(
+                                onChangeLanguage = { languageTag ->
+                                    applyLanguage(languageTag)
+                                },
                                 storageLocationLabel = storageLabel,
                                 onPickStorageLocation = { storagePicker.launch(null) },
                                 onOpenStorageFolder = {

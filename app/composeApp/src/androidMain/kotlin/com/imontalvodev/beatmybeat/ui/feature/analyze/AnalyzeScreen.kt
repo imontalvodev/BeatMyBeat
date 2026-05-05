@@ -40,7 +40,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.RemoteArtworkCache
@@ -119,7 +121,7 @@ fun AnalyzeScreen(
             ) {
                 AppMiniBrand()
                 Text(
-                    text = "Ir al reproductor",
+                    text = stringResource(R.string.analyze_go_to_player),
                     modifier = Modifier
                         .background(
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
@@ -140,12 +142,12 @@ fun AnalyzeScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 ModeChip(
-                    text = "Playlist",
+                    text = stringResource(R.string.analyze_tab_playlist),
                     selected = mode == "playlist",
                     onClick = { mode = "playlist" },
                 )
                 ModeChip(
-                    text = "Song",
+                    text = stringResource(R.string.analyze_tab_song),
                     selected = mode == "song",
                     onClick = { mode = "song" },
                 )
@@ -180,15 +182,15 @@ fun AnalyzeScreen(
                                 playlistUrl = it
                                 playlistInputError = null
                             },
-                            label = { Text("URL de playlist/album/canción (YouTube)") },
-                            placeholder = { Text("https://youtube.com/... o https://music.youtube.com/...") },
+                            label = { Text(stringResource(R.string.analyze_playlist_url_label)) },
+                            placeholder = { Text(stringResource(R.string.analyze_playlist_url_placeholder)) },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
                         OutlinedTextField(
                             value = songTitle,
                             onValueChange = { songTitle = it },
-                            placeholder = { Text("Song title") },
+                            placeholder = { Text(stringResource(R.string.analyze_song_title_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp),
@@ -197,7 +199,7 @@ fun AnalyzeScreen(
                         OutlinedTextField(
                             value = songArtist,
                             onValueChange = { songArtist = it },
-                            placeholder = { Text("Artist (recommended)") },
+                            placeholder = { Text(stringResource(R.string.analyze_artist_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp),
@@ -206,7 +208,7 @@ fun AnalyzeScreen(
                         OutlinedTextField(
                             value = songAlbum,
                             onValueChange = { songAlbum = it },
-                            placeholder = { Text("Album (optional)") },
+                            placeholder = { Text(stringResource(R.string.analyze_album_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(14.dp),
@@ -215,7 +217,7 @@ fun AnalyzeScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Formato de descarga",
+                        text = stringResource(R.string.analyze_download_format),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                     )
@@ -240,9 +242,9 @@ fun AnalyzeScreen(
 
                     PrimaryButton(
                         text = when {
-                            mode == "song" -> "ANALYZE SONG"
-                            playlistDownloadRunning -> "DESCARGANDO..."
-                            else -> "ANALYZE PLAYLIST"
+                            mode == "song" -> stringResource(R.string.analyze_cta_song)
+                            playlistDownloadRunning -> stringResource(R.string.analyze_cta_downloading)
+                            else -> stringResource(R.string.analyze_cta_playlist)
                         },
                         enabled = !playlistDownloadRunning,
                         onClick = {
