@@ -1423,7 +1423,7 @@ fun PlayerScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "Cola de reproducción",
+                                text = stringResource(R.string.player_queue_title),
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
@@ -1446,7 +1446,7 @@ fun PlayerScreen(
                                     }
                                     syncQueueToService()
                                 }) {
-                                    Text("Limpiar")
+                                    Text(stringResource(R.string.player_clear_queue))
                                 }
                             }
                         }
@@ -1460,7 +1460,7 @@ fun PlayerScreen(
 
                         if (currentTrack != null) {
                             Text(
-                                text = "Sonando ahora",
+                                text = stringResource(R.string.player_now_playing),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -1515,7 +1515,7 @@ fun PlayerScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "La cola está vacía.\nUsa los 3 puntos de una canción para añadirla.",
+                                    text = stringResource(R.string.player_queue_empty_hint),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                                     textAlign = TextAlign.Center,

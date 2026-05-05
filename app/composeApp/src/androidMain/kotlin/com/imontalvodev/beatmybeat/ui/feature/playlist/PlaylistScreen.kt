@@ -38,8 +38,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.network.RemoteArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
@@ -63,7 +65,7 @@ fun PlaylistScreen(
     var loading by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var title by remember { mutableStateOf("Playlist") }
+    var title by remember { mutableStateOf("") }
     var tracks by remember { mutableStateOf<List<PlaylistSong>>(emptyList()) }
 
     val context = LocalContext.current
@@ -83,16 +85,17 @@ fun PlaylistScreen(
                 playlist = null,
                 songs = emptyList(),
                 error = "NetworkError",
-                message = "No se pudo conectar con el servidor de playlists.",
+                message = context.getString(R.string.playlist_error_cannot_connect),
             )
         }
         loading = false
         if (!res.success) {
-            error = res.message ?: res.error ?: "No se pudo cargar la playlist"
-            title = "Playlist"
+            error = res.message ?: res.error ?: context.getString(R.string.playlist_error_cannot_load)
+            title = context.getString(R.string.playlist_default_title)
             tracks = emptyList()
         } else {
-            title = res.playlist?.name?.ifBlank { "Playlist" } ?: "Playlist"
+            title = res.playlist?.name?.ifBlank { context.getString(R.string.playlist_default_title) }
+                ?: context.getString(R.string.playlist_default_title)
             tracks = res.songs
         }
     }
@@ -116,9 +119,9 @@ fun PlaylistScreen(
             PlaylistHeader(
                 title = title,
                 subtitle = when {
-                    loading -> "Cargando..."
+                    loading -> stringResource(R.string.playlist_loading)
                     error != null -> error!!
-                    else -> "${tracks.size} Tracks found"
+                    else -> "${tracks.size} ${stringResource(R.string.playlist_tracks_found)}"
                 },
                 onPrimaryClick = {
                     if (tracks.isEmpty() || downloading) return@PlaylistHeader
@@ -234,7 +237,7 @@ private fun PlaylistHeader(
             Spacer(modifier = Modifier.height(12.dp))
 
             PrimaryButton(
-                text = "DOWNLOAD ALL TRACKS (ZIP)",
+                text = stringResource(R.string.playlist_download_all),
                 onClick = onPrimaryClick,
                 modifier = Modifier.fillMaxWidth(),
             )

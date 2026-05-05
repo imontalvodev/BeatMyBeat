@@ -29,10 +29,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import kotlinx.coroutines.delay
@@ -128,7 +130,7 @@ fun SplashScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Tu música, a tu ritmo",
+                text = stringResource(R.string.splash_tagline),
                 style = MaterialTheme.typography.bodyMedium.copy(textAlign = TextAlign.Center),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
@@ -136,7 +138,7 @@ fun SplashScreen(
             Spacer(modifier = Modifier.height(64.dp))
 
             PrimaryButton(
-                text = "Descargar música",
+                text = stringResource(R.string.splash_download_music),
                 onClick = onGoToDownloader,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -158,7 +160,7 @@ fun SplashScreen(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = "Ir al reproductor",
+                        text = stringResource(R.string.splash_go_to_player),
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontWeight = FontWeight.SemiBold,
                         ),

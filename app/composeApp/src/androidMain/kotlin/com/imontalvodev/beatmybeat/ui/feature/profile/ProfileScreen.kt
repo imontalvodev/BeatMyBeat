@@ -32,8 +32,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 
@@ -91,7 +93,7 @@ fun ProfileScreen(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Person,
-                    contentDescription = "Avatar",
+                    contentDescription = stringResource(R.string.profile_avatar_cd),
                     modifier = Modifier.size(56.dp),
                     tint = MaterialTheme.colorScheme.primary,
                 )
@@ -100,37 +102,37 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "Cambiar foto de perfil",
+                text = stringResource(R.string.profile_change_photo),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            ProfileOption(label = "Cambiar idioma", onClick = { showLanguageDialog = true })
+            ProfileOption(label = stringResource(R.string.profile_change_language), onClick = { showLanguageDialog = true })
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(
-                label = "Ubicación de canciones",
+                label = stringResource(R.string.profile_song_location),
                 subtitle = storageLocationLabel,
                 onClick = onPickStorageLocation,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(
-                label = "Ver carpeta de canciones",
-                subtitle = "Abrir en explorador de archivos",
+                label = stringResource(R.string.profile_open_song_folder),
+                subtitle = stringResource(R.string.profile_open_file_explorer),
                 onClick = onOpenStorageFolder,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-            ProfileOption(label = "Personalizar fondo", onClick = onCustomizeBackground)
+            ProfileOption(label = stringResource(R.string.profile_customize_background), onClick = onCustomizeBackground)
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-            ProfileOption(label = "Personalizar texto", onClick = onCustomizeText)
+            ProfileOption(label = stringResource(R.string.profile_customize_text), onClick = onCustomizeText)
         }
     }
 
     if (showLanguageDialog) {
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
-            title = { Text("Selecciona un idioma") },
+            title = { Text(stringResource(R.string.profile_select_language)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     languageOptions.forEach { (tag, name) ->
@@ -148,7 +150,7 @@ fun ProfileScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showLanguageDialog = false }) {
-                    Text("Cancelar")
+                    Text(stringResource(R.string.common_cancel))
                 }
             },
         )

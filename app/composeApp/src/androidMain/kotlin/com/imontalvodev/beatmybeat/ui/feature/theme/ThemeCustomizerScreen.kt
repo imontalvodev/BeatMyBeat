@@ -269,7 +269,7 @@ private fun ColorField(
             ) {
                 BoxColorPreview(value)
                 TextButton(onClick = { pickerOpen = true }) {
-                    Text("Elegir")
+                    Text(stringResource(R.string.theme_choose))
                 }
             }
         }
@@ -278,7 +278,7 @@ private fun ColorField(
     if (pickerOpen) {
         AlertDialog(
             onDismissRequest = { pickerOpen = false },
-            title = { Text("Seleccionar color: $label") },
+            title = { Text(stringResource(R.string.theme_select_color, label)) },
             text = {
                 ColorWheelPicker(
                     initialColor = value,
@@ -287,7 +287,7 @@ private fun ColorField(
             },
             confirmButton = {
                 TextButton(onClick = { pickerOpen = false }) {
-                    Text("Listo")
+                    Text(stringResource(R.string.theme_done))
                 }
             },
         )
@@ -371,17 +371,17 @@ private fun ColorWheelPicker(
             )
         }
 
-        Text("Saturación", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.theme_saturation), style = MaterialTheme.typography.bodySmall)
         Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..1f)
 
-        Text("Brillo", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.theme_brightness), style = MaterialTheme.typography.bodySmall)
         Slider(value = value, onValueChange = { value = it }, valueRange = 0f..1f)
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Color actual:", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.theme_current_color), style = MaterialTheme.typography.bodySmall)
             BoxColorPreview(selectedColor)
         }
     }
@@ -439,7 +439,7 @@ private fun PreviewBlock(
                     .background(primary.copy(alpha = 0.22f), RoundedCornerShape(999.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
-                Text("Acento", color = primary, style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.theme_accent), color = primary, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
