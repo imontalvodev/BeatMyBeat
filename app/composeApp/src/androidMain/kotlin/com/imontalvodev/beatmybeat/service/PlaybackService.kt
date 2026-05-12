@@ -3,6 +3,7 @@ package com.imontalvodev.beatmybeat.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.os.Build
 import android.content.Intent
 import android.os.Binder
 import android.os.Handler
@@ -72,6 +73,7 @@ class PlaybackService : Service() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+        exoPlayer.setWakeMode(C.WAKE_MODE_LOCAL)
 
         mediaSession = MediaSession.Builder(this, exoPlayer)
             .setSessionActivity(buildContentIntent())
@@ -108,6 +110,12 @@ class PlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Notificación persistente si ya hay cola (p. ej. acciones desde segundo plano / notificación).
+        if (exoPlayer.mediaItemCount > 0) {
+            runCatching {
+                startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+            }
+        }
         when (intent?.action) {
             ACTION_PLAY -> exoPlayer.play()
             ACTION_PAUSE -> exoPlayer.pause()
@@ -271,11 +279,15 @@ class PlaybackService : Service() {
         val artist = meta?.artist?.toString() ?: ""
         val isPlaying = exoPlayer.isPlaying
 
-        val piFlags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        fun pi(action: String, reqCode: Int) = android.app.PendingIntent.getService(
-            this, reqCode,
-            Intent(this, PlaybackService::class.java).setAction(action), piFlags,
-        )
+        val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        fun pi(action: String, reqCode: Int): PendingIntent {
+            val i = Intent(this, PlaybackService::class.java).setAction(action)
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                PendingIntent.getForegroundService(this, reqCode, i, piFlags)
+            } else {
+                PendingIntent.getService(this, reqCode, i, piFlags)
+            }
+        }
 
         return NotificationCompat.Builder(this, "beatmybeat_playback")
             .setSmallIcon(R.drawable.ic_launcher_foreground)

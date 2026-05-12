@@ -48,6 +48,7 @@ import androidx.navigation.navArgument
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
+import com.imontalvodev.beatmybeat.playback.PlaybackServiceBinding
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.beatmybeat.ui.feature.playlist.PlaylistScreen
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
@@ -110,7 +111,8 @@ class MainActivity : ComponentActivity() {
 
             BeatMyBeatTheme(themeProfile = activeProfile) {
                 CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
-                    val navController = rememberNavController()
+                    PlaybackServiceBinding {
+                        val navController = rememberNavController()
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route
                     val showBottomBar = currentRoute in setOf("analyze", "player", "profile")
@@ -335,6 +337,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                    }
                     }
                 }
             }

@@ -10,9 +10,8 @@ import android.net.Uri
 import android.os.Build
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.Context
 import android.content.Intent
-import android.os.IBinder
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -37,7 +36,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +45,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -137,6 +136,7 @@ import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
+import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
 import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
@@ -149,6 +149,15 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.random.Random
+
+private fun Context.sendPlaybackForegroundAction(action: String) {
+    val intent = Intent(this, PlaybackService::class.java).setAction(action)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        ContextCompat.startForegroundService(this, intent)
+    } else {
+        startService(intent)
+    }
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -203,38 +212,22 @@ fun PlayerScreen(
     var currentTrack by remember { mutableStateOf<DeviceTrack?>(null) }
     var currentIndex by remember { mutableStateOf(-1) }
 
-    // ── Bound service: referencia directa al PlaybackService ────────────────
-    // Con bindService obtenemos una referencia al objeto PlaybackService en memoria.
-    // Esto permite llamar player.seekTo(ms) sin ningún intent de por medio.
-    var boundService by remember { mutableStateOf<PlaybackService?>(null) }
+    // PlaybackService ligado en MainActivity: no se pierde al cambiar de pestaña ni en segundo plano.
+    val boundService = LocalPlaybackService.current
 
     // Cola pendiente si el usuario pulsa play antes de que el servicio esté ligado.
     data class PendingPlay(val queueJson: String, val index: Int, val shuffleEnabled: Boolean)
     var pendingPlay by remember { mutableStateOf<PendingPlay?>(null) }
 
-    DisposableEffect(context) {
-        val conn = object : android.content.ServiceConnection {
-            override fun onServiceConnected(name: android.content.ComponentName?, b: IBinder?) {
-                val svc = (b as? PlaybackService.LocalBinder)?.service
-                boundService = svc
-                // Si había una reproducción pendiente, la ejecutamos ahora.
-                val pending = pendingPlay
-                if (svc != null && pending != null) {
-                    svc.loadQueue(
-                        queueJson = pending.queueJson,
-                        startIndex = pending.index,
-                        shuffleEnabled = pending.shuffleEnabled,
-                    )
-                    pendingPlay = null
-                }
-            }
-            override fun onServiceDisconnected(name: android.content.ComponentName?) {
-                boundService = null
-            }
-        }
-        val intent = Intent(context, PlaybackService::class.java)
-        context.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
-        onDispose { context.unbindService(conn) }
+    LaunchedEffect(boundService, pendingPlay) {
+        val svc = boundService ?: return@LaunchedEffect
+        val pending = pendingPlay ?: return@LaunchedEffect
+        svc.loadQueue(
+            queueJson = pending.queueJson,
+            startIndex = pending.index,
+            shuffleEnabled = pending.shuffleEnabled,
+        )
+        pendingPlay = null
     }
 
     // ── Playback state: única fuente de verdad ──────────────────────────────
@@ -606,6 +599,14 @@ fun PlayerScreen(
     val selectionModeEnabledText = stringResource(R.string.player_selection_mode_enabled)
     val queueAddedText = stringResource(R.string.player_added_to_queue_end)
     val playNextAddedText = stringResource(R.string.player_play_next_added)
+
+    val miniDurationMs = playbackDurationMs.toInt().takeIf { it > 0 } ?: 0
+    val miniCurrentMs = ((sliderDragPos ?: sliderPosition).coerceIn(0f, 1f) * miniDurationMs).toInt()
+    val miniSliderA11y = stringResource(
+        R.string.player_slider_a11y,
+        formatMs(miniCurrentMs),
+        formatMs(miniDurationMs),
+    )
 
     val visibleTracks = remember(
         deviceTracks,
@@ -1055,53 +1056,69 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(bgBrush),
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // LISTA (boceto 1)
+        Column(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .weight(1f, fill = true)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 AppMiniBrand()
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Start,
-                ) {
-                    Text(
-                        text = when (selectedSection) {
-                            PlayerSection.Songs -> stringResource(R.string.player_header_songs)
-                            PlayerSection.Favorites -> stringResource(R.string.player_header_favorites)
-                            PlayerSection.Playlist -> {
-                                val name = playlists.firstOrNull { it.id == selectedPlaylistId }?.name
-                                name ?: stringResource(R.string.player_header_playlist_fallback)
-                            }
-                        },
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 52.dp),
+                    textStyle = MaterialTheme.typography.bodyMedium,
                     singleLine = true,
                     placeholder = { Text(stringResource(R.string.player_search_placeholder)) },
                     shape = RoundedCornerShape(18.dp),
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                SectionChips(
+                    selected = selectedSection,
+                    onSelect = { selectedSection = it },
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (selectedSection == PlayerSection.Playlist) {
+                    PlaylistPickerBar(
+                        playlists = playlists,
+                        selectedPlaylistId = selectedPlaylistId,
+                        onSelect = { id ->
+                            selectedPlaylistId = id
+                        },
+                        onCreateEmpty = {
+                            val res = viewModel.createPlaylist("Mi playlist")
+                            selectedPlaylistId = when (res) {
+                                is PlayerViewModel.CreatePlaylistResult.Created -> res.id
+                                is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
+                            }
+                        },
+                        onRequestDelete = { id ->
+                            playlistDeleteDialogId = id
+                        },
+                        onRequestRename = { id ->
+                            playlistRenameDialogId = id
+                            val currentName = playlists.firstOrNull { it.id == id }?.name ?: ""
+                            playlistRenameNewName = currentName
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 SortOptionsBar(
                     selected = sortOption,
                     onSelect = { sortOption = it },
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 val selectedTracksOrdered = visibleTracks.filter { selectedTrackIds.contains(it.id) }
                 if (selectionMode) {
@@ -1137,40 +1154,7 @@ fun PlayerScreen(
                     },
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                SectionChips(
-                    selected = selectedSection,
-                    onSelect = { selectedSection = it },
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (selectedSection == PlayerSection.Playlist) {
-                    PlaylistPickerBar(
-                        playlists = playlists,
-                        selectedPlaylistId = selectedPlaylistId,
-                        onSelect = { id ->
-                            selectedPlaylistId = id
-                        },
-                        onCreateEmpty = {
-                            val res = viewModel.createPlaylist("Mi playlist")
-                            selectedPlaylistId = when (res) {
-                                is PlayerViewModel.CreatePlaylistResult.Created -> res.id
-                                is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
-                            }
-                        },
-                        onRequestDelete = { id ->
-                            playlistDeleteDialogId = id
-                        },
-                        onRequestRename = { id ->
-                            playlistRenameDialogId = id
-                            val currentName = playlists.firstOrNull { it.id == id }?.name ?: ""
-                            playlistRenameNewName = currentName
-                        },
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
+                Spacer(modifier = Modifier.height(8.dp))
 
                 AnimatedContent(
                     targetState = selectedSection,
@@ -1207,7 +1191,7 @@ fun PlayerScreen(
                         },
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(bottom = 190.dp),
+                        contentPadding = PaddingValues(bottom = 12.dp),
                     ) {
                         items(tracksInSection) { track ->
                         val currentPlaylist =
@@ -1344,24 +1328,16 @@ fun PlayerScreen(
                 }
             }
 
-            val miniDurationMs = playbackDurationMs.toInt().takeIf { it > 0 } ?: 0
-            val miniCurrentMs = ((sliderDragPos ?: sliderPosition).coerceIn(0f, 1f) * miniDurationMs).toInt()
-            val miniSliderA11y = stringResource(
-                R.string.player_slider_a11y,
-                formatMs(miniCurrentMs),
-                formatMs(miniDurationMs),
-            )
-
-            // MINI PLAYER (parte inferior boceto 1)
             AnimatedVisibility(
                 visible = currentTrack != null,
+                modifier = Modifier.fillMaxWidth(),
                 enter = slideInVertically { it } + fadeIn(animationSpec = tween(280)),
                 exit = slideOutVertically { it } + fadeOut(animationSpec = tween(220)),
             ) {
                 MiniPlayerBar(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                 track = currentTrack,
                 isPlaying = isPlaying,
                 position = sliderPosition,
@@ -1374,21 +1350,15 @@ fun PlayerScreen(
                 sliderAccessibilityLabel = miniSliderA11y,
                 onTogglePlay = {
                     currentTrack ?: return@MiniPlayerBar
-                    context.startService(
-                        Intent(context, PlaybackService::class.java).setAction(
-                            if (isPlaying) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY,
-                        ),
+                    context.sendPlaybackForegroundAction(
+                        if (isPlaying) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY,
                     )
                 },
                 onPrev = {
-                    context.startService(
-                        Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PREV),
-                    )
+                    context.sendPlaybackForegroundAction(PlaybackService.ACTION_PREV)
                 },
                 onNext = {
-                    context.startService(
-                        Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_NEXT),
-                    )
+                    context.sendPlaybackForegroundAction(PlaybackService.ACTION_NEXT)
                 },
                 onSeekPreview = { newPos -> sliderDragPos = newPos },
                 onSeekCommit = { finalPos ->
@@ -1403,6 +1373,7 @@ fun PlayerScreen(
                 onToggleRepeat = { onCycleRepeatMode() },
                 )
             }
+        }
 
             // OVERLAY EXPANDIDO (boceto 2)
             if (isExpanded) {
@@ -1420,21 +1391,15 @@ fun PlayerScreen(
                     onClose = { isExpanded = false },
                     onTogglePlay = {
                         currentTrack ?: return@ExpandedPlayerOverlay
-                        context.startService(
-                            Intent(context, PlaybackService::class.java).setAction(
-                                if (isPlaying) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY,
-                            ),
+                        context.sendPlaybackForegroundAction(
+                            if (isPlaying) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY,
                         )
                     },
                     onPrev = {
-                        context.startService(
-                            Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_PREV),
-                        )
+                        context.sendPlaybackForegroundAction(PlaybackService.ACTION_PREV)
                     },
                     onNext = {
-                        context.startService(
-                            Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_NEXT),
-                        )
+                        context.sendPlaybackForegroundAction(PlaybackService.ACTION_NEXT)
                     },
                     onSeekPreview = { newPos -> sliderDragPos = newPos },
                     onSeekCommit = { finalPos ->
@@ -1980,7 +1945,6 @@ fun PlayerScreen(
                     },
                 )
             }
-        }
     }
 }
 
@@ -2290,7 +2254,7 @@ private fun SectionChips(
 }
 
 @Composable
-private fun RowScope.SectionChip(
+private fun SectionChip(
     text: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -2301,11 +2265,11 @@ private fun RowScope.SectionChip(
     else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
     Box(
         modifier = Modifier
-            .weight(1f)
+            .widthIn(min = 96.dp)
             .background(bg, RoundedCornerShape(14.dp))
             .border(1.dp, border, RoundedCornerShape(14.dp))
             .clickable { onClick() }
-            .padding(vertical = 10.dp, horizontal = 10.dp),
+            .padding(vertical = 8.dp, horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -2504,7 +2468,7 @@ private fun PrimaryPillButton(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(40.dp)
             .clickable { onClick() },
         shape = RoundedCornerShape(999.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.35f)),
@@ -2591,14 +2555,14 @@ private fun MiniPlayerBar(
     )
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 18.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -3127,7 +3091,9 @@ private fun SortOptionsBar(
     onSelect: (SortOption) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SortChip(
@@ -3168,7 +3134,7 @@ private fun SortChip(
             .background(bg, RoundedCornerShape(14.dp))
             .border(1.dp, border, RoundedCornerShape(14.dp))
             .clickable { onClick() }
-            .padding(vertical = 7.dp, horizontal = 10.dp),
+            .padding(vertical = 6.dp, horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
