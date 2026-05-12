@@ -12,12 +12,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -109,23 +117,37 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            ProfileOption(label = stringResource(R.string.profile_change_language), onClick = { showLanguageDialog = true })
+            ProfileOption(
+                label = stringResource(R.string.profile_change_language),
+                icon = Icons.Filled.Language,
+                onClick = { showLanguageDialog = true },
+            )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(
                 label = stringResource(R.string.profile_song_location),
                 subtitle = storageLocationLabel,
+                icon = Icons.Filled.Folder,
                 onClick = onPickStorageLocation,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(
                 label = stringResource(R.string.profile_open_song_folder),
                 subtitle = stringResource(R.string.profile_open_file_explorer),
+                icon = Icons.Filled.FolderOpen,
                 onClick = onOpenStorageFolder,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-            ProfileOption(label = stringResource(R.string.profile_customize_background), onClick = onCustomizeBackground)
+            ProfileOption(
+                label = stringResource(R.string.profile_customize_background),
+                icon = Icons.Filled.Palette,
+                onClick = onCustomizeBackground,
+            )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-            ProfileOption(label = stringResource(R.string.profile_customize_text), onClick = onCustomizeText)
+            ProfileOption(
+                label = stringResource(R.string.profile_customize_text),
+                icon = Icons.Filled.TextFields,
+                onClick = onCustomizeText,
+            )
         }
     }
 
@@ -158,27 +180,44 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun ProfileOption(label: String, subtitle: String? = null, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(vertical = 18.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+private fun ProfileOption(
+    label: String,
+    subtitle: String? = null,
+    icon: ImageVector,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = {
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal),
-                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
             )
-            if (!subtitle.isNullOrBlank()) {
+        },
+        supportingContent = subtitle?.let { sub ->
+            {
                 Text(
-                    text = subtitle,
+                    text = sub,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-    }
+        },
+        leadingContent = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        trailingContent = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        modifier = Modifier.clickable { onClick() },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
 }

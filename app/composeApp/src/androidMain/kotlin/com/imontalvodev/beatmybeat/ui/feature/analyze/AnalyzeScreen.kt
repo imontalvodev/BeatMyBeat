@@ -19,13 +19,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -62,13 +68,11 @@ import okhttp3.OkHttpClient
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
+import com.imontalvodev.beatmybeat.LocalSnackbarHostState
 import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
-import android.widget.Toast
 
 @Composable
 fun AnalyzeScreen(
-    themeName: String,
-    onOpenPlayer: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val palette = currentBeatMyBeatThemeProfile()
@@ -100,6 +104,12 @@ fun AnalyzeScreen(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = LocalSnackbarHostState.current
+    fun showSnack(message: String) {
+        scope.launch {
+            snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
+        }
+    }
 
     Surface(
         modifier = modifier
@@ -114,42 +124,23 @@ fun AnalyzeScreen(
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.Top,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AppMiniBrand()
-                Text(
-                    text = stringResource(R.string.analyze_go_to_player),
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                            shape = RoundedCornerShape(999.dp),
-                        )
-                        .clickable { onOpenPlayer() }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
+            AppMiniBrand()
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Tabs Playlist / Song
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ModeChip(
-                    text = stringResource(R.string.analyze_tab_playlist),
+            val tabPlaylist = stringResource(R.string.analyze_tab_playlist)
+            val tabSong = stringResource(R.string.analyze_tab_song)
+            val selectedTabIndex = if (mode == "playlist") 0 else 1
+            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
+                Tab(
                     selected = mode == "playlist",
                     onClick = { mode = "playlist" },
+                    text = { Text(tabPlaylist) },
                 )
-                ModeChip(
-                    text = stringResource(R.string.analyze_tab_song),
+                Tab(
                     selected = mode == "song",
                     onClick = { mode = "song" },
+                    text = { Text(tabSong) },
                 )
             }
 
@@ -184,6 +175,21 @@ fun AnalyzeScreen(
                             },
                             label = { Text(stringResource(R.string.analyze_playlist_url_label)) },
                             placeholder = { Text(stringResource(R.string.analyze_playlist_url_placeholder)) },
+                            isError = playlistInputError != null,
+                            supportingText = if (playlistInputError != null) {
+                                {
+                                    Text(
+                                        text = playlistInputError!!,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Filled.Link, contentDescription = null)
+                            },
+                            singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     } else {
@@ -313,11 +319,7 @@ fun AnalyzeScreen(
                                                     playlistDownloadDone = 0
                                                     playlistDownloadFailed = 0
                                                     playlistCurrentTitle = "Preparando descargas..."
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Descarga de playlist iniciada en segundo plano.",
-                                                        Toast.LENGTH_SHORT,
-                                                    ).show()
+                                                    showSnack("Descarga de playlist iniciada en segundo plano.")
                                                     BeatMyBeatForegroundService.startDownload(
                                                         context = context,
                                                         title = "Descargando playlist",
@@ -352,24 +354,12 @@ fun AnalyzeScreen(
                                                     }
                                                     if (downloaded <= 0) {
                                                         playlistInputError = "No se pudo descargar ninguna canción de esa playlist."
-                                                        Toast.makeText(
-                                                            context,
-                                                            "No se pudo descargar ninguna canción.",
-                                                            Toast.LENGTH_SHORT,
-                                                        ).show()
+                                                        showSnack("No se pudo descargar ninguna canción.")
                                                     } else if (failed > 0) {
                                                         playlistInputError = "Descargadas $downloaded de ${videoIds.size}. Fallidas: $failed."
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Playlist completada: $downloaded descargadas, $failed fallidas.",
-                                                            Toast.LENGTH_SHORT,
-                                                        ).show()
+                                                        showSnack("Playlist completada: $downloaded descargadas, $failed fallidas.")
                                                     } else {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Playlist descargada: $downloaded canciones.",
-                                                            Toast.LENGTH_SHORT,
-                                                        ).show()
+                                                        showSnack("Playlist descargada: $downloaded canciones.")
                                                     }
                                                 } catch (_: Exception) {
                                                     playlistInputError =
@@ -408,15 +398,6 @@ fun AnalyzeScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
-
-                    if (mode == "playlist" && playlistInputError != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = playlistInputError!!,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
 
                     if (mode == "song" && songDownloadInfo != null) {
                         Spacer(modifier = Modifier.height(12.dp))

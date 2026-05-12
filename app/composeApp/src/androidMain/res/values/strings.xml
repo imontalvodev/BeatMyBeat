@@ -1,5 +1,9 @@
 <resources>
     <string name="app_name">BeatMyBeat</string>
+    <string name="nav_download">Descargar</string>
+    <string name="nav_player">Reproductor</string>
+    <string name="nav_profile">Perfil</string>
+    <string name="profile_folder_open_failed">No se pudo abrir la carpeta en este dispositivo.</string>
     <string name="common_cancel">Cancelar</string>
     <string name="common_apply">Aplicar</string>
     <string name="common_delete">Borrar</string>
