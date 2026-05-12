@@ -24,6 +24,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val _tracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
     val tracks: StateFlow<List<DeviceTrack>> = _tracks.asStateFlow()
 
+    private val _librarySyncing = MutableStateFlow(true)
+    val librarySyncing: StateFlow<Boolean> = _librarySyncing.asStateFlow()
+
     // ids de favoritos persistidos
     private val _favoriteIds = MutableStateFlow<Set<Long>>(loadIdSet(PREF_FAVORITES))
     val favoriteIds: StateFlow<Set<Long>> = _favoriteIds.asStateFlow()
@@ -54,12 +57,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun syncLibrary(auto: Boolean) {
         viewModelScope.launch {
-            val scanned = withContext(Dispatchers.IO) { scanner.scanAudio() }
-            _tracks.value = scanned
+            _librarySyncing.value = true
+            try {
+                val scanned = withContext(Dispatchers.IO) { scanner.scanAudio() }
+                _tracks.value = scanned
 
-            // Mantener playlists coherentes con el contenido real del teléfono
-            val validIds = scanned.map { it.id }.toSet()
-            cleanupPlaylists(validIds)
+                // Mantener playlists coherentes con el contenido real del teléfono
+                val validIds = scanned.map { it.id }.toSet()
+                cleanupPlaylists(validIds)
+            } finally {
+                _librarySyncing.value = false
+            }
         }
     }
 

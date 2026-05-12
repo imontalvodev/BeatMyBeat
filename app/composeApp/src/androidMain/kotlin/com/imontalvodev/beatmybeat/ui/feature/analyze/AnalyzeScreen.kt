@@ -58,6 +58,7 @@ import com.imontalvodev.beatmybeat.service.SongDownloadService
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
+import com.imontalvodev.beatmybeat.ui.theme.SuggestionListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -449,11 +450,7 @@ fun AnalyzeScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         when {
                             searchingSuggestions -> {
-                                Text(
-                                    text = "Buscando canciones...",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                                )
+                                SuggestionListSkeleton()
                             }
 
                             suggestionError != null -> {

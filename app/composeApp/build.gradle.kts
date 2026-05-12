@@ -43,6 +43,7 @@ kotlin {
             implementation(libs.okhttp)
             implementation(libs.coil.compose)
             implementation(libs.androidx.palette.ktx)
+            implementation(libs.compose.shimmer)
             implementation(libs.newpipeextractor)
             implementation(libs.ffmpeg.kit)
         }

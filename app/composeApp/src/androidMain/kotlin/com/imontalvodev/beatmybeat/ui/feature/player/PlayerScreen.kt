@@ -13,8 +13,21 @@ import android.content.pm.PackageManager
 import android.content.Intent
 import android.os.IBinder
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,6 +56,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -64,6 +78,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -85,7 +100,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -117,6 +134,7 @@ import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
+import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
@@ -136,10 +154,12 @@ import kotlin.random.Random
 @OptIn(ExperimentalMaterial3Api::class)
 fun PlayerScreen(
     modifier: Modifier = Modifier,
+    onNavigateToDownloader: () -> Unit = {},
 ) {
     val palette = currentBeatMyBeatThemeProfile()
     val viewModel: PlayerViewModel = viewModel()
     val deviceTracks = viewModel.tracks.collectAsState().value
+    val librarySyncing by viewModel.librarySyncing.collectAsState()
     val favoriteIds = viewModel.favoriteIds.collectAsState().value
     val playlists = viewModel.playlists.collectAsState().value
     val context = LocalContext.current
@@ -395,14 +415,44 @@ fun PlayerScreen(
                     ),
                 ),
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "No se encontraron canciones en el dispositivo.",
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+            when {
+                !hasAudioPermission -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 28.dp, vertical = 32.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.player_audio_permission_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(R.string.player_audio_permission_body),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        TextButton(onClick = { permissionLauncher.launch(audioPermission) }) {
+                            Text(stringResource(R.string.player_audio_permission_grant))
+                        }
+                    }
+                }
+
+                librarySyncing -> {
+                    TrackListSkeleton(modifier = Modifier.fillMaxSize())
+                }
+
+                else -> {
+                    LibraryEmptyState(
+                        modifier = Modifier.fillMaxSize(),
+                        onOpenDownloader = onNavigateToDownloader,
+                    )
+                }
             }
         }
         return
@@ -557,33 +607,24 @@ fun PlayerScreen(
     val queueAddedText = stringResource(R.string.player_added_to_queue_end)
     val playNextAddedText = stringResource(R.string.player_play_next_added)
 
-    val visibleTracks = remember(deviceTracks, favoriteIds, playlists, selectedPlaylistId, query, selectedSection) {
-        val trackById = deviceTracks.associateBy { it.id }
-        val base = when (selectedSection) {
-            PlayerSection.Songs -> deviceTracks
-            PlayerSection.Favorites -> deviceTracks.filter { favoriteIds.contains(it.id) }
-            PlayerSection.Playlist -> {
-                val playlist = playlists.firstOrNull { it.id == selectedPlaylistId }
-                if (playlist == null) emptyList()
-                else playlist.songIds.mapNotNull { trackById[it] }
-            }
-        }
-        if (query.isBlank()) base
-        else {
-            val q = query.trim().lowercase()
-            base.filter {
-                it.title.lowercase().contains(q) ||
-                    it.artist.lowercase().contains(q) ||
-                    (it.album ?: "").lowercase().contains(q)
-            }
-        }
-    }.let { tracks ->
-        when (sortOption) {
-            SortOption.NAME_ASC -> tracks.sortedBy { it.title.lowercase() }
-            SortOption.NAME_DESC -> tracks.sortedByDescending { it.title.lowercase() }
-            SortOption.NEWEST_FIRST -> tracks.sortedByDescending { it.dateAddedMs }
-            SortOption.OLDEST_FIRST -> tracks.sortedBy { it.dateAddedMs }
-        }
+    val visibleTracks = remember(
+        deviceTracks,
+        favoriteIds,
+        playlists,
+        selectedPlaylistId,
+        query,
+        selectedSection,
+        sortOption,
+    ) {
+        buildVisibleTracksForSection(
+            deviceTracks,
+            favoriteIds,
+            playlists,
+            selectedPlaylistId,
+            query,
+            selectedSection,
+            sortOption,
+        )
     }
 
     /**
@@ -1131,23 +1172,48 @@ fun PlayerScreen(
                     Spacer(modifier = Modifier.height(14.dp))
                 }
 
-                LazyColumn(
-                    state = when (selectedSection) {
-                        PlayerSection.Songs -> songsListState
-                        PlayerSection.Favorites -> favoritesListState
-                        PlayerSection.Playlist -> playlistListState
+                AnimatedContent(
+                    targetState = selectedSection,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(240)) + slideInHorizontally { it / 6 }) togetherWith
+                            (fadeOut(animationSpec = tween(200)) + slideOutHorizontally { -it / 6 })
                     },
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    // El mini-player está anclado abajo en un `Box`, así que reservamos
-                    // espacio para que el listado no se solape y los taps funcionen bien.
-                    contentPadding = PaddingValues(bottom = 190.dp),
-                ) {
-                    items(visibleTracks) { track ->
+                    label = "player_section_content",
+                ) { section ->
+                    val tracksInSection = remember(
+                        deviceTracks,
+                        favoriteIds,
+                        playlists,
+                        selectedPlaylistId,
+                        query,
+                        section,
+                        sortOption,
+                    ) {
+                        buildVisibleTracksForSection(
+                            deviceTracks,
+                            favoriteIds,
+                            playlists,
+                            selectedPlaylistId,
+                            query,
+                            section,
+                            sortOption,
+                        )
+                    }
+                    LazyColumn(
+                        state = when (section) {
+                            PlayerSection.Songs -> songsListState
+                            PlayerSection.Favorites -> favoritesListState
+                            PlayerSection.Playlist -> playlistListState
+                        },
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(bottom = 190.dp),
+                    ) {
+                        items(tracksInSection) { track ->
                         val currentPlaylist =
                             selectedPlaylistId?.let { pid -> playlists.firstOrNull { it.id == pid } }
                         val showRemoveFromPlaylist =
-                            selectedSection == PlayerSection.Playlist &&
+                            section == PlayerSection.Playlist &&
                                 selectedPlaylistId != null &&
                                 currentPlaylist?.songIds?.contains(track.id) == true
                         val isFavorite = favoriteIds.contains(track.id)
@@ -1245,7 +1311,7 @@ fun PlayerScreen(
                                 showSnack("Eliminadas ${selectedTracksOrdered.size} canciones del teléfono.")
                                 clearTrackSelection()
                             },
-                            showBulkRemoveFromPlaylist = selectedSection == PlayerSection.Playlist && selectedPlaylistId != null,
+                            showBulkRemoveFromPlaylist = section == PlayerSection.Playlist && selectedPlaylistId != null,
                             onBulkRemoveFromPlaylist = {
                                 val pid = selectedPlaylistId ?: return@TrackRow
                                 if (selectedTracksOrdered.isEmpty()) return@TrackRow
@@ -1275,13 +1341,27 @@ fun PlayerScreen(
                         )
                     }
                 }
+                }
             }
 
+            val miniDurationMs = playbackDurationMs.toInt().takeIf { it > 0 } ?: 0
+            val miniCurrentMs = ((sliderDragPos ?: sliderPosition).coerceIn(0f, 1f) * miniDurationMs).toInt()
+            val miniSliderA11y = stringResource(
+                R.string.player_slider_a11y,
+                formatMs(miniCurrentMs),
+                formatMs(miniDurationMs),
+            )
+
             // MINI PLAYER (parte inferior boceto 1)
-            MiniPlayerBar(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+            AnimatedVisibility(
+                visible = currentTrack != null,
+                enter = slideInVertically { it } + fadeIn(animationSpec = tween(280)),
+                exit = slideOutVertically { it } + fadeOut(animationSpec = tween(220)),
+            ) {
+                MiniPlayerBar(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
                 track = currentTrack,
                 isPlaying = isPlaying,
                 position = sliderPosition,
@@ -1291,6 +1371,7 @@ fun PlayerScreen(
                 queueSize = if (shuffleOn && shuffleOrder.isNotEmpty())
                     (shuffleOrder.size - (shuffleIndex + 1).coerceAtLeast(0)).coerceAtLeast(0)
                 else queue.size,
+                sliderAccessibilityLabel = miniSliderA11y,
                 onTogglePlay = {
                     currentTrack ?: return@MiniPlayerBar
                     context.startService(
@@ -1320,7 +1401,8 @@ fun PlayerScreen(
                 onOpenQueue = { queueSheetOpen = true },
                 onToggleShuffle = { onToggleShuffle() },
                 onToggleRepeat = { onCycleRepeatMode() },
-            )
+                )
+            }
 
             // OVERLAY EXPANDIDO (boceto 2)
             if (isExpanded) {
@@ -2088,19 +2170,25 @@ private fun ArtworkThumbnail(
         Box(modifier = Modifier.size(sizeDp.dp))
     } else {
         val fallback = R.drawable.ic_launcher_foreground
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(imageData ?: fallback)
-                .crossfade(180)
-                .build(),
-            contentDescription = null,
-            modifier = Modifier
-                .size(sizeDp.dp)
-                .border(0.dp, Color.Transparent),
-            contentScale = ContentScale.Crop,
-            placeholder = painterResource(fallback),
-            error = painterResource(fallback),
-        )
+        Crossfade(
+            targetState = imageData,
+            animationSpec = tween(200),
+            label = "row_artwork_cf",
+        ) { data ->
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(data ?: fallback)
+                    .crossfade(180)
+                    .build(),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(sizeDp.dp)
+                    .border(0.dp, Color.Transparent),
+                contentScale = ContentScale.Crop,
+                placeholder = painterResource(fallback),
+                error = painterResource(fallback),
+            )
+        }
     }
 }
 
@@ -2119,9 +2207,9 @@ private fun TrackOverflowMenu(
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
-            Icon(
-                imageVector = Icons.Filled.MoreVert,
-                contentDescription = "Más opciones",
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = stringResource(R.string.player_cd_more_options),
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
             )
         }
@@ -2433,6 +2521,45 @@ private fun PrimaryPillButton(
 }
 
 @Composable
+private fun LibraryEmptyState(
+    modifier: Modifier = Modifier,
+    onOpenDownloader: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 28.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.LibraryMusic,
+            contentDescription = null,
+            modifier = Modifier.size(72.dp),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = stringResource(R.string.player_empty_library_title),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.player_empty_library_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedButton(onClick = onOpenDownloader) {
+            Text(stringResource(R.string.player_empty_library_cta))
+        }
+    }
+}
+
+@Composable
 private fun MiniPlayerBar(
     modifier: Modifier,
     track: DeviceTrack?,
@@ -2442,6 +2569,7 @@ private fun MiniPlayerBar(
     shuffleOn: Boolean,
     repeatMode: RepeatMode,
     queueSize: Int,
+    sliderAccessibilityLabel: String,
     onTogglePlay: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -2453,6 +2581,14 @@ private fun MiniPlayerBar(
     onToggleRepeat: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
+    val playScale by animateFloatAsState(
+        targetValue = if (isPlaying) 0.92f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "mini_play_scale",
+    )
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -2479,16 +2615,22 @@ private fun MiniPlayerBar(
                             .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp)),
                     ) {
                         val miniCtx = LocalContext.current
-                        if (artwork != null) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(miniCtx)
-                                    .data(artwork)
-                                    .crossfade(180)
-                                    .build(),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
+                        Crossfade(
+                            targetState = artwork,
+                            animationSpec = tween(220),
+                            label = "mini_artwork_cf",
+                        ) { bmp ->
+                            if (bmp != null) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(miniCtx)
+                                        .data(bmp)
+                                        .crossfade(180)
+                                        .build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.size(10.dp))
@@ -2507,7 +2649,7 @@ private fun MiniPlayerBar(
                         IconButton(onClick = onOpenQueue) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = "Cola",
+                                contentDescription = stringResource(R.string.player_cd_queue),
                                 tint = if (queueSize > 0) MaterialTheme.colorScheme.primary
                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
@@ -2534,7 +2676,7 @@ private fun MiniPlayerBar(
                     IconButton(onClick = onOpenExpanded) {
                         Icon(
                             imageVector = Icons.Filled.Visibility,
-                            contentDescription = "Ver letra",
+                            contentDescription = stringResource(R.string.player_cd_expand),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -2546,6 +2688,9 @@ private fun MiniPlayerBar(
             val sliderValue = localDrag ?: position
             Slider(
                 value = sliderValue,
+                modifier = Modifier.semantics {
+                    contentDescription = sliderAccessibilityLabel
+                },
                 onValueChange = { v ->
                     localDrag = v
                     onSeekPreview(v)
@@ -2583,7 +2728,7 @@ private fun MiniPlayerBar(
                 IconButton(onClick = onToggleShuffle) {
                     Icon(
                         imageVector = Icons.Outlined.Shuffle,
-                        contentDescription = "Opciones",
+                        contentDescription = stringResource(R.string.player_cd_shuffle),
                         tint = if (shuffleOn) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -2596,10 +2741,13 @@ private fun MiniPlayerBar(
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
-                    IconButton(onClick = onTogglePlay) {
+                    IconButton(
+                        onClick = onTogglePlay,
+                        modifier = Modifier.scale(playScale),
+                    ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = "Play/Pause",
+                            contentDescription = stringResource(R.string.player_cd_play_pause),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -2614,7 +2762,7 @@ private fun MiniPlayerBar(
                 IconButton(onClick = onToggleRepeat) {
                     Icon(
                         imageVector = Icons.Outlined.Loop,
-                        contentDescription = "Repetir",
+                        contentDescription = stringResource(R.string.player_cd_repeat),
                         tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
@@ -2665,6 +2813,14 @@ private fun ExpandedPlayerOverlay(
     onRequestLyricsDownload: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
+    val expandedPlayScale by animateFloatAsState(
+        targetValue = if (isPlaying) 0.92f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "expanded_play_scale",
+    )
     val overlayPalette = currentBeatMyBeatThemeProfile()
     val ctx = LocalContext.current
     var dominantTop by remember { mutableStateOf(overlayPalette.backgroundTop) }
@@ -2729,7 +2885,7 @@ private fun ExpandedPlayerOverlay(
                 IconButton(onClick = onClose) {
                     Icon(
                         imageVector = Icons.Filled.KeyboardArrowDown,
-                        contentDescription = "Cerrar",
+                        contentDescription = stringResource(R.string.player_cd_close),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
@@ -2827,8 +2983,16 @@ private fun ExpandedPlayerOverlay(
                     val currentMs = (position.coerceIn(0f, 1f) * durationMs).toInt()
                     var localDrag by remember { mutableStateOf<Float?>(null) }
                     val sliderValue = localDrag ?: position
+                    val expandedSliderA11y = stringResource(
+                        R.string.player_slider_a11y,
+                        formatMs(((localDrag ?: position).coerceIn(0f, 1f) * durationMs).toInt()),
+                        formatMs(durationMs),
+                    )
                     Slider(
                         value = sliderValue,
+                        modifier = Modifier.semantics {
+                            contentDescription = expandedSliderA11y
+                        },
                         onValueChange = { v ->
                             localDrag = v
                             onSeekPreview(v)
@@ -2863,7 +3027,7 @@ private fun ExpandedPlayerOverlay(
                         IconButton(onClick = onToggleShuffle) {
                             Icon(
                                 imageVector = Icons.Outlined.Shuffle,
-                                contentDescription = "Shuffle",
+                                contentDescription = stringResource(R.string.player_cd_shuffle),
                                 tint = if (shuffleOn) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
@@ -2876,10 +3040,13 @@ private fun ExpandedPlayerOverlay(
                                     tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
-                            IconButton(onClick = onTogglePlay) {
+                            IconButton(
+                                onClick = onTogglePlay,
+                                modifier = Modifier.scale(expandedPlayScale),
+                            ) {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                    contentDescription = "Play/Pause",
+                                    contentDescription = stringResource(R.string.player_cd_play_pause),
                                     tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
@@ -2894,7 +3061,7 @@ private fun ExpandedPlayerOverlay(
                         IconButton(onClick = onToggleRepeat) {
                             Icon(
                                 imageVector = Icons.Outlined.Loop,
-                                contentDescription = "Repeat",
+                                contentDescription = stringResource(R.string.player_cd_repeat),
                                 tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
@@ -2915,6 +3082,43 @@ private enum class SortOption {
     NAME_DESC,
     NEWEST_FIRST,
     OLDEST_FIRST,
+}
+
+private fun buildVisibleTracksForSection(
+    deviceTracks: List<DeviceTrack>,
+    favoriteIds: Set<Long>,
+    playlists: List<PlayerViewModel.PlaylistEntity>,
+    selectedPlaylistId: Long?,
+    query: String,
+    section: PlayerSection,
+    sortOption: SortOption,
+): List<DeviceTrack> {
+    val trackById = deviceTracks.associateBy { it.id }
+    val base = when (section) {
+        PlayerSection.Songs -> deviceTracks
+        PlayerSection.Favorites -> deviceTracks.filter { favoriteIds.contains(it.id) }
+        PlayerSection.Playlist -> {
+            val playlist = playlists.firstOrNull { it.id == selectedPlaylistId }
+            if (playlist == null) emptyList()
+            else playlist.songIds.mapNotNull { trackById[it] }
+        }
+    }
+    val filtered = if (query.isBlank()) {
+        base
+    } else {
+        val q = query.trim().lowercase()
+        base.filter {
+            it.title.lowercase().contains(q) ||
+                it.artist.lowercase().contains(q) ||
+                (it.album ?: "").lowercase().contains(q)
+        }
+    }
+    return when (sortOption) {
+        SortOption.NAME_ASC -> filtered.sortedBy { it.title.lowercase() }
+        SortOption.NAME_DESC -> filtered.sortedByDescending { it.title.lowercase() }
+        SortOption.NEWEST_FIRST -> filtered.sortedByDescending { it.dateAddedMs }
+        SortOption.OLDEST_FIRST -> filtered.sortedBy { it.dateAddedMs }
+    }
 }
 
 @Composable

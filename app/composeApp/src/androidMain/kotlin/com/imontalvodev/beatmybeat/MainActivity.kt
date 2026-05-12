@@ -11,6 +11,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -163,6 +168,22 @@ class MainActivity : ComponentActivity() {
                             navController = navController,
                             startDestination = "splash",
                             modifier = Modifier.padding(innerPadding),
+                            enterTransition = {
+                                fadeIn(animationSpec = tween(280)) +
+                                    slideInHorizontally(animationSpec = tween(280)) { it / 10 }
+                            },
+                            exitTransition = {
+                                fadeOut(animationSpec = tween(220)) +
+                                    slideOutHorizontally(animationSpec = tween(240)) { -it / 10 }
+                            },
+                            popEnterTransition = {
+                                fadeIn(animationSpec = tween(280)) +
+                                    slideInHorizontally(animationSpec = tween(280)) { -it / 10 }
+                            },
+                            popExitTransition = {
+                                fadeOut(animationSpec = tween(220)) +
+                                    slideOutHorizontally(animationSpec = tween(240)) { it / 10 }
+                            },
                         ) {
                             composable("splash") {
                                 SplashScreen(
@@ -197,7 +218,13 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable("player") {
-                                PlayerScreen()
+                                PlayerScreen(
+                                    onNavigateToDownloader = {
+                                        navController.navigate("analyze") {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                )
                             }
                             composable("profile") {
                                 ProfileScreen(

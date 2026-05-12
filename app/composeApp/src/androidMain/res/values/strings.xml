@@ -31,6 +31,20 @@
     <string name="player_error_cannot_play_file">No se pudo reproducir este archivo.</string>
     <string name="player_song_deleted">Canción eliminada.</string>
     <string name="player_delete_cancelled">Eliminación cancelada.</string>
+    <string name="player_empty_library_title">Tu biblioteca está vacía</string>
+    <string name="player_empty_library_body">Descarga música desde la pestaña Descargar para verla aquí.</string>
+    <string name="player_empty_library_cta">Ir a Descargar</string>
+    <string name="player_audio_permission_title">Permiso de audio</string>
+    <string name="player_audio_permission_body">Para listar las canciones del dispositivo, BeatMyBeat necesita acceso a tus archivos de audio.</string>
+    <string name="player_audio_permission_grant">Conceder permiso</string>
+    <string name="player_cd_shuffle">Aleatorio</string>
+    <string name="player_cd_play_pause">Reproducir o pausar</string>
+    <string name="player_cd_close">Cerrar reproductor expandido</string>
+    <string name="player_cd_queue">Cola de reproducción</string>
+    <string name="player_cd_expand">Ampliar reproductor</string>
+    <string name="player_cd_more_options">Más opciones</string>
+    <string name="player_cd_repeat">Repetición</string>
+    <string name="player_slider_a11y">Posición de reproducción: %1$s de %2$s</string>
 
     <string name="download_song_title">Descargando canción</string>
     <string name="download_processing">Procesando...</string>
