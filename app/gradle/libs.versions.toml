@@ -22,6 +22,8 @@ newpipeextractor = "v0.26.0"
 okhttp = "5.3.2"
 ffmpegkit = "6.1.4"
 documentfile = "1.1.0"
+coil = "2.7.0"
+androidx-palette = "1.0.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -53,6 +55,8 @@ newpipeextractor = { module = "com.github.TeamNewPipe:NewPipeExtractor", version
 ffmpeg-kit = { module = "io.github.jamaismagic.ffmpeg:ffmpeg-kit-main-16kb", version.ref = "ffmpegkit" }
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "desugarJdkLibs" }
 documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "androidx-palette" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

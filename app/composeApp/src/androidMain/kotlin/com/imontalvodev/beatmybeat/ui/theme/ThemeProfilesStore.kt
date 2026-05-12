@@ -5,6 +5,38 @@ import androidx.compose.ui.graphics.Color
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
+
+private fun linearSrgb(channel: Float): Double {
+    val v = channel.toDouble().coerceIn(0.0, 1.0)
+    return if (v <= 0.03928) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
+}
+
+private fun relativeLuminance(c: Color): Double {
+    val r = linearSrgb(c.red)
+    val g = linearSrgb(c.green)
+    val b = linearSrgb(c.blue)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+private fun contrastRatio(c1: Color, c2: Color): Double {
+    val l1 = relativeLuminance(c1) + 0.05
+    val l2 = relativeLuminance(c2) + 0.05
+    return max(l1, l2) / min(l1, l2)
+}
+
+/** Perfiles guardados corruptos o con poco contraste rompen toda la UI (texto ≈ fondo). */
+private fun BeatMyBeatThemeProfile.hasUsableContrast(): Boolean {
+    if (surface.alpha < 0.35f || onSurface.alpha < 0.35f) return false
+    if (backgroundBottom.alpha < 0.35f) return false
+    if (primary.alpha < 0.35f) return false
+    if (contrastRatio(surface, onSurface) < 2.0) return false
+    if (contrastRatio(backgroundBottom, onSurface) < 2.0) return false
+    if (contrastRatio(primary, Color.Black) < 2.0) return false
+    return true
+}
 
 class ThemeProfilesStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("beatmybeat_theme_profiles", Context.MODE_PRIVATE)
@@ -16,7 +48,7 @@ class ThemeProfilesStore(private val context: Context) {
         val out = mutableListOf<BeatMyBeatThemeProfile>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            out += BeatMyBeatThemeProfile(
+            var profile = BeatMyBeatThemeProfile(
                 id = o.optString("id", UUID.randomUUID().toString()),
                 name = o.optString("name", "Custom"),
                 backgroundTop = Color(o.optLong("backgroundTop", NeonMintProfile.backgroundTop.value.toLong())),
@@ -28,6 +60,10 @@ class ThemeProfilesStore(private val context: Context) {
                 onSurface = Color(o.optLong("onSurface", NeonMintProfile.onSurface.value.toLong())),
                 onSurfaceMuted = Color(o.optLong("onSurfaceMuted", NeonMintProfile.onSurfaceMuted.value.toLong())),
             )
+            if (profile.id != NeonMintProfile.id && !profile.hasUsableContrast()) {
+                profile = NeonMintProfile.copy(id = profile.id, name = profile.name)
+            }
+            out += profile
         }
         if (out.isEmpty()) return defaultProfiles()
         val sanitized = out.mapNotNull { profile ->

@@ -2,6 +2,7 @@ package com.imontalvodev.beatmybeat.ui.feature.splash
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,8 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,11 +62,10 @@ fun SplashScreen(
         visible = true
     }
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgBrush),
-        color = Color.Transparent,
     ) {
         Column(
             modifier = Modifier
@@ -83,8 +83,8 @@ fun SplashScreen(
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                palette.backgroundTop.copy(alpha = 0.0f),
-                                palette.backgroundTop.copy(alpha = 0.0f),
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
                             ),
                         ),
                     ),
@@ -146,27 +146,26 @@ fun SplashScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Botón secundario outline
-            Surface(
+            OutlinedButton(
+                onClick = onGoToPlayer,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(999.dp),
-                color = Color.Transparent,
-                border = androidx.compose.foundation.BorderStroke(
+                border = BorderStroke(
                     width = 1.5.dp,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
                 ),
-                onClick = onGoToPlayer,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = stringResource(R.string.splash_go_to_player),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = FontWeight.SemiBold,
-                        ),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.splash_go_to_player),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
             }
         }
     }

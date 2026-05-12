@@ -85,7 +85,9 @@ fun BeatMyBeatTheme(
         inverseSurface = themeProfile.onSurface,
         inverseOnSurface = themeProfile.surface,
         inversePrimary = themeProfile.primary,
-        surfaceTint = themeProfile.primary,
+        // Sin tinte: con Surface(color = Transparent) + fondo en modifier, un surfaceTint fuerte
+        // en M3 1.10 puede aclarar capas y dejar texto/iconos casi iguales al fondo.
+        surfaceTint = Color.Transparent,
     )
 
     CompositionLocalProvider(LocalBeatMyBeatThemeProfile provides themeProfile) {

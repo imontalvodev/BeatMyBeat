@@ -23,7 +23,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -105,11 +104,10 @@ fun PlaylistScreen(
         colors = listOf(palette.backgroundTop, palette.backgroundBottom),
     )
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(bgBrush),
-        color = Color.Transparent,
     ) {
         Column(
             modifier = Modifier
@@ -192,6 +190,7 @@ private fun PlaylistHeader(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
     ) {
@@ -254,6 +253,7 @@ private fun TrackRow(track: PlaylistSong, onPlay: () -> Unit) {
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
     ) {
         Row(

@@ -1,8 +1,5 @@
 package com.imontalvodev.beatmybeat.ui.feature.analyze
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,7 +27,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,15 +39,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
-import com.imontalvodev.beatmybeat.ui.network.RemoteArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.SongSuggestion
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchClient
 import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
@@ -64,9 +62,9 @@ import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.imontalvodev.beatmybeat.LocalSnackbarHostState
 import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
@@ -111,11 +109,10 @@ fun AnalyzeScreen(
         }
     }
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(backgroundBrush),
-        color = androidx.compose.ui.graphics.Color.Transparent,
     ) {
         Column(
             modifier = Modifier
@@ -151,6 +148,7 @@ fun AnalyzeScreen(
                 shape = RoundedCornerShape(28.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 18.dp),
                 border = androidx.compose.foundation.BorderStroke(
@@ -485,6 +483,7 @@ fun AnalyzeScreen(
                                             shape = RoundedCornerShape(12.dp),
                                             colors = CardDefaults.cardColors(
                                                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                                contentColor = MaterialTheme.colorScheme.onSurface,
                                             ),
                                         ) {
                                             Column(
@@ -494,7 +493,12 @@ fun AnalyzeScreen(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                                 ) {
-                                                    SuggestionThumbnail(url = suggestion.thumbnailUrl)
+                                                    SuggestionThumbnail(
+                                                        url = suggestion.thumbnailUrl,
+                                                        contentDescription = suggestion.title.ifBlank {
+                                                            stringResource(R.string.analyze_song_title_placeholder)
+                                                        },
+                                                    )
                                                     Column(
                                                         modifier = Modifier.weight(1f),
                                                         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -666,45 +670,24 @@ private data class SongUrlMetadata(
 )
 
 @Composable
-private fun SuggestionThumbnail(url: String) {
-    val client = remember { OkHttpClient() }
-    var bitmap by remember(url) { mutableStateOf<Bitmap?>(RemoteArtworkCache.get(url)) }
-
-    LaunchedEffect(url) {
-        if (url.isBlank() || bitmap != null) return@LaunchedEffect
-        val loaded = withContext(Dispatchers.IO) {
-            runCatching {
-                val req = Request.Builder().url(url).get().build()
-                client.newCall(req).execute().use { res ->
-                    if (!res.isSuccessful) return@use null
-                    val bytes = res.body?.bytes() ?: return@use null
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                }
-            }.getOrNull()
-        }
-        bitmap = loaded
-        if (loaded != null) RemoteArtworkCache.put(url, loaded)
-    }
-
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap!!.asImageBitmap(),
-            contentDescription = null,
-            modifier = Modifier
-                .size(54.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                    shape = RoundedCornerShape(10.dp),
-                ),
-        )
+private fun SuggestionThumbnail(url: String, contentDescription: String) {
+    val context = LocalContext.current
+    val placeholderColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+    val mod = Modifier
+        .size(54.dp)
+        .clip(RoundedCornerShape(10.dp))
+        .background(placeholderColor)
+    if (url.isBlank()) {
+        Box(modifier = mod)
     } else {
-        Box(
-            modifier = Modifier
-                .size(54.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                    shape = RoundedCornerShape(10.dp),
-                ),
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(url)
+                .crossfade(true)
+                .build(),
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Crop,
+            modifier = mod,
         )
     }
 }

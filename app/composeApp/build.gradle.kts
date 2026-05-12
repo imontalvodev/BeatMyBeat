@@ -41,6 +41,8 @@ kotlin {
             implementation(libs.androidx.documentfile)
             implementation(compose.materialIconsExtended)
             implementation(libs.okhttp)
+            implementation(libs.coil.compose)
+            implementation(libs.androidx.palette.ktx)
             implementation(libs.newpipeextractor)
             implementation(libs.ffmpeg.kit)
         }

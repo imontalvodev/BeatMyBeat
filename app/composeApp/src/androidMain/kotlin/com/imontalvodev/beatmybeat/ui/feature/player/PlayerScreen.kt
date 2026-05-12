@@ -2,10 +2,10 @@ package com.imontalvodev.beatmybeat.ui.feature.player
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color as AndroidColor
 import android.app.Activity
 import android.app.RecoverableSecurityException
 import android.media.AudioAttributes
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.Manifest
@@ -13,7 +13,8 @@ import android.content.pm.PackageManager
 import android.content.Intent
 import android.os.IBinder
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.foundation.Image
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -65,7 +66,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.TextButton
@@ -83,10 +83,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -96,6 +99,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
@@ -104,6 +108,8 @@ import androidx.media3.common.Player
 import java.io.File
 import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.palette.graphics.Palette
+import coil.compose.AsyncImage
 import com.imontalvodev.beatmybeat.LocalSnackbarHostState
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
@@ -113,8 +119,10 @@ import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
+import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
 import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
+import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -378,7 +386,7 @@ fun PlayerScreen(
     }
 
     if (deviceTracks.isEmpty()) {
-        Surface(
+        Box(
             modifier = modifier
                 .fillMaxSize()
                 .background(
@@ -386,7 +394,6 @@ fun PlayerScreen(
                         colors = listOf(palette.backgroundTop, palette.backgroundBottom),
                     ),
                 ),
-            color = Color.Transparent,
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -1002,11 +1009,10 @@ fun PlayerScreen(
         }
     }
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(bgBrush),
-        color = Color.Transparent,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // LISTA (boceto 1)
@@ -1324,7 +1330,6 @@ fun PlayerScreen(
                         lyricsState is LyricsUiState.Empty
                 ExpandedPlayerOverlay(
                     modifier = Modifier.fillMaxSize(),
-                    bgBrush = bgBrush,
                     track = currentTrack,
                     artwork = currentArtwork,
                     lyricsState = lyricsState,
@@ -2063,59 +2068,38 @@ private fun ArtworkThumbnail(
     isPlaceholderOnly: Boolean = false,
 ) {
     val context = LocalContext.current
-    var bitmap by remember(track.id) { mutableStateOf<Bitmap?>(ArtworkCache.get(track.id)) }
+    var imageData by remember(track.id) { mutableStateOf<Any?>(ArtworkCache.get(track.id)) }
 
     LaunchedEffect(track.id) {
-        if (bitmap != null) return@LaunchedEffect
-
-        val loaded = withContext(Dispatchers.IO) {
-            // 1) Tags embebidos
-            val embedded = runCatching {
-                val retriever = MediaMetadataRetriever()
-                try {
-                    retriever.setDataSource(context, Uri.parse(track.uri))
-                    val data = retriever.embeddedPicture
-                    if (data != null) BitmapFactory.decodeByteArray(data, 0, data.size) else null
-                } finally { retriever.release() }
-            }.getOrNull()
-
-            if (embedded != null) return@withContext embedded
-
-            // 2) Fallback: .meta.json artworkBase64
-            runCatching {
-                val uri = Uri.parse(track.uri)
-                val audioFile = java.io.File(uri.path ?: return@runCatching null)
-                val metaFile = java.io.File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.meta.json")
-                if (!metaFile.exists()) return@runCatching null
-                val b64 = org.json.JSONObject(metaFile.readText()).optString("artworkBase64")
-                if (b64.isBlank()) return@runCatching null
-                val bytes = android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }.getOrNull()
+        if (imageData != null) return@LaunchedEffect
+        val bytes = withContext(Dispatchers.IO) {
+            PlaybackArtworkHelper.resolveArtworkBytes(context, track.uri)
+        } ?: return@LaunchedEffect
+        val decoded = withContext(Dispatchers.IO) {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         }
-
-        bitmap = loaded
-        if (loaded != null) ArtworkCache.put(track.id, loaded)
+        if (decoded != null) {
+            ArtworkCache.put(track.id, decoded)
+            imageData = decoded
+        }
     }
 
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap!!.asImageBitmap(),
+    if (isPlaceholderOnly) {
+        Box(modifier = Modifier.size(sizeDp.dp))
+    } else {
+        val fallback = R.drawable.ic_launcher_foreground
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(imageData ?: fallback)
+                .crossfade(180)
+                .build(),
             contentDescription = null,
             modifier = Modifier
                 .size(sizeDp.dp)
                 .border(0.dp, Color.Transparent),
             contentScale = ContentScale.Crop,
-        )
-    } else if (!isPlaceholderOnly) {
-        // Si no hay carátula embebida, mostramos icono genérico.
-        Image(
-            painter = painterResource(id = R.drawable.ic_launcher_foreground),
-            contentDescription = null,
-            modifier = Modifier
-                .size(sizeDp.dp)
-                .border(0.dp, Color.Transparent),
-            contentScale = ContentScale.Crop,
+            placeholder = painterResource(fallback),
+            error = painterResource(fallback),
         )
     }
 }
@@ -2494,9 +2478,13 @@ private fun MiniPlayerBar(
                             .size(26.dp)
                             .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp)),
                     ) {
+                        val miniCtx = LocalContext.current
                         if (artwork != null) {
-                            Image(
-                                bitmap = artwork.asImageBitmap(),
+                            AsyncImage(
+                                model = ImageRequest.Builder(miniCtx)
+                                    .data(artwork)
+                                    .crossfade(180)
+                                    .build(),
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,
@@ -2636,10 +2624,28 @@ private fun MiniPlayerBar(
     }
 }
 
+private fun androidArgbIntToComposeColor(argb: Int): Color =
+    Color(
+        red = AndroidColor.red(argb) / 255f,
+        green = AndroidColor.green(argb) / 255f,
+        blue = AndroidColor.blue(argb) / 255f,
+        alpha = AndroidColor.alpha(argb) / 255f,
+    )
+
+/**
+ * El título y el artista se dibujan sobre el gradiente (sin tarjeta). Si el color extraído de la
+ * carátula es muy claro, el [MaterialTheme.colorScheme.onSurface] claro del tema queda ilegible.
+ */
+private fun expandedPlayerOverlayGradientTop(artworkColor: Color, themeTop: Color): Color {
+    val opaque = artworkColor.copy(alpha = 1f)
+    val lum = 0.299f * opaque.red + 0.587f * opaque.green + 0.114f * opaque.blue
+    val towardTheme = if (lum > 0.38f) 0.72f else 0.22f
+    return lerp(opaque, themeTop, towardTheme).copy(alpha = 0.82f)
+}
+
 @Composable
 private fun ExpandedPlayerOverlay(
     modifier: Modifier,
-    bgBrush: Brush,
     track: DeviceTrack?,
     artwork: Bitmap?,
     lyricsState: LyricsUiState,
@@ -2659,13 +2665,61 @@ private fun ExpandedPlayerOverlay(
     onRequestLyricsDownload: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
-    Surface(
-        modifier = modifier.background(bgBrush),
-        color = Color.Transparent,
-    ) {
+    val overlayPalette = currentBeatMyBeatThemeProfile()
+    val ctx = LocalContext.current
+    var dominantTop by remember { mutableStateOf(overlayPalette.backgroundTop) }
+
+    LaunchedEffect(artwork, track?.id, overlayPalette.id) {
+        val bmp = artwork
+        if (bmp == null) {
+            dominantTop = overlayPalette.backgroundTop
+            return@LaunchedEffect
+        }
+        val sw = withContext(Dispatchers.Default) {
+            val pal = Palette.from(bmp).generate()
+            pal.darkVibrantSwatch ?: pal.mutedSwatch ?: pal.dominantSwatch
+        }
+        dominantTop = sw?.let { s ->
+            val raw = androidArgbIntToComposeColor(s.rgb).copy(alpha = 1f)
+            expandedPlayerOverlayGradientTop(raw, overlayPalette.backgroundTop)
+        } ?: overlayPalette.backgroundTop
+    }
+
+    val animatedTop by animateColorAsState(
+        targetValue = dominantTop,
+        animationSpec = tween(600),
+        label = "expanded_player_dominant",
+    )
+    val gradientBrush = remember(animatedTop, overlayPalette.backgroundBottom) {
+        Brush.verticalGradient(
+            colors = listOf(animatedTop, overlayPalette.backgroundBottom),
+        )
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Spacer(
+            Modifier
+                .fillMaxSize()
+                .background(overlayPalette.backgroundBottom),
+        )
+        if (artwork != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(ctx)
+                    .data(artwork)
+                    .build(),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(28.dp)
+                    .alpha(0.38f),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        Spacer(Modifier.fillMaxSize().background(gradientBrush))
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .zIndex(1f)
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
             Row(
@@ -2695,8 +2749,11 @@ private fun ExpandedPlayerOverlay(
                     colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
                 ) {
                     if (artwork != null) {
-                        Image(
-                            bitmap = artwork.asImageBitmap(),
+                        AsyncImage(
+                            model = ImageRequest.Builder(ctx)
+                                .data(artwork)
+                                .crossfade(220)
+                                .build(),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
