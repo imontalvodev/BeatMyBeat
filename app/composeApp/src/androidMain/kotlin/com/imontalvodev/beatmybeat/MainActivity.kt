@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.provider.DocumentsContract
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -32,6 +31,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,6 +45,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
@@ -61,7 +62,7 @@ import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatTheme
 import com.imontalvodev.beatmybeat.ui.theme.ThemeProfilesStore
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private fun applyLanguage(languageTag: String) {
         if (languageTag.isBlank()) return
         val locales = LocaleListCompat.forLanguageTags(languageTag)
@@ -85,6 +86,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
+            var localeCompositionEpoch by remember { mutableIntStateOf(0) }
+            @Suppress("UNUSED_VARIABLE")
+            val localeTick = localeCompositionEpoch
+
             val store = remember { ThemeProfilesStore(this) }
             val themeBootstrap = remember(store) {
                 val loaded = store.loadProfiles()
@@ -235,6 +240,7 @@ class MainActivity : ComponentActivity() {
                                 ProfileScreen(
                                     onChangeLanguage = { languageTag ->
                                         applyLanguage(languageTag)
+                                        localeCompositionEpoch++
                                     },
                                     storageLocationLabel = storageLabel,
                                     onPickStorageLocation = { storagePicker.launch(null) },
