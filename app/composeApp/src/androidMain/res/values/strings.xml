@@ -21,6 +21,7 @@
     <string name="player_sort_name_desc">Nombre Z-A</string>
     <string name="player_sort_recent">Recientes</string>
     <string name="player_sort_oldest">Antiguas</string>
+    <string name="player_filters_cd">Abrir lista y ordenación</string>
     <string name="player_queue_title">Cola de reproducción</string>
     <string name="player_clear_queue">Limpiar</string>
     <string name="player_now_playing">Sonando ahora</string>

@@ -16,6 +16,7 @@
     <string name="player_sort_name_desc">Naziv Z-A</string>
     <string name="player_sort_recent">Nedavne</string>
     <string name="player_sort_oldest">Najstarije</string>
+    <string name="player_filters_cd">Otvori popis i sortiranje</string>
     <string name="player_selection_mode_enabled">Način odabira je aktiviran.</string>
     <string name="player_added_to_queue_end">Dodano na kraj reda.</string>
     <string name="player_play_next_added">Reproducirat će se sljedeće.</string>

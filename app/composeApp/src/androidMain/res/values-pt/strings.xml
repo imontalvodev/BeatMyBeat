@@ -16,6 +16,7 @@
     <string name="player_sort_name_desc">Nome Z-A</string>
     <string name="player_sort_recent">Recentes</string>
     <string name="player_sort_oldest">Antigas</string>
+    <string name="player_filters_cd">Abrir lista e ordenação</string>
     <string name="player_selection_mode_enabled">Modo de seleção ativado.</string>
     <string name="player_added_to_queue_end">Adicionado ao fim da fila.</string>
     <string name="player_play_next_added">Vai tocar a seguir.</string>

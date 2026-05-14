@@ -16,6 +16,7 @@
     <string name="player_sort_name_desc">Name Z-A</string>
     <string name="player_sort_recent">Neueste</string>
     <string name="player_sort_oldest">Älteste</string>
+    <string name="player_filters_cd">Bibliothek und Sortierung öffnen</string>
     <string name="player_selection_mode_enabled">Auswahlmodus aktiviert.</string>
     <string name="player_added_to_queue_end">Zum Ende der Warteschlange hinzugefügt.</string>
     <string name="player_play_next_added">Wird als Nächstes abgespielt.</string>

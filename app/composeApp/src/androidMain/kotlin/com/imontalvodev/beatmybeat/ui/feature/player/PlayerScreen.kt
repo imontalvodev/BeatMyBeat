@@ -46,7 +46,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -54,6 +53,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
@@ -64,7 +64,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.Card
@@ -73,6 +72,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -1057,35 +1057,37 @@ fun PlayerScreen(
             .background(bgBrush),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Column(
+                Column(
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
             ) {
                 AppMiniBrand()
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 52.dp),
+                        .heightIn(max = 48.dp),
                     textStyle = MaterialTheme.typography.bodyMedium,
                     singleLine = true,
                     placeholder = { Text(stringResource(R.string.player_search_placeholder)) },
                     shape = RoundedCornerShape(18.dp),
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                SectionChips(
-                    selected = selectedSection,
-                    onSelect = { selectedSection = it },
+                LibraryFiltersMenu(
+                    selectedSection = selectedSection,
+                    selectedSort = sortOption,
+                    onSelectSection = { selectedSection = it },
+                    onSelectSort = { sortOption = it },
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 if (selectedSection == PlayerSection.Playlist) {
                     PlaylistPickerBar(
@@ -1110,15 +1112,10 @@ fun PlayerScreen(
                             playlistRenameNewName = currentName
                         },
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
 
-                SortOptionsBar(
-                    selected = sortOption,
-                    onSelect = { sortOption = it },
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 val selectedTracksOrdered = visibleTracks.filter { selectedTrackIds.contains(it.id) }
                 if (selectionMode) {
@@ -1154,7 +1151,7 @@ fun PlayerScreen(
                     },
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 AnimatedContent(
                     targetState = selectedSection,
@@ -1190,8 +1187,8 @@ fun PlayerScreen(
                             PlayerSection.Playlist -> playlistListState
                         },
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(bottom = 8.dp),
                     ) {
                         items(tracksInSection) { track ->
                         val currentPlaylist =
@@ -1337,13 +1334,11 @@ fun PlayerScreen(
                 MiniPlayerBar(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                 track = currentTrack,
                 isPlaying = isPlaying,
                 position = sliderPosition,
                 artwork = currentArtwork,
-                shuffleOn = shuffleOn,
-                repeatMode = repeatMode,
                 queueSize = if (shuffleOn && shuffleOrder.isNotEmpty())
                     (shuffleOrder.size - (shuffleIndex + 1).coerceAtLeast(0)).coerceAtLeast(0)
                 else queue.size,
@@ -1369,8 +1364,6 @@ fun PlayerScreen(
                 },
                 onOpenExpanded = { isExpanded = true },
                 onOpenQueue = { queueSheetOpen = true },
-                onToggleShuffle = { onToggleShuffle() },
-                onToggleRepeat = { onCycleRepeatMode() },
                 )
             }
         }
@@ -1974,7 +1967,7 @@ private fun TrackRow(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
                 isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
@@ -1986,7 +1979,7 @@ private fun TrackRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(horizontal = 8.dp, vertical = 6.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onLongPress = { onLongPress() },
@@ -1997,10 +1990,10 @@ private fun TrackRow(
         ) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(32.dp)
                     .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
             ) {
-                ArtworkThumbnail(track = track, sizeDp = 36)
+                ArtworkThumbnail(track = track, sizeDp = 32)
                 if (isSelected) {
                     Box(
                         modifier = Modifier
@@ -2016,18 +2009,18 @@ private fun TrackRow(
                     }
                 }
             }
-            Spacer(modifier = Modifier.size(12.dp))
+            Spacer(modifier = Modifier.size(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = track.title.toTitleCaseSimple(),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = track.artist.toTitleCaseSimple(),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -2225,60 +2218,190 @@ private fun TrackOverflowMenu(
 }
 
 @Composable
-private fun SectionChips(
-    selected: PlayerSection,
-    onSelect: (PlayerSection) -> Unit,
+private fun LibraryFiltersMenu(
+    selectedSection: PlayerSection,
+    selectedSort: SortOption,
+    onSelectSection: (PlayerSection) -> Unit,
+    onSelectSort: (SortOption) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        SectionChip(
-            text = stringResource(R.string.player_section_songs),
-            selected = selected == PlayerSection.Songs,
-            onClick = { onSelect(PlayerSection.Songs) },
-        )
-        SectionChip(
-            text = stringResource(R.string.player_section_favorites),
-            selected = selected == PlayerSection.Favorites,
-            onClick = { onSelect(PlayerSection.Favorites) },
-        )
-        SectionChip(
-            text = stringResource(R.string.player_section_playlist),
-            selected = selected == PlayerSection.Playlist,
-            onClick = { onSelect(PlayerSection.Playlist) },
-        )
+    var expanded by remember { mutableStateOf(false) }
+    val sectionLabel = when (selectedSection) {
+        PlayerSection.Songs -> stringResource(R.string.player_section_songs)
+        PlayerSection.Favorites -> stringResource(R.string.player_section_favorites)
+        PlayerSection.Playlist -> stringResource(R.string.player_section_playlist)
     }
-}
-
-@Composable
-private fun SectionChip(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
-    else Color.Black.copy(alpha = 0.18f)
-    val border = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
-    Box(
-        modifier = Modifier
-            .widthIn(min = 96.dp)
-            .background(bg, RoundedCornerShape(14.dp))
-            .border(1.dp, border, RoundedCornerShape(14.dp))
-            .clickable { onClick() }
-            .padding(vertical = 8.dp, horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    val sortLabel = when (selectedSort) {
+        SortOption.NAME_ASC -> stringResource(R.string.player_sort_name_asc)
+        SortOption.NAME_DESC -> stringResource(R.string.player_sort_name_desc)
+        SortOption.NEWEST_FIRST -> stringResource(R.string.player_sort_recent)
+        SortOption.OLDEST_FIRST -> stringResource(R.string.player_sort_oldest)
+    }
+    val summary = "$sectionLabel · $sortLabel"
+    val filtersMenuA11y = stringResource(R.string.player_filters_cd)
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = filtersMenuA11y },
+            shape = RoundedCornerShape(14.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Filled.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth(0.92f),
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_section_songs)) },
+                onClick = {
+                    onSelectSection(PlayerSection.Songs)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                        if (selectedSection == PlayerSection.Songs) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_section_favorites)) },
+                onClick = {
+                    onSelectSection(PlayerSection.Favorites)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                        if (selectedSection == PlayerSection.Favorites) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_section_playlist)) },
+                onClick = {
+                    onSelectSection(PlayerSection.Playlist)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                        if (selectedSection == PlayerSection.Playlist) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_sort_name_asc)) },
+                onClick = {
+                    onSelectSort(SortOption.NAME_ASC)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                        if (selectedSort == SortOption.NAME_ASC) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_sort_name_desc)) },
+                onClick = {
+                    onSelectSort(SortOption.NAME_DESC)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                        if (selectedSort == SortOption.NAME_DESC) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_sort_recent)) },
+                onClick = {
+                    onSelectSort(SortOption.NEWEST_FIRST)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                        if (selectedSort == SortOption.NEWEST_FIRST) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_sort_oldest)) },
+                onClick = {
+                    onSelectSort(SortOption.OLDEST_FIRST)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+                        if (selectedSort == SortOption.OLDEST_FIRST) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -2468,16 +2591,16 @@ private fun PrimaryPillButton(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .height(34.dp)
             .clickable { onClick() },
         shape = RoundedCornerShape(999.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.35f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 text = text,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -2530,8 +2653,6 @@ private fun MiniPlayerBar(
     isPlaying: Boolean,
     position: Float,
     artwork: Bitmap?,
-    shuffleOn: Boolean,
-    repeatMode: RepeatMode,
     queueSize: Int,
     sliderAccessibilityLabel: String,
     onTogglePlay: () -> Unit,
@@ -2541,8 +2662,6 @@ private fun MiniPlayerBar(
     onSeekCommit: (Float) -> Unit,
     onOpenExpanded: () -> Unit,
     onOpenQueue: () -> Unit,
-    onToggleShuffle: () -> Unit,
-    onToggleRepeat: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val playScale by animateFloatAsState(
@@ -2555,28 +2674,68 @@ private fun MiniPlayerBar(
     )
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 4.dp, bottomEnd = 4.dp),
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 3.dp, bottomEnd = 3.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 8.dp, vertical = 4.dp),
         ) {
+            var localDrag by remember { mutableStateOf<Float?>(null) }
+            val sliderValue = localDrag ?: position
+            val previewMs = (sliderValue.coerceIn(0f, 1f) * durationMs).toInt()
+            Slider(
+                value = sliderValue,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .semantics {
+                        contentDescription = sliderAccessibilityLabel
+                    },
+                onValueChange = { v ->
+                    localDrag = v
+                    onSeekPreview(v)
+                },
+                onValueChangeFinished = {
+                    val target = localDrag ?: sliderValue
+                    onSeekCommit(target)
+                    localDrag = null
+                },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = formatMs(previewMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+                Text(
+                    text = formatMs(durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onOpenExpanded)
+                        .padding(vertical = 2.dp, horizontal = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(26.dp)
-                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp)),
+                            .size(40.dp)
+                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
                     ) {
                         val miniCtx = LocalContext.current
                         Crossfade(
@@ -2597,10 +2756,10 @@ private fun MiniPlayerBar(
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.size(10.dp))
+                    Spacer(modifier = Modifier.size(8.dp))
                     Text(
-                        text = "${(track?.title ?: "Sin canción").toTitleCaseSimple()} | ${(track?.artist ?: "").toTitleCaseSimple()}",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "${(track?.title ?: "Sin canción").toTitleCaseSimple()} · ${(track?.artist ?: "").toTitleCaseSimple()}",
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -2608,127 +2767,69 @@ private fun MiniPlayerBar(
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box {
-                        IconButton(onClick = onOpenQueue) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = stringResource(R.string.player_cd_queue),
-                                tint = if (queueSize > 0) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            )
-                        }
-                        if (queueSize > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                                    .align(Alignment.TopEnd)
-                                    .padding(2.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = if (queueSize > 99) "99+" else queueSize.toString(),
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp)
-                                    ),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                )
-                            }
-                        }
-                    }
-                    IconButton(onClick = onOpenExpanded) {
-                        Icon(
-                            imageVector = Icons.Filled.Visibility,
-                            contentDescription = stringResource(R.string.player_cd_expand),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
-
-            val currentMs = (position.coerceIn(0f, 1f) * durationMs).toInt()
-            var localDrag by remember { mutableStateOf<Float?>(null) }
-            val sliderValue = localDrag ?: position
-            Slider(
-                value = sliderValue,
-                modifier = Modifier.semantics {
-                    contentDescription = sliderAccessibilityLabel
-                },
-                onValueChange = { v ->
-                    localDrag = v
-                    onSeekPreview(v)
-                },
-                onValueChangeFinished = {
-                    // localDrag es null cuando el usuario toca sin arrastrar:
-                    // en ese caso usamos sliderValue (que Compose ya actualizó).
-                    val target = localDrag ?: sliderValue
-                    onSeekCommit(target)
-                    localDrag = null
-                },
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = formatMs(currentMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                )
-                Text(
-                    text = formatMs(durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onToggleShuffle) {
-                    Icon(
-                        imageVector = Icons.Outlined.Shuffle,
-                        contentDescription = stringResource(R.string.player_cd_shuffle),
-                        tint = if (shuffleOn) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onPrev) {
-                        Icon(
-                            imageVector = Icons.Filled.SkipPrevious,
-                            contentDescription = "Anterior",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
+                Box {
                     IconButton(
-                        onClick = onTogglePlay,
-                        modifier = Modifier.scale(playScale),
+                        onClick = onOpenQueue,
+                        modifier = Modifier.size(40.dp),
                     ) {
                         Icon(
-                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = stringResource(R.string.player_cd_play_pause),
-                            tint = MaterialTheme.colorScheme.primary,
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = stringResource(R.string.player_cd_queue),
+                            modifier = Modifier.size(22.dp),
+                            tint = if (queueSize > 0) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
                     }
-                    IconButton(onClick = onNext) {
-                        Icon(
-                            imageVector = Icons.Filled.SkipNext,
-                            contentDescription = "Siguiente",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
+                    if (queueSize > 0) {
+                        Box(
+                            modifier = Modifier
+                                .size(14.dp)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(7.dp))
+                                .align(Alignment.TopEnd)
+                                .padding(1.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = if (queueSize > 99) "99+" else queueSize.toString(),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = androidx.compose.ui.unit.TextUnit(7f, androidx.compose.ui.unit.TextUnitType.Sp),
+                                ),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
                     }
                 }
-                IconButton(onClick = onToggleRepeat) {
+                IconButton(
+                    onClick = onPrev,
+                    modifier = Modifier.size(40.dp),
+                ) {
                     Icon(
-                        imageVector = Icons.Outlined.Loop,
-                        contentDescription = stringResource(R.string.player_cd_repeat),
-                        tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        imageVector = Icons.Filled.SkipPrevious,
+                        contentDescription = "Anterior",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                IconButton(
+                    onClick = onTogglePlay,
+                    modifier = Modifier.size(44.dp).scale(playScale),
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = stringResource(R.string.player_cd_play_pause),
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                IconButton(
+                    onClick = onNext,
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SkipNext,
+                        contentDescription = "Siguiente",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
@@ -3082,68 +3183,6 @@ private fun buildVisibleTracksForSection(
         SortOption.NAME_DESC -> filtered.sortedByDescending { it.title.lowercase() }
         SortOption.NEWEST_FIRST -> filtered.sortedByDescending { it.dateAddedMs }
         SortOption.OLDEST_FIRST -> filtered.sortedBy { it.dateAddedMs }
-    }
-}
-
-@Composable
-private fun SortOptionsBar(
-    selected: SortOption,
-    onSelect: (SortOption) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        SortChip(
-            text = stringResource(R.string.player_sort_name_asc),
-            selected = selected == SortOption.NAME_ASC,
-            onClick = { onSelect(SortOption.NAME_ASC) },
-        )
-        SortChip(
-            text = stringResource(R.string.player_sort_name_desc),
-            selected = selected == SortOption.NAME_DESC,
-            onClick = { onSelect(SortOption.NAME_DESC) },
-        )
-        SortChip(
-            text = stringResource(R.string.player_sort_recent),
-            selected = selected == SortOption.NEWEST_FIRST,
-            onClick = { onSelect(SortOption.NEWEST_FIRST) },
-        )
-        SortChip(
-            text = stringResource(R.string.player_sort_oldest),
-            selected = selected == SortOption.OLDEST_FIRST,
-            onClick = { onSelect(SortOption.OLDEST_FIRST) },
-        )
-    }
-}
-
-@Composable
-private fun SortChip(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
-    else Color.Black.copy(alpha = 0.18f)
-    val border = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
-    Box(
-        modifier = Modifier
-            .background(bg, RoundedCornerShape(14.dp))
-            .border(1.dp, border, RoundedCornerShape(14.dp))
-            .clickable { onClick() }
-            .padding(vertical = 6.dp, horizontal = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
