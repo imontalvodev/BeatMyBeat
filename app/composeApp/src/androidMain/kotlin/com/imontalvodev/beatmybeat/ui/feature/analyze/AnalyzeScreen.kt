@@ -43,6 +43,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -102,6 +104,8 @@ fun AnalyzeScreen(
     var selectedFormat by remember { mutableStateOf(AudioDownloader.DownloadFormat.MP3) }
 
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = LocalSnackbarHostState.current
     fun showSnack(message: String) {
@@ -253,6 +257,8 @@ fun AnalyzeScreen(
                         },
                         enabled = !playlistDownloadRunning,
                         onClick = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                             if (mode == "song") {
                                 if (songTitle.isBlank() && songArtist.isBlank() && songAlbum.isBlank()) {
                                     // Mantener feedback por pantalla (y no notificación) en validaciones rápidas.

@@ -33,6 +33,19 @@ val NeonMintProfile = BeatMyBeatThemeProfile(
     onSurfaceMuted = NeonOnSurfaceMuted,
 )
 
+val CherryProfile = BeatMyBeatThemeProfile(
+    id = "builtin-cherry",
+    name = "Cherry",
+    backgroundTop = CherryBackgroundTop,
+    backgroundBottom = CherryBackgroundBottom,
+    primary = CherryPrimary,
+    primaryVariant = CherryPrimaryVariant,
+    secondary = CherrySecondary,
+    surface = CherrySurface,
+    onSurface = CherryOnSurface,
+    onSurfaceMuted = CherryOnSurfaceMuted,
+)
+
 val LocalBeatMyBeatThemeProfile = staticCompositionLocalOf { NeonMintProfile }
 
 @Composable

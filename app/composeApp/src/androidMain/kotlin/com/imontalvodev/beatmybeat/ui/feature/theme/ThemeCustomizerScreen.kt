@@ -223,18 +223,35 @@ fun ThemeCustomizerScreen(
             PrimaryButton(
                 text = if (editingProfileId == null) stringResource(R.string.theme_save_as_new) else stringResource(R.string.theme_apply_changes),
                 onClick = {
-                    val profile = BeatMyBeatThemeProfile(
-                        id = editingProfileId ?: UUID.randomUUID().toString(),
-                        name = name.ifBlank { "Tema custom" },
-                    backgroundTop = backgroundTop,
-                    backgroundBottom = backgroundBottom,
-                    primary = primary,
-                    primaryVariant = primaryVariant,
-                    secondary = secondary,
-                    surface = surface,
-                    onSurface = onSurface,
-                    onSurfaceMuted = onSurfaceMuted,
-                    )
+                    val mergeBase = editingProfileId?.let { pid -> profiles.firstOrNull { it.id == pid } }
+                        ?: profiles.firstOrNull { it.id == activeProfileId }
+                        ?: profiles.first()
+                    val profile = when (section) {
+                        ThemeCustomizerSection.Background -> BeatMyBeatThemeProfile(
+                            id = editingProfileId ?: UUID.randomUUID().toString(),
+                            name = name.ifBlank { "Tema custom" },
+                            backgroundTop = backgroundTop,
+                            backgroundBottom = backgroundBottom,
+                            primary = primary,
+                            primaryVariant = primaryVariant,
+                            secondary = secondary,
+                            surface = surface,
+                            onSurface = mergeBase.onSurface,
+                            onSurfaceMuted = mergeBase.onSurfaceMuted,
+                        )
+                        ThemeCustomizerSection.Text -> BeatMyBeatThemeProfile(
+                            id = editingProfileId ?: UUID.randomUUID().toString(),
+                            name = name.ifBlank { "Tema custom" },
+                            backgroundTop = mergeBase.backgroundTop,
+                            backgroundBottom = mergeBase.backgroundBottom,
+                            primary = mergeBase.primary,
+                            primaryVariant = mergeBase.primaryVariant,
+                            secondary = mergeBase.secondary,
+                            surface = mergeBase.surface,
+                            onSurface = onSurface,
+                            onSurfaceMuted = onSurfaceMuted,
+                        )
+                    }
                     validationError = null
                     onSaveProfile(profile)
                     onApplyProfile(profile.id)

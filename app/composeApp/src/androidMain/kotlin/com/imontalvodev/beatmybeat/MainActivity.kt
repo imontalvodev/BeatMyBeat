@@ -86,11 +86,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val store = remember { ThemeProfilesStore(this) }
-            var storageLabel by remember { mutableStateOf(StorageSettings.getLocationLabel(this)) }
-            var profiles by remember { mutableStateOf(store.loadProfiles()) }
-            var activeProfileId by remember {
-                mutableStateOf(store.loadActiveProfileId() ?: profiles.first().id)
+            val themeBootstrap = remember(store) {
+                val loaded = store.loadProfiles()
+                val active = store.coerceActiveProfileId(loaded.map { it.id }, loaded.first().id)
+                loaded to active
             }
+            var storageLabel by remember { mutableStateOf(StorageSettings.getLocationLabel(this)) }
+            var profiles by remember { mutableStateOf(themeBootstrap.first) }
+            var activeProfileId by remember { mutableStateOf(themeBootstrap.second) }
             val activeProfile = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.first()
 
             val storagePicker = rememberLauncherForActivityResult(
