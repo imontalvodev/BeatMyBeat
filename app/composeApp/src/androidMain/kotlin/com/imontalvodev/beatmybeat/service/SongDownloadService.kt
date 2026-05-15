@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.imontalvodev.beatmybeat.R
+import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
@@ -48,6 +49,12 @@ class SongDownloadService : Service() {
         }
 
         scope.launch {
+            DownloadProgressBus.setSingle(
+                title = title,
+                artist = artist,
+                phase = getString(R.string.download_processing),
+                fileFraction = null,
+            )
             val result = runCatching {
                 AudioDownloader.downloadAutoToAppMusic(
                     context = this@SongDownloadService,
@@ -58,7 +65,13 @@ class SongDownloadService : Service() {
                     format = format,
                     videoId = videoId,
                     thumbnailUrl = thumbnailUrl,
-                    onPhaseUpdate = { phase ->
+                    onProgress = { update ->
+                        DownloadProgressBus.setSingle(
+                            title = title,
+                            artist = artist,
+                            phase = update.phase,
+                            fileFraction = update.fileFraction,
+                        )
                         if (BeatMyBeatNotification.canPostNotifications(this@SongDownloadService)) {
                             runCatching {
                                 NotificationManagerCompat.from(this@SongDownloadService).notify(
@@ -66,7 +79,7 @@ class SongDownloadService : Service() {
                                     BeatMyBeatNotification.buildDownloadInProgressNotification(
                                         context = this@SongDownloadService,
                                         title = title.ifBlank { getString(R.string.download_song_title) },
-                                        subtitle = phase,
+                                        subtitle = update.phase,
                                     ),
                                 )
                             }
@@ -74,6 +87,7 @@ class SongDownloadService : Service() {
                     },
                 )
             }.getOrNull()
+            DownloadProgressBus.clear()
             Handler(Looper.getMainLooper()).post {
                 val msg = when {
                     result == null -> getString(R.string.download_song_error)

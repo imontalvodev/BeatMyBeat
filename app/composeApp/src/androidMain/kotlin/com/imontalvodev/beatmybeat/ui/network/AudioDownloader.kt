@@ -5,6 +5,7 @@ import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.imontalvodev.beatmybeat.download.DownloadProgressUpdate
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -53,8 +54,11 @@ object AudioDownloader {
         imageUrl: String = "",
         videoId: String = "",
         thumbnailUrl: String = "",
-        onPhaseUpdate: ((phase: String) -> Unit)? = null,
+        onProgress: ((DownloadProgressUpdate) -> Unit)? = null,
     ): DownloadResult = withContext(Dispatchers.IO) {
+        fun report(phase: String, fraction: Float? = null) {
+            onProgress?.invoke(DownloadProgressUpdate(phase = phase, fileFraction = fraction))
+        }
         val safeTitle = title.trim()
         val safeArtist = artist.trim()
         BeatMyBeatNotification.showDownloadInProgress(
@@ -64,7 +68,7 @@ object AudioDownloader {
         )
         try {
             // --- Paso 1: resolver videoId y thumbnail si no se proporcionaron ---
-            onPhaseUpdate?.invoke("Buscando vídeo…")
+            report("Buscando vídeo…")
             var resolvedThumbnail = thumbnailUrl
             val resolvedVideoId = if (videoId.length == 11) {
                 videoId
@@ -84,7 +88,7 @@ object AudioDownloader {
             android.util.Log.d("NewPipeStream", "title='$safeTitle' artist='$safeArtist' thumbnail='$resolvedThumbnail'")
 
             // --- Paso 2: extraer URL de stream con NewPipe ---
-            onPhaseUpdate?.invoke("Obteniendo enlace de audio…")
+            report("Obteniendo enlace de audio…")
             val streamInfo = try {
                 NewPipeStreamExtractor.extractBestAudioStream(resolvedVideoId)
             } catch (e: Exception) {
@@ -94,7 +98,7 @@ object AudioDownloader {
             }
 
             // --- Paso 3: descargar por rangos para evitar bloqueo con streams chunked ---
-            onPhaseUpdate?.invoke("Descargando audio…")
+            report("Descargando audio…", fraction = 0f)
             val sourceExt = when {
                 streamInfo.mimeType.contains("mp4") || streamInfo.mimeType.contains("m4a") -> "m4a"
                 streamInfo.mimeType.contains("webm") || streamInfo.mimeType.contains("opus") -> "webm"
@@ -158,7 +162,7 @@ object AudioDownloader {
                     offset += bytes.size
                     if (totalBytes > 0) {
                         val pct = (totalWritten * 100L / totalBytes).toInt().coerceIn(0, 99)
-                        onPhaseUpdate?.invoke("Descargando audio… $pct%")
+                        report("Descargando audio… $pct%", fraction = pct / 100f)
                     }
                     if (bytes.size < chunkSize) break
                 }
@@ -174,7 +178,7 @@ object AudioDownloader {
             }
 
             // --- Paso 4: crear MP3 master con metadata/carátula ---
-            onPhaseUpdate?.invoke("Procesando metadatos…")
+            report("Procesando metadatos…", fraction = 1f)
             outFile.delete()
             masterMp3.delete()
             val artworkBytes = fetchArtworkBytes(resolvedThumbnail, downloadClient)
@@ -212,7 +216,7 @@ object AudioDownloader {
             }.onFailure { android.util.Log.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
 
             // --- Paso 5: si no es MP3, convertir desde master al formato final ---
-            onPhaseUpdate?.invoke("Convirtiendo a ${format.label}…")
+            report("Convirtiendo a ${format.label}…", fraction = 1f)
             if (format == DownloadFormat.MP3) {
                 masterMp3.copyTo(outFile, overwrite = true)
             } else {
@@ -287,6 +291,7 @@ object AudioDownloader {
                 }
             }
 
+            report("Guardando en biblioteca…", fraction = 1f)
             BeatMyBeatNotification.showDownloadCompleted(context, "Descarga completada", savedName)
             return@withContext DownloadResult(true, savedName, null)
 

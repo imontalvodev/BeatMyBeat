@@ -48,7 +48,9 @@ import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.PlaylistResponse
 import com.imontalvodev.beatmybeat.ui.network.PlaylistSong
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
+import com.imontalvodev.beatmybeat.ui.theme.PlaylistDownloadProgressCard
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
+import com.imontalvodev.beatmybeat.ui.theme.SingleDownloadProgressCard
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +65,12 @@ fun PlaylistScreen(
 ) {
     var loading by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
+    var downloadDone by remember { mutableStateOf(0) }
+    var downloadTotal by remember { mutableStateOf(0) }
+    var downloadFailed by remember { mutableStateOf(0) }
+    var downloadCurrentTitle by remember { mutableStateOf("") }
+    var downloadCurrentPhase by remember { mutableStateOf("") }
+    var downloadCurrentFileFraction by remember { mutableStateOf<Float?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var title by remember { mutableStateOf("") }
     var tracks by remember { mutableStateOf<List<PlaylistSong>>(emptyList()) }
@@ -124,27 +132,65 @@ fun PlaylistScreen(
                 onPrimaryClick = {
                     if (tracks.isEmpty() || downloading) return@PlaylistHeader
                     downloading = true
+                    downloadTotal = tracks.size
+                    downloadDone = 0
+                    downloadFailed = 0
+                    downloadCurrentPhase = "Preparando…"
+                    downloadCurrentFileFraction = null
                     scope.launch {
                         try {
                             for (t in tracks) {
-                                AudioDownloader.downloadAutoToAppMusic(
+                                downloadCurrentTitle = t.title
+                                downloadCurrentFileFraction = null
+                                downloadCurrentPhase = "Iniciando…"
+                                val result = AudioDownloader.downloadAutoToAppMusic(
                                     context = context,
                                     middlewareBaseUrl = MIDDLEWARE_BASE_URL,
                                     title = t.title,
                                     artist = t.artist,
                                     album = t.album,
                                     imageUrl = t.imageUrl,
+                                    onProgress = { update ->
+                                        downloadCurrentPhase = update.phase
+                                        downloadCurrentFileFraction = update.fileFraction
+                                    },
                                 )
+                                if (result.success) downloadDone++ else downloadFailed++
                             }
                             downloading = false
+                            downloadCurrentTitle = ""
+                            downloadCurrentPhase = ""
+                            downloadCurrentFileFraction = null
                             onOpenPlayer()
                         } catch (e: Exception) {
                             downloading = false
-                            // El feedback de error se gestiona desde notificaciones (AudioDownloader).
+                            downloadCurrentTitle = ""
+                            downloadCurrentPhase = ""
+                            downloadCurrentFileFraction = null
                         }
                     }
                 },
             )
+
+            if (downloading && downloadTotal > 1) {
+                Spacer(modifier = Modifier.height(12.dp))
+                PlaylistDownloadProgressCard(
+                    done = downloadDone,
+                    total = downloadTotal,
+                    failed = downloadFailed,
+                    currentTitle = downloadCurrentTitle,
+                    phase = downloadCurrentPhase.ifBlank { stringResource(R.string.download_processing) },
+                    currentFileFraction = downloadCurrentFileFraction,
+                )
+            } else if (downloading) {
+                Spacer(modifier = Modifier.height(12.dp))
+                SingleDownloadProgressCard(
+                    title = downloadCurrentTitle,
+                    artist = "",
+                    phase = downloadCurrentPhase.ifBlank { stringResource(R.string.download_processing) },
+                    fileFraction = downloadCurrentFileFraction,
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -152,24 +198,40 @@ fun PlaylistScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(tracks) { track ->
-                    TrackRow(track = track, onPlay = {
+                    TrackRow(track = track,                     onPlay = {
                         if (downloading) return@TrackRow
                         downloading = true
+                        downloadTotal = 1
+                        downloadDone = 0
+                        downloadFailed = 0
+                        downloadCurrentTitle = track.title
+                        downloadCurrentPhase = "Iniciando…"
+                        downloadCurrentFileFraction = null
                         scope.launch {
                             try {
-                                AudioDownloader.downloadAutoToAppMusic(
+                                val result = AudioDownloader.downloadAutoToAppMusic(
                                     context = context,
                                     middlewareBaseUrl = MIDDLEWARE_BASE_URL,
                                     title = track.title,
                                     artist = track.artist,
                                     album = track.album,
                                     imageUrl = track.imageUrl,
+                                    onProgress = { update ->
+                                        downloadCurrentPhase = update.phase
+                                        downloadCurrentFileFraction = update.fileFraction
+                                    },
                                 )
+                                if (result.success) downloadDone = 1 else downloadFailed = 1
                                 downloading = false
+                                downloadCurrentTitle = ""
+                                downloadCurrentPhase = ""
+                                downloadCurrentFileFraction = null
                                 onOpenPlayer()
                             } catch (e: Exception) {
                                 downloading = false
-                                // El feedback de error se gestiona desde notificaciones (AudioDownloader).
+                                downloadCurrentTitle = ""
+                                downloadCurrentPhase = ""
+                                downloadCurrentFileFraction = null
                             }
                         }
                     })

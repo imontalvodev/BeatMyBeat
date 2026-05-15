@@ -22,7 +22,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
@@ -32,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +62,9 @@ import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.SuggestionListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
+import com.imontalvodev.beatmybeat.ui.theme.PlaylistDownloadProgressCard
+import com.imontalvodev.beatmybeat.ui.theme.SingleDownloadProgressCard
+import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -101,7 +104,11 @@ fun AnalyzeScreen(
     var playlistDownloadDone by remember { mutableStateOf(0) }
     var playlistDownloadFailed by remember { mutableStateOf(0) }
     var playlistCurrentTitle by remember { mutableStateOf("") }
+    var playlistCurrentPhase by remember { mutableStateOf("") }
+    var playlistCurrentFileFraction by remember { mutableStateOf<Float?>(null) }
     var selectedFormat by remember { mutableStateOf(AudioDownloader.DownloadFormat.MP3) }
+
+    val activeDownload by DownloadProgressBus.state.collectAsState()
 
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -323,7 +330,9 @@ fun AnalyzeScreen(
                                                     playlistDownloadTotal = videoIds.size
                                                     playlistDownloadDone = 0
                                                     playlistDownloadFailed = 0
-                                                    playlistCurrentTitle = "Preparando descargas..."
+                                                    playlistCurrentTitle = ""
+                                                    playlistCurrentPhase = "Preparando descargas…"
+                                                    playlistCurrentFileFraction = null
                                                     showSnack("Descarga de playlist iniciada en segundo plano.")
                                                     BeatMyBeatForegroundService.startDownload(
                                                         context = context,
@@ -338,6 +347,8 @@ fun AnalyzeScreen(
                                                             fetchYouTubeSongMetadata(videoId)
                                                         }
                                                         playlistCurrentTitle = metadata.title
+                                                        playlistCurrentFileFraction = null
+                                                        playlistCurrentPhase = "Iniciando…"
                                                         BeatMyBeatForegroundService.startDownload(
                                                             context = context,
                                                             title = "Descargando playlist",
@@ -352,6 +363,10 @@ fun AnalyzeScreen(
                                                             format = selectedFormat,
                                                             videoId = videoId,
                                                             thumbnailUrl = metadata.thumbnailUrl,
+                                                            onProgress = { update ->
+                                                                playlistCurrentPhase = update.phase
+                                                                playlistCurrentFileFraction = update.fileFraction
+                                                            },
                                                         )
                                                         if (single.success) downloaded++ else failed++
                                                         playlistDownloadDone = downloaded
@@ -372,6 +387,8 @@ fun AnalyzeScreen(
                                                 } finally {
                                                     playlistDownloadRunning = false
                                                     playlistCurrentTitle = ""
+                                                    playlistCurrentPhase = ""
+                                                    playlistCurrentFileFraction = null
                                                     BeatMyBeatForegroundService.stopDownload(context)
                                                 }
                                             }
@@ -390,11 +407,7 @@ fun AnalyzeScreen(
                                                     thumbnailUrl = metadata.thumbnailUrl,
                                                     format = selectedFormat,
                                                 )
-                                                songDownloadInfo = if (BeatMyBeatNotification.canPostNotifications(context)) {
-                                                    "Descarga (${selectedFormat.label}) iniciada en segundo plano."
-                                                } else {
-                                                    "Descarga (${selectedFormat.label}) iniciada sin notificaciones (permiso denegado)."
-                                                }
+                                                songDownloadInfo = context.getString(R.string.download_started_background)
                                             }
                                         }
                                     }
@@ -404,7 +417,16 @@ fun AnalyzeScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    if (mode == "song" && songDownloadInfo != null) {
+                    val singleActive = activeDownload?.takeIf { !it.isBatch }
+                    if (mode == "song" && singleActive != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SingleDownloadProgressCard(
+                            title = singleActive.title,
+                            artist = singleActive.subtitle,
+                            phase = singleActive.phase,
+                            fileFraction = singleActive.fileFraction,
+                        )
+                    } else if (mode == "song" && songDownloadInfo != null) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = songDownloadInfo!!,
@@ -415,39 +437,25 @@ fun AnalyzeScreen(
 
                     if (mode == "playlist" && playlistDownloadRunning) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        val progress =
-                            if (playlistDownloadTotal > 0) {
-                                playlistDownloadDone.toFloat() / playlistDownloadTotal.toFloat()
-                            } else {
-                                0f
-                            }
-                        LinearProgressIndicator(
-                            progress = { progress.coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth(),
+                        PlaylistDownloadProgressCard(
+                            done = playlistDownloadDone,
+                            total = playlistDownloadTotal,
+                            failed = playlistDownloadFailed,
+                            currentTitle = playlistCurrentTitle,
+                            phase = playlistCurrentPhase.ifBlank { "Descargando…" },
+                            currentFileFraction = playlistCurrentFileFraction,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Descargando ${playlistDownloadDone}/${playlistDownloadTotal} · Fallidas: $playlistDownloadFailed",
+                            text = stringResource(R.string.download_progress_background_hint),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                        )
-                        if (playlistCurrentTitle.isNotBlank()) {
-                            Text(
-                                text = "Actual: ${playlistCurrentTitle.take(60)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            )
-                        }
-                        Text(
-                            text = "Puedes dejar la app en segundo plano mientras termina.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         )
                         if (!BeatMyBeatNotification.canPostNotifications(context)) {
                             Text(
                                 text = "Permiso de notificaciones denegado: el progreso solo se muestra dentro de la app.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                             )
                         }
                     }
@@ -538,10 +546,20 @@ fun AnalyzeScreen(
             },
             title = { Text("Descargar canción") },
             text = {
-                androidx.compose.foundation.layout.Column {
+                Column {
                     Text("¿Quieres descargar \"${suggestion.title}\" de ${suggestion.artist}?")
+                    val dialogProgress = activeDownload?.takeIf { !it.isBatch }
+                    if (dialogProgress != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SingleDownloadProgressCard(
+                            title = dialogProgress.title,
+                            artist = dialogProgress.subtitle,
+                            phase = dialogProgress.phase,
+                            fileFraction = dialogProgress.fileFraction,
+                        )
+                    }
                     if (downloadError != null) {
-                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = downloadError!!,
                             style = MaterialTheme.typography.bodySmall,
@@ -568,11 +586,7 @@ fun AnalyzeScreen(
                                     format = selectedFormat,
                                 )
                                 selectedSuggestion = null
-                                songDownloadInfo = if (BeatMyBeatNotification.canPostNotifications(context)) {
-                                    "Descarga (${selectedFormat.label}) iniciada en segundo plano."
-                                } else {
-                                    "Descarga (${selectedFormat.label}) iniciada sin notificaciones (permiso denegado)."
-                                }
+                                songDownloadInfo = context.getString(R.string.download_started_background)
                             } catch (e: Exception) {
                                 android.util.Log.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
                                 downloadError = "Error: ${e.javaClass.simpleName}"

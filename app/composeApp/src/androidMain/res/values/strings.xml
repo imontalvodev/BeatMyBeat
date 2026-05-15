@@ -52,6 +52,14 @@
     <string name="download_song_error">Error descargando canción.</string>
     <string name="download_song_success">Descargada (%1$s): %2$s</string>
     <string name="download_song_failed">No se pudo descargar la canción.</string>
+    <string name="download_progress_song_headline">Descargando canción</string>
+    <string name="download_progress_playlist_headline">Descargando playlist</string>
+    <string name="download_progress_playlist_count">%1$d de %2$d completadas</string>
+    <string name="download_progress_playlist_failed">Fallidas: %1$d</string>
+    <string name="download_progress_current_file">Archivo actual</string>
+    <string name="download_progress_unknown_title">Canción</string>
+    <string name="download_progress_background_hint">Puedes dejar la app en segundo plano mientras termina.</string>
+    <string name="download_started_background">Descarga iniciada. Sigue el progreso abajo.</string>
 
     <string name="analyze_go_to_player">Ir al reproductor</string>
     <string name="analyze_tab_playlist">Playlist</string>
