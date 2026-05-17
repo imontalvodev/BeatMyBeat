@@ -300,6 +300,7 @@ fun PlayerScreen(
     }
 
     var pendingDeleteTrack by remember { mutableStateOf<DeviceTrack?>(null) }
+    var deleteConfirmTracks by remember { mutableStateOf<List<DeviceTrack>?>(null) }
 
     // Si el usuario está viendo el overlay expandido (letra),
     // el botón Atrás debe cerrar el overlay en vez de navegar fuera del player.
@@ -1042,6 +1043,11 @@ fun PlayerScreen(
             uri.pathSegments.firstOrNull() == "document"
     }
 
+    fun requestDeleteFromDevice(tracks: List<DeviceTrack>) {
+        if (tracks.isEmpty()) return
+        deleteConfirmTracks = tracks
+    }
+
     fun deleteTrackFromDevice(
         track: DeviceTrack,
         syncAfter: Boolean = true,
@@ -1321,7 +1327,7 @@ fun PlayerScreen(
                                 addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
                                 addToPlaylistNewName = ""
                             },
-                            onDeleteFromDevice = { deleteTrackFromDevice(track) },
+                            onDeleteFromDevice = { requestDeleteFromDevice(listOf(track)) },
                             onBulkQueue = {
                                 if (selectedTracksOrdered.isEmpty()) return@TrackRow
                                 queue.addAll(selectedTracksOrdered)
@@ -1369,17 +1375,7 @@ fun PlayerScreen(
                             },
                             onBulkDeleteFromDevice = {
                                 if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                selectedTracksOrdered.forEach {
-                                    deleteTrackFromDevice(it, syncAfter = false, showToast = false)
-                                }
-                                viewModel.syncLibrary(auto = true)
-                                showSnack(
-                                    context.getString(
-                                        R.string.player_bulk_deleted,
-                                        selectedTracksOrdered.size,
-                                    ),
-                                )
-                                clearTrackSelection()
+                                requestDeleteFromDevice(selectedTracksOrdered)
                             },
                             bulkSelectionCount = selectedTracksOrdered.size,
                             showBulkRemoveFromPlaylist = section == PlayerSection.Playlist && selectedPlaylistId != null,
@@ -1907,6 +1903,55 @@ fun PlayerScreen(
                         }
                     }
                 }
+            }
+
+            // DIALOG: confirmar eliminación de canción(es) del dispositivo
+            deleteConfirmTracks?.let { tracksToDelete ->
+                val count = tracksToDelete.size
+                val firstTitle = tracksToDelete.first().title
+                AlertDialog(
+                    onDismissRequest = { deleteConfirmTracks = null },
+                    title = { Text(stringResource(R.string.player_delete_confirm_title)) },
+                    text = {
+                        Text(
+                            if (count == 1) {
+                                stringResource(R.string.player_delete_confirm_message, firstTitle)
+                            } else {
+                                stringResource(R.string.player_delete_confirm_message_plural, count)
+                            },
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val batch = deleteConfirmTracks ?: return@TextButton
+                                deleteConfirmTracks = null
+                                batch.forEach { track ->
+                                    deleteTrackFromDevice(track, syncAfter = false, showToast = false)
+                                }
+                                viewModel.syncLibrary(auto = true)
+                                showSnack(
+                                    if (batch.size == 1) {
+                                        songDeletedText
+                                    } else {
+                                        context.getString(
+                                            R.string.player_bulk_deleted,
+                                            batch.size,
+                                        )
+                                    },
+                                )
+                                clearTrackSelection()
+                            },
+                        ) {
+                            Text(stringResource(R.string.player_delete_confirm_action))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { deleteConfirmTracks = null }) {
+                            Text(stringResource(R.string.common_cancel))
+                        }
+                    },
+                )
             }
 
             // DIALOG: confirmación duplicado en playlist

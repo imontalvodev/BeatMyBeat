@@ -126,7 +126,7 @@ object MiddlewareApi {
                             PlaylistSong(
                                 id = s.optString("id", ""),
                                 title = s.optString("title", ""),
-                                artist = s.optString("artist", ""),
+                                artist = cleanArtistForLyrics(s.optString("artist", "")),
                                 album = s.optString("album", ""),
                                 imageUrl = s.optString("imageUrl", ""),
                                 durationSeconds = s.optInt("duration", 0),

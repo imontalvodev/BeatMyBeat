@@ -25,9 +25,10 @@ fun fetchYouTubeSongMetadata(videoId: String): YouTubeSongMetadata {
             if (!res.isSuccessful) return fallback
             val body = res.body.string()
             val json = JSONObject(body)
+            val rawArtist = json.optString("author_name", fallback.artist).ifBlank { fallback.artist }
             YouTubeSongMetadata(
                 title = json.optString("title", fallback.title).ifBlank { fallback.title },
-                artist = json.optString("author_name", fallback.artist).ifBlank { fallback.artist },
+                artist = cleanArtistForLyrics(rawArtist),
                 thumbnailUrl = json.optString("thumbnail_url", fallback.thumbnailUrl).ifBlank { fallback.thumbnailUrl },
             )
         }
