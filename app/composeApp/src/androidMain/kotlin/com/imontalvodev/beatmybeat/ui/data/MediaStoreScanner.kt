@@ -58,6 +58,9 @@ class MediaStoreScanner(private val context: Context) {
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.RELATIVE_PATH,
             MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.IS_RINGTONE,
+            MediaStore.Audio.Media.IS_NOTIFICATION,
+            MediaStore.Audio.Media.IS_ALARM,
         )
 
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
@@ -107,8 +110,22 @@ class MediaStoreScanner(private val context: Context) {
         // 3) Carpeta personalizada (SAF), incluyendo subcarpetas
         scanCustomStorage(tracks, knownUris, knownDisplayNames, knownStorageKeys, minMusicDurationMs)
 
-        return tracks
+        return dedupeTracksPreferringRichMetadata(tracks)
     }
+
+    /** Una entrada por URI; prioriza metadatos de Audio.Media frente a Files (artist Unknown). */
+    private fun dedupeTracksPreferringRichMetadata(tracks: List<DeviceTrack>): List<DeviceTrack> =
+        tracks
+            .groupBy { it.uri }
+            .map { (_, group) ->
+                group.maxBy { track ->
+                    var score = 0
+                    val artist = track.artist.lowercase(Locale.ROOT)
+                    if (artist.isNotBlank() && artist != "unknown" && artist != "unknown artist") score += 4
+                    if (track.durationMs > 0L) score += 1
+                    score
+                }
+            }
 
     private fun storageKey(relativePath: String, displayName: String): String {
         val folder = relativePath.lowercase(Locale.ROOT).trim().trimEnd('/')
@@ -196,6 +213,9 @@ class MediaStoreScanner(private val context: Context) {
             val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
             val relativePathCol = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
             val dateAddedCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
+            val isRingtoneCol = cursor.getColumnIndex(MediaStore.Audio.Media.IS_RINGTONE)
+            val isNotificationCol = cursor.getColumnIndex(MediaStore.Audio.Media.IS_NOTIFICATION)
+            val isAlarmCol = cursor.getColumnIndex(MediaStore.Audio.Media.IS_ALARM)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
@@ -216,9 +236,11 @@ class MediaStoreScanner(private val context: Context) {
                 val dateAddedSeconds = cursor.optLong(dateAddedCol)
                 val dateAddedMs = if (dateAddedSeconds > 0L) dateAddedSeconds * 1000L else 0L
 
+                if (isSystemToneFlags(isRingtoneCol, isNotificationCol, isAlarmCol, cursor)) continue
                 if (!isRecognizedMusicFile(isMusic, mimeType, displayNameLower, relativePath, absolutePath)) {
                     continue
                 }
+                if (isSystemAudioPath(relativePath, absolutePath) && isMusic == 0) continue
 
                 val searchableText = listOf(title, artist, album, displayNameLower, absolutePath, relativePath)
                     .joinToString(" ")
@@ -300,6 +322,7 @@ class MediaStoreScanner(private val context: Context) {
                     val dateAddedSeconds = cursor.optLong(dateAddedCol)
                     val dateAddedMs = if (dateAddedSeconds > 0L) dateAddedSeconds * 1000L else 0L
 
+                    if (isSystemAudioPath(relativePath, absolutePath)) continue
                     if (!isRecognizedMusicFile(0, mimeType, displayNameLower, relativePath, absolutePath)) {
                         continue
                     }
@@ -487,15 +510,51 @@ class MediaStoreScanner(private val context: Context) {
         return false
     }
 
+    private fun isSystemToneFlags(
+        isRingtoneCol: Int,
+        isNotificationCol: Int,
+        isAlarmCol: Int,
+        cursor: android.database.Cursor,
+    ): Boolean {
+        if (isRingtoneCol >= 0 && cursor.optInt(isRingtoneCol) != 0) return true
+        if (isNotificationCol >= 0 && cursor.optInt(isNotificationCol) != 0) return true
+        if (isAlarmCol >= 0 && cursor.optInt(isAlarmCol) != 0) return true
+        return false
+    }
+
+    private fun isSystemAudioPath(relativePath: String, absolutePath: String): Boolean {
+        val p = "$relativePath $absolutePath".lowercase(Locale.ROOT)
+        val hints = listOf(
+            "/ringtones",
+            "/notifications",
+            "/alarms",
+            "media/ringtones",
+            "media/notifications",
+            "media/alarms",
+            "media/audio/ringtones",
+            "media/audio/notifications",
+            "media/audio/alarms",
+            "sounds/ringtones",
+            "sounds/notifications",
+            "sounds/alarms",
+            "/product/media/audio/ringtones",
+            "/product/media/audio/notifications",
+            "/product/media/audio/alarms",
+            "/system/media/audio/ringtones",
+            "/system/media/audio/notifications",
+            "/ui/ringtones",
+            "/ui/notifications",
+        )
+        return hints.any { p.contains(it) }
+    }
+
     private fun isLikelyNonMusicAudio(searchableText: String, mimeType: String, durationMs: Long): Boolean {
         if (mimeType.contains("audio/3gpp") || mimeType.contains("audio/amr")) {
             if (durationMs < 60_000L) return true
         }
+        if (isSystemAudioPath(searchableText, searchableText)) return true
 
         val pathHints = listOf(
-            "/ringtones/",
-            "/notifications/",
-            "/alarms/",
             "/podcasts/",
             "/audiobooks/",
             "/whatsapp/",
@@ -506,6 +565,11 @@ class MediaStoreScanner(private val context: Context) {
             "/com.whatsapp/",
         )
         return pathHints.any { searchableText.contains(it) }
+    }
+
+    private fun android.database.Cursor.optInt(columnIndex: Int): Int {
+        if (columnIndex < 0) return 0
+        return runCatching { getInt(columnIndex) }.getOrDefault(0)
     }
 
     private fun android.database.Cursor.optString(columnIndex: Int): String {

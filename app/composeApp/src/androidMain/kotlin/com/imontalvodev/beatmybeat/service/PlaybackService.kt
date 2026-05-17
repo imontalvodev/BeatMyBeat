@@ -109,6 +109,7 @@ class PlaybackService : Service() {
 
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 pushState(force = true)
+                recycleNotificationArtwork()
                 updateNotification()
                 scheduleNotificationArtwork()
             }
@@ -233,13 +234,22 @@ class PlaybackService : Service() {
         val uri = item.localConfiguration?.uri ?: return
         val mediaId = item.mediaId
         val uriStr = uri.toString()
-        if (notificationArtworkMediaId == mediaId && notificationArtwork != null) return
+        recycleNotificationArtwork()
         artworkExecutor.execute {
-            val bytes = PlaybackArtworkHelper.resolveArtworkBytes(this@PlaybackService, uriStr) ?: return@execute
-            val bitmap = BitmapDecoding.decodeSampled(bytes, NOTIFICATION_ARTWORK_PX) ?: return@execute
+            val bytes = PlaybackArtworkHelper.resolveArtworkBytes(this@PlaybackService, uriStr)
             mainHandler.post {
                 if (exoPlayer.currentMediaItem?.mediaId != mediaId) return@post
-                recycleNotificationArtwork()
+                if (bytes == null || bytes.isEmpty()) {
+                    recycleNotificationArtwork()
+                    updateNotification()
+                    return@post
+                }
+                val bitmap = BitmapDecoding.decodeSampled(bytes, NOTIFICATION_ARTWORK_PX)
+                if (bitmap == null) {
+                    recycleNotificationArtwork()
+                    updateNotification()
+                    return@post
+                }
                 notificationArtwork = bitmap
                 notificationArtworkMediaId = mediaId
                 updateNotification()

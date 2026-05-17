@@ -5,21 +5,22 @@ import android.util.LruCache
 
 /**
  * Caché de carátulas locales por bytes (no por número de entradas).
+ * Indexado por URI del fichero para no mezclar pistas con el mismo MediaStore id.
  */
 object ArtworkCache {
     private const val MAX_BYTES = 12 * 1024 * 1024 // ~12 MiB
 
-    private val cache = object : LruCache<Long, Bitmap>(MAX_BYTES) {
-        override fun sizeOf(key: Long, value: Bitmap): Int = BitmapDecoding.byteCount(value)
+    private val cacheByUri = object : LruCache<String, Bitmap>(MAX_BYTES) {
+        override fun sizeOf(key: String, value: Bitmap): Int = BitmapDecoding.byteCount(value)
     }
 
-    fun get(trackId: Long): Bitmap? = cache.get(trackId)
+    fun getUri(uri: String): Bitmap? = cacheByUri.get(uri)
 
-    fun put(trackId: Long, bitmap: Bitmap) {
-        cache.put(trackId, bitmap)
+    fun putUri(uri: String, bitmap: Bitmap) {
+        if (uri.isNotBlank()) cacheByUri.put(uri, bitmap)
     }
 
     fun clear() {
-        cache.evictAll()
+        cacheByUri.evictAll()
     }
 }

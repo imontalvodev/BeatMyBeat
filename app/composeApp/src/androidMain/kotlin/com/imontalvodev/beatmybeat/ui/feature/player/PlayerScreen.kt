@@ -504,29 +504,32 @@ fun PlayerScreen(
     }
 
     // Cargar carátula: primero tags embebidos, luego .meta.json con artworkBase64
-    LaunchedEffect(currentTrack?.id) {
-        if (currentTrack == null) {
+    LaunchedEffect(currentTrack?.uri) {
+        val track = currentTrack
+        if (track == null) {
             currentArtwork = null
             return@LaunchedEffect
         }
+        currentArtwork = null
 
-        val cached = ArtworkCache.get(currentTrack!!.id)
-        if (cached != null) {
+        val cached = ArtworkCache.getUri(track.uri)
+        if (cached != null && !cached.isRecycled) {
             currentArtwork = cached
             return@LaunchedEffect
         }
 
         val loaded = withContext(Dispatchers.IO) {
             val bytes = com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
-                .resolveArtworkBytes(context, currentTrack!!.uri)
+                .resolveArtworkBytes(context, track.uri)
             if (bytes != null && bytes.isNotEmpty()) {
                 return@withContext BitmapDecoding.decodeSampled(bytes, PLAYER_ARTWORK_MAX_PX)
             }
             null
         }
 
+        if (currentTrack?.uri != track.uri) return@LaunchedEffect
         currentArtwork = loaded
-        if (loaded != null) ArtworkCache.put(currentTrack!!.id, loaded)
+        if (loaded != null) ArtworkCache.putUri(track.uri, loaded)
     }
 
     // Letras: solo caché local (offline-first). Se rellenan al descargar.
@@ -680,6 +683,11 @@ fun PlayerScreen(
         )
     }
 
+    /** Pool de shuffle: una entrada por fichero (evita colas incompletas por ids duplicados). */
+    val shufflePoolTracks = remember(visibleTracks) {
+        visibleTracks.distinctBy { it.uri }
+    }
+
     /**
      * Pool de shuffle = [visibleTracks] (canciones / favoritos / playlist activa).
      * [shuffleOrder] es una permutación única de ese pool; [queue] espeja siempre
@@ -698,10 +706,10 @@ fun PlayerScreen(
      */
     fun rebuildShuffleOrderFromPool(playbackAnchor: DeviceTrack? = null) {
         if (!shuffleOn) return
-        val base = visibleTracks.toMutableList()
+        val base = shufflePoolTracks.toMutableList()
         val anchor = playbackAnchor ?: currentTrack
         anchor?.let { a ->
-            if (base.none { it.id == a.id }) base.add(a)
+            if (base.none { it.uri == a.uri }) base.add(a)
         }
         if (base.isEmpty()) {
             shuffleOrder = emptyList()
@@ -714,7 +722,7 @@ fun PlayerScreen(
         shuffleIndex = when {
             shuffleOrder.isEmpty() -> -1
             anchor == null -> 0
-            else -> shuffleOrder.indexOfFirst { it.id == anchor.id }.takeIf { it >= 0 } ?: 0
+            else -> shuffleOrder.indexOfFirst { it.uri == anchor.uri }.takeIf { it >= 0 } ?: 0
         }
         refreshShuffleQueueMirror()
         syncQueueToService()
@@ -768,22 +776,22 @@ fun PlayerScreen(
 
     // Sincronizar UI con ExoPlayer (notificación / lock screen): misma estructura shuffle o consumo de cola.
     LaunchedEffect(playbackMediaId, deviceTracks) {
-        val id = playbackMediaId.toLongOrNull() ?: return@LaunchedEffect
-        val track = deviceTracks.firstOrNull { it.id == id } ?: return@LaunchedEffect
-        if (currentTrack?.id != id) {
+        val track = resolveTrackFromPlaybackMediaId(playbackMediaId, deviceTracks) ?: return@LaunchedEffect
+        if (currentTrack?.uri != track.uri) {
             if (shuffleOn && shuffleOrder.isNotEmpty()) {
-                val idx = shuffleOrder.indexOfFirst { it.id == id }
+                val idx = shuffleOrder.indexOfFirst { it.uri == track.uri }
                 if (idx >= 0) {
                     shuffleIndex = idx
                     refreshShuffleQueueMirror()
                     syncQueueToService()
                 }
-            } else if (queue.firstOrNull()?.id == id) {
+            } else if (queue.firstOrNull()?.uri == track.uri) {
                 queue.removeAt(0)
             }
         }
         currentTrack = track
-        currentIndex = deviceTracks.indexOfFirst { it.id == id }
+        currentIndex = deviceTracks.indexOfFirst { it.uri == track.uri }.takeIf { it >= 0 }
+            ?: deviceTracks.indexOfFirst { it.id == track.id }
     }
 
     fun playTrack(track: DeviceTrack, clearQueue: Boolean = false) {
@@ -798,7 +806,7 @@ fun PlayerScreen(
             // lo que forzaba después un syncNextItems() con N removes sobre el hilo
             // principal → causa directa del ANR con listas grandes.
             fun DeviceTrack.toJsonObject() = JSONObject().also { o ->
-                o.put("id", id)
+                o.put("id", uri)
                 o.put("uri", uri)
                 o.put("title", title)
                 o.put("artist", artist)
@@ -807,10 +815,10 @@ fun PlayerScreen(
             val pendingShuffleIdx = if (!shuffleOn) {
                 -1
             } else {
-                var idx = shuffleOrder.indexOfFirst { it.id == track.id }
+                var idx = shuffleOrder.indexOfFirst { it.uri == track.uri }
                 if (idx < 0) {
                     rebuildShuffleOrderFromPool(playbackAnchor = track)
-                    idx = shuffleOrder.indexOfFirst { it.id == track.id }
+                    idx = shuffleOrder.indexOfFirst { it.uri == track.uri }
                 }
                 idx
             }
@@ -844,11 +852,12 @@ fun PlayerScreen(
                 )
             }
             currentTrack = track
-            currentIndex = deviceTracks.indexOfFirst { it.id == track.id }
+            currentIndex = deviceTracks.indexOfFirst { it.uri == track.uri }.takeIf { it >= 0 }
+                ?: deviceTracks.indexOfFirst { it.id == track.id }
             // isPlaying se actualiza automáticamente vía PlaybackService.state
 
             if (shuffleOn && shuffleOrder.isNotEmpty()) {
-                val si = shuffleOrder.indexOfFirst { it.id == track.id }
+                val si = shuffleOrder.indexOfFirst { it.uri == track.uri }
                 if (si >= 0) {
                     shuffleIndex = si
                     refreshShuffleQueueMirror()
@@ -860,17 +869,17 @@ fun PlayerScreen(
     }
 
     fun startPlaybackFromCollection(startTrack: DeviceTrack) {
-        val pool = visibleTracks.toList()
+        val pool = shufflePoolTracks
         if (pool.isEmpty()) return
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
         if (shuffleOn) {
             shuffleOrder = pool.shuffled(Random(System.currentTimeMillis()))
-            var startIndex = shuffleOrder.indexOfFirst { it.id == startTrack.id }
+            var startIndex = shuffleOrder.indexOfFirst { it.uri == startTrack.uri }
             if (startIndex < 0) {
-                shuffleOrder = (listOf(startTrack) + pool.filterNot { it.id == startTrack.id })
+                shuffleOrder = (listOf(startTrack) + pool.filterNot { it.uri == startTrack.uri })
                     .shuffled(Random(System.currentTimeMillis()))
-                startIndex = shuffleOrder.indexOfFirst { it.id == startTrack.id }
+                startIndex = shuffleOrder.indexOfFirst { it.uri == startTrack.uri }
             }
             if (startIndex < 0) startIndex = 0
             shuffleIndex = startIndex
@@ -880,7 +889,7 @@ fun PlayerScreen(
             return
         }
 
-        val startIndex = pool.indexOfFirst { it.id == startTrack.id }.coerceAtLeast(0)
+        val startIndex = pool.indexOfFirst { it.uri == startTrack.uri }.coerceAtLeast(0)
         queue.clear()
         queue.addAll(pool.drop(startIndex + 1))
         playTrack(pool[startIndex], clearQueue = false)
@@ -902,7 +911,7 @@ fun PlayerScreen(
             val prevIndex = if (queueRepeatIndex - 1 >= 0) queueRepeatIndex - 1 else queueRepeatSnapshot.lastIndex
             val nextTrack = queueRepeatSnapshot[prevIndex]
             // Si el tema se borró del teléfono, invalidamos la repetición de cola.
-            if (deviceTracks.none { it.id == nextTrack.id }) return
+            if (deviceTracks.none { it.uri == nextTrack.uri }) return
             playTrack(nextTrack, clearQueue = false)
             queueRepeatIndex = prevIndex
             queue.clear()
@@ -919,8 +928,8 @@ fun PlayerScreen(
             return
         }
 
-        val curId = currentTrack?.id ?: return
-        val idx = visibleTracks.indexOfFirst { it.id == curId }
+        val curUri = currentTrack?.uri ?: return
+        val idx = visibleTracks.indexOfFirst { it.uri == curUri }
         val prevIndex = when {
             idx < 0 -> 0
             idx <= 0 -> visibleTracks.lastIndex
@@ -944,7 +953,7 @@ fun PlayerScreen(
             val wrappedIndex = if (nextIndex < queueRepeatSnapshot.size) nextIndex else 0
             val nextTrack = queueRepeatSnapshot[wrappedIndex]
             // Si el tema se borró del teléfono, invalidamos la repetición de cola.
-            if (deviceTracks.none { it.id == nextTrack.id }) return
+            if (deviceTracks.none { it.uri == nextTrack.uri }) return
             playTrack(nextTrack, clearQueue = false)
             queueRepeatIndex = wrappedIndex
             queue.clear()
@@ -957,10 +966,10 @@ fun PlayerScreen(
             if (nextIndex < shuffleOrder.size) {
                 playTrack(shuffleOrder[nextIndex], clearQueue = false)
             } else if (repeatMode == RepeatMode.LIST && shuffleOrder.isNotEmpty()) {
-                val lastId = shuffleOrder.last().id
+                val lastUri = shuffleOrder.last().uri
                 rebuildShuffleOrderFromPool()
                 var order = shuffleOrder
-                if (order.size > 1 && order.first().id == lastId) {
+                if (order.size > 1 && order.first().uri == lastUri) {
                     order = order.drop(1) + order.take(1)
                     shuffleOrder = order
                 }
@@ -981,8 +990,8 @@ fun PlayerScreen(
 
         // 2) Si no hay cola y Shuffle está apagado, navegamos dentro de la lista actual (según filtro/playlist)
         if (visibleTracks.isEmpty()) return
-        val curId = currentTrack?.id ?: return
-        val idx = visibleTracks.indexOfFirst { it.id == curId }
+        val curUri = currentTrack?.uri ?: return
+        val idx = visibleTracks.indexOfFirst { it.uri == curUri }
         val canAdvance = idx >= 0 && idx < visibleTracks.lastIndex
         if (!canAdvance) {
             if (repeatMode == RepeatMode.LIST) {
@@ -997,21 +1006,21 @@ fun PlayerScreen(
     }
 
     fun finishDeletion(track: DeviceTrack, showToast: Boolean = true) {
-        queue.removeAll { it.id == track.id }
+        queue.removeAll { it.uri == track.uri }
         if (shuffleOn) {
-            val curId = currentTrack?.id
-            val wasCurrent = curId == track.id
-            shuffleOrder = shuffleOrder.filter { it.id != track.id }
+            val curUri = currentTrack?.uri
+            val wasCurrent = curUri == track.uri
+            shuffleOrder = shuffleOrder.filter { it.uri != track.uri }
             if (shuffleOrder.isEmpty() || wasCurrent) {
                 shuffleIndex = -1
                 queue.clear()
-            } else if (curId != null) {
-                shuffleIndex = shuffleOrder.indexOfFirst { it.id == curId }.takeIf { it >= 0 } ?: 0
+            } else if (curUri != null) {
+                shuffleIndex = shuffleOrder.indexOfFirst { it.uri == curUri }.takeIf { it >= 0 } ?: 0
                 refreshShuffleQueueMirror()
             }
         }
         syncQueueToService()
-        if (currentTrack?.id == track.id) {
+        if (currentTrack?.uri == track.uri) {
             currentTrack = null
             currentArtwork = null
             lyricsState = LyricsUiState.Empty("Selecciona una canción")
@@ -2333,9 +2342,9 @@ private fun ArtworkThumbnail(
     isPlaceholderOnly: Boolean = false,
 ) {
     val context = LocalContext.current
-    var imageData by remember(track.id) { mutableStateOf<Any?>(ArtworkCache.get(track.id)) }
+    var imageData by remember(track.uri) { mutableStateOf<Any?>(ArtworkCache.getUri(track.uri)) }
 
-    LaunchedEffect(track.id) {
+    LaunchedEffect(track.uri) {
         if (imageData != null) return@LaunchedEffect
         val bytes = withContext(Dispatchers.IO) {
             PlaybackArtworkHelper.resolveArtworkBytes(context, track.uri)
@@ -2344,7 +2353,7 @@ private fun ArtworkThumbnail(
             BitmapDecoding.decodeSampled(bytes, LIST_ARTWORK_MAX_PX)
         }
         if (decoded != null) {
-            ArtworkCache.put(track.id, decoded)
+            ArtworkCache.putUri(track.uri, decoded)
             imageData = decoded
         }
     }
@@ -3376,6 +3385,15 @@ private enum class SortOption {
     NAME_DESC,
     NEWEST_FIRST,
     OLDEST_FIRST,
+}
+
+private fun resolveTrackFromPlaybackMediaId(
+    mediaId: String,
+    tracks: List<DeviceTrack>,
+): DeviceTrack? {
+    if (mediaId.isBlank()) return null
+    return tracks.firstOrNull { it.uri == mediaId }
+        ?: mediaId.toLongOrNull()?.let { id -> tracks.firstOrNull { it.id == id } }
 }
 
 private fun buildVisibleTracksForSection(
