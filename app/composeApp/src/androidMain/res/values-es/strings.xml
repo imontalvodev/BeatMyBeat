@@ -17,7 +17,7 @@
     <string name="player_sort_recent">Recientes</string>
     <string name="player_sort_oldest">Antiguas</string>
     <string name="player_filters_cd">Abrir lista y ordenación</string>
-    <string name="player_selection_mode_enabled">Modo selección activado.</string>
+    <string name="player_selection_mode_enabled">Mantén pulsada una canción para seleccionar. Toca otras para añadirlas; usa ⋮ en cualquiera seleccionada.</string>
     <string name="player_added_to_queue_end">Añadido al final de la cola.</string>
     <string name="player_play_next_added">Reproducirá a continuación.</string>
     <string name="player_error_cannot_play_file">No se pudo reproducir este archivo.</string>

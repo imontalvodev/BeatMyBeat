@@ -29,6 +29,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -95,6 +97,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
@@ -312,8 +318,10 @@ fun PlayerScreen(
     }
 
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
-    var selectedTrackIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    val selectionMode = selectedTrackIds.isNotEmpty()
+    var isSelectionModeActive by remember { mutableStateOf(false) }
+    /** URI (única por fichero); evita seleccionar dos filas con el mismo MediaStore id. */
+    var selectedTrackUris by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val selectionMode = isSelectionModeActive
     var sortOption by remember {
         mutableStateOf(
             when (viewModel.loadSortOption()) {
@@ -325,17 +333,60 @@ fun PlayerScreen(
         )
     }
 
-    fun toggleTrackSelection(trackId: Long) {
-        selectedTrackIds = if (selectedTrackIds.contains(trackId)) {
-            selectedTrackIds - trackId
+    fun exitSelectionMode() {
+        isSelectionModeActive = false
+        selectedTrackUris = emptySet()
+    }
+
+    fun enterSelectionMode(trackUri: String) {
+        isSelectionModeActive = true
+        selectedTrackUris = setOf(trackUri)
+    }
+
+    fun toggleTrackSelection(trackUri: String) {
+        if (!isSelectionModeActive) return
+        selectedTrackUris = if (selectedTrackUris.contains(trackUri)) {
+            selectedTrackUris - trackUri
         } else {
-            selectedTrackIds + trackId
+            selectedTrackUris + trackUri
+        }
+        if (selectedTrackUris.isEmpty()) {
+            exitSelectionMode()
         }
     }
 
     fun clearTrackSelection() {
-        selectedTrackIds = emptySet()
+        exitSelectionMode()
     }
+
+    LaunchedEffect(selectedTrackUris) {
+        if (selectedTrackUris.isEmpty() && isSelectionModeActive) {
+            isSelectionModeActive = false
+        }
+    }
+
+    LaunchedEffect(selectedSection, query, selectedPlaylistId) {
+        clearTrackSelection()
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                clearTrackSelection()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            clearTrackSelection()
+        }
+    }
+
+    BackHandler(enabled = isSelectionModeActive && !isExpanded) {
+        clearTrackSelection()
+    }
+
     LaunchedEffect(playlists) {
         if (playlists.isEmpty()) {
             selectedPlaylistId = null
@@ -711,7 +762,7 @@ fun PlayerScreen(
         else syncQueueToService()
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
-        selectedTrackIds = emptySet()
+        clearTrackSelection()
     }
 
     // Sincronizar UI con ExoPlayer (notificación / lock screen): misma estructura shuffle o consumo de cola.
@@ -1117,7 +1168,7 @@ fun PlayerScreen(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                val selectedTracksOrdered = visibleTracks.filter { selectedTrackIds.contains(it.id) }
+                val selectedTracksOrdered = visibleTracks.filter { selectedTrackUris.contains(it.uri) }
                 if (selectionMode) {
                     Row(
                         modifier = Modifier
@@ -1127,12 +1178,26 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "${selectedTracksOrdered.size} seleccionada(s)",
+                            text = stringResource(
+                                R.string.player_selection_count,
+                                selectedTracksOrdered.size,
+                            ),
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                         )
-                        TextButton(onClick = { clearTrackSelection() }) {
-                            Text(stringResource(R.string.common_cancel))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(
+                                onClick = {
+                                    selectedTrackUris = visibleTracks.map { it.uri }.toSet()
+                                },
+                                enabled = visibleTracks.isNotEmpty() &&
+                                    selectedTracksOrdered.size < visibleTracks.size,
+                            ) {
+                                Text(stringResource(R.string.player_select_all))
+                            }
+                            TextButton(onClick = { clearTrackSelection() }) {
+                                Text(stringResource(R.string.common_cancel))
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1190,7 +1255,10 @@ fun PlayerScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                         contentPadding = PaddingValues(bottom = 8.dp),
                     ) {
-                        items(tracksInSection) { track ->
+                        items(
+                            items = tracksInSection,
+                            key = { it.uri },
+                        ) { track ->
                         val currentPlaylist =
                             selectedPlaylistId?.let { pid -> playlists.firstOrNull { it.id == pid } }
                         val showRemoveFromPlaylist =
@@ -1201,23 +1269,16 @@ fun PlayerScreen(
                         TrackRow(
                             track = track,
                             isCurrent = currentTrack?.id == track.id,
-                            isSelected = selectedTrackIds.contains(track.id),
+                            isSelected = selectedTrackUris.contains(track.uri),
+                            selectionMode = selectionMode,
                             showOverflowMenu = !selectionMode,
-                            showSelectedActionsMenu = selectionMode && selectedTrackIds.contains(track.id),
-                            onLongPress = {
-                                val wasSelectionMode = selectionMode
-                                toggleTrackSelection(track.id)
-                                if (!wasSelectionMode) {
-                                    showSnack(selectionModeEnabledText)
-                                }
+                            showSelectedActionsMenu = selectionMode && selectedTrackUris.contains(track.uri),
+                            onEnterSelectionMode = {
+                                enterSelectionMode(track.uri)
+                                showSnack(selectionModeEnabledText)
                             },
-                            onClick = {
-                                if (selectionMode) {
-                                    toggleTrackSelection(track.id)
-                                } else {
-                                    startPlaybackFromCollection(track)
-                                }
-                            },
+                            onToggleSelection = { toggleTrackSelection(track.uri) },
+                            onPlayTrack = { startPlaybackFromCollection(track) },
                             onQueue = {
                                 queue.add(track)
                                 syncQueueToService()
@@ -1266,7 +1327,30 @@ fun PlayerScreen(
                                 queue.addAll(selectedTracksOrdered)
                                 syncQueueToService()
                                 showSnack(
-                                    if (selectedTracksOrdered.size == 1) "Canción añadida a la cola." else "Canciones añadidas a la cola.",
+                                    if (selectedTracksOrdered.size == 1) {
+                                        queueAddedText
+                                    } else {
+                                        context.getString(
+                                            R.string.player_bulk_queue_added,
+                                            selectedTracksOrdered.size,
+                                        )
+                                    },
+                                )
+                                clearTrackSelection()
+                            },
+                            onBulkPlayNext = {
+                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
+                                selectedTracksOrdered.reversed().forEach { queue.add(0, it) }
+                                syncQueueToService()
+                                showSnack(
+                                    if (selectedTracksOrdered.size == 1) {
+                                        playNextAddedText
+                                    } else {
+                                        context.getString(
+                                            R.string.player_bulk_play_next_added,
+                                            selectedTracksOrdered.size,
+                                        )
+                                    },
                                 )
                                 clearTrackSelection()
                             },
@@ -1289,9 +1373,15 @@ fun PlayerScreen(
                                     deleteTrackFromDevice(it, syncAfter = false, showToast = false)
                                 }
                                 viewModel.syncLibrary(auto = true)
-                                showSnack("Eliminadas ${selectedTracksOrdered.size} canciones del teléfono.")
+                                showSnack(
+                                    context.getString(
+                                        R.string.player_bulk_deleted,
+                                        selectedTracksOrdered.size,
+                                    ),
+                                )
                                 clearTrackSelection()
                             },
+                            bulkSelectionCount = selectedTracksOrdered.size,
                             showBulkRemoveFromPlaylist = section == PlayerSection.Playlist && selectedPlaylistId != null,
                             onBulkRemoveFromPlaylist = {
                                 val pid = selectedPlaylistId ?: return@TrackRow
@@ -1941,37 +2031,44 @@ fun PlayerScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrackRow(
     track: DeviceTrack,
     isCurrent: Boolean,
     isSelected: Boolean,
+    selectionMode: Boolean,
     showOverflowMenu: Boolean,
     showSelectedActionsMenu: Boolean,
-    onLongPress: () -> Unit,
-    onClick: () -> Unit,
+    onEnterSelectionMode: () -> Unit,
+    onToggleSelection: () -> Unit,
+    onPlayTrack: () -> Unit,
     onQueue: () -> Unit,
     onPlayNext: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDeleteFromDevice: () -> Unit,
     onBulkQueue: () -> Unit,
+    onBulkPlayNext: () -> Unit,
     onBulkToggleFavorite: () -> Unit,
     onBulkAddToPlaylist: () -> Unit,
     onBulkDeleteFromDevice: () -> Unit,
     showBulkRemoveFromPlaylist: Boolean,
     onBulkRemoveFromPlaylist: () -> Unit,
+    bulkSelectionCount: Int,
     isFavorite: Boolean,
     showRemoveFromPlaylist: Boolean,
     onRemoveFromPlaylist: () -> Unit,
 ) {
+    val selectedCountLabel = stringResource(R.string.player_selection_actions_cd)
+    var suppressClickAfterLongPress by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
                 isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                isCurrent -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                isCurrent && !selectionMode -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                 else -> Color.Black.copy(alpha = 0.35f)
             },
         ),
@@ -1979,52 +2076,86 @@ private fun TrackRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp)
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onLongPress = { onLongPress() },
-                        onTap = { onClick() },
-                    )
-                },
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .size(32.dp)
-                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                    .weight(1f)
+                    .combinedClickable(
+                        onClick = {
+                            if (suppressClickAfterLongPress) {
+                                suppressClickAfterLongPress = false
+                                return@combinedClickable
+                            }
+                            if (selectionMode) {
+                                onToggleSelection()
+                            } else {
+                                onPlayTrack()
+                            }
+                        },
+                        onLongClick = {
+                            suppressClickAfterLongPress = true
+                            if (!selectionMode) {
+                                onEnterSelectionMode()
+                            } else {
+                                onToggleSelection()
+                            }
+                        },
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                ArtworkThumbnail(track = track, sizeDp = 32)
-                if (isSelected) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = "Seleccionada",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                ) {
+                    ArtworkThumbnail(track = track, sizeDp = 32)
+                    when {
+                        isSelected -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = stringResource(R.string.player_track_selected_cd),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        selectionMode -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .border(
+                                        width = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                        shape = RoundedCornerShape(8.dp),
+                                    ),
+                            )
+                        }
                     }
                 }
-            }
-            Spacer(modifier = Modifier.size(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = track.title.toTitleCaseSimple(),
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = track.artist.toTitleCaseSimple(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title.toTitleCaseSimple(),
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = track.artist.toTitleCaseSimple(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             if (showOverflowMenu) {
                 TrackOverflowMenu(
@@ -2040,7 +2171,10 @@ private fun TrackRow(
                 )
             } else if (showSelectedActionsMenu) {
                 TrackSelectionOverflowMenu(
+                    selectedCount = bulkSelectionCount,
+                    contentDescription = selectedCountLabel,
                     onQueue = onBulkQueue,
+                    onPlayNext = onBulkPlayNext,
                     onToggleFavorite = onBulkToggleFavorite,
                     onAddToPlaylist = onBulkAddToPlaylist,
                     onDeleteFromDevice = onBulkDeleteFromDevice,
@@ -2054,7 +2188,10 @@ private fun TrackRow(
 
 @Composable
 private fun TrackSelectionOverflowMenu(
+    selectedCount: Int,
+    contentDescription: String,
     onQueue: () -> Unit,
+    onPlayNext: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDeleteFromDevice: () -> Unit,
@@ -2062,11 +2199,12 @@ private fun TrackSelectionOverflowMenu(
     onRemoveFromPlaylist: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val multi = selectedCount > 1
     Box {
         IconButton(onClick = { expanded = true }) {
             Icon(
                 imageVector = Icons.Filled.MoreVert,
-                contentDescription = "Acciones selección",
+                contentDescription = contentDescription,
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
             )
         }
@@ -2074,26 +2212,69 @@ private fun TrackSelectionOverflowMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
+            if (multi) {
+                DropdownMenuItem(
+                    text = {
+                        Text(stringResource(R.string.player_bulk_actions_header, selectedCount))
+                    },
+                    onClick = { },
+                    enabled = false,
+                )
+            }
             DropdownMenuItem(
-                text = { Text("Añadir a cola") },
+                text = {
+                    Text(
+                        if (multi) stringResource(R.string.player_bulk_action_queue)
+                        else stringResource(R.string.player_action_queue),
+                    )
+                },
                 onClick = { expanded = false; onQueue() },
             )
             DropdownMenuItem(
-                text = { Text("Favoritos") },
+                text = {
+                    Text(
+                        if (multi) stringResource(R.string.player_bulk_action_play_next)
+                        else stringResource(R.string.player_action_play_next),
+                    )
+                },
+                onClick = { expanded = false; onPlayNext() },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (multi) stringResource(R.string.player_bulk_action_favorite)
+                        else stringResource(R.string.player_action_favorite),
+                    )
+                },
                 onClick = { expanded = false; onToggleFavorite() },
             )
             DropdownMenuItem(
-                text = { Text("Añadir a playlist") },
+                text = {
+                    Text(
+                        if (multi) stringResource(R.string.player_bulk_action_playlist)
+                        else stringResource(R.string.player_action_playlist),
+                    )
+                },
                 onClick = { expanded = false; onAddToPlaylist() },
             )
             if (showRemoveFromPlaylist) {
                 DropdownMenuItem(
-                    text = { Text("Quitar de playlist") },
+                    text = {
+                        Text(
+                            if (multi) stringResource(R.string.player_bulk_action_remove_playlist)
+                            else stringResource(R.string.player_action_remove_playlist),
+                        )
+                    },
                     onClick = { expanded = false; onRemoveFromPlaylist() },
                 )
             }
             DropdownMenuItem(
-                text = { Text("Eliminar del teléfono") },
+                text = {
+                    Text(
+                        if (multi) stringResource(R.string.player_bulk_action_delete)
+                        else stringResource(R.string.player_action_delete),
+                    )
+                },
                 onClick = { expanded = false; onDeleteFromDevice() },
             )
         }

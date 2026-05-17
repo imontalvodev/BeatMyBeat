@@ -70,6 +70,8 @@ class MediaStoreScanner(private val context: Context) {
         val tracks = mutableListOf<DeviceTrack>()
         val knownUris = mutableSetOf<String>()
         val knownDisplayNames = mutableSetOf<String>()
+        /** Misma canción en Audio.Media y Files → URIs distintas; deduplicamos por ruta o carpeta+nombre. */
+        val knownStorageKeys = mutableSetOf<String>()
 
         // 1) MediaStore Audio en todos los volúmenes visibles
         try {
@@ -84,26 +86,67 @@ class MediaStoreScanner(private val context: Context) {
                     tracks = tracks,
                     knownUris = knownUris,
                     knownDisplayNames = knownDisplayNames,
+                    knownStorageKeys = knownStorageKeys,
                 )
             }
-            // 1b) Respaldo: ficheros audio en MediaStore.Files (a veces no aparecen en Audio.Media)
+            // 1b) Respaldo: solo entradas que Audio.Media no indexó (evita duplicar descargas)
             scanFilesAudioCollection(
                 minMusicDurationMs = minMusicDurationMs,
                 tracks = tracks,
                 knownUris = knownUris,
                 knownDisplayNames = knownDisplayNames,
+                knownStorageKeys = knownStorageKeys,
             )
         } catch (_: SecurityException) {
             // Sin permisos de lectura, seguimos con carpetas de la app y SAF.
         }
 
         // 2) Ficheros en almacenamiento interno privado (.music)
-        scanAppPrivateMusic(tracks, knownUris, knownDisplayNames, minMusicDurationMs)
+        scanAppPrivateMusic(tracks, knownUris, knownDisplayNames, knownStorageKeys, minMusicDurationMs)
 
         // 3) Carpeta personalizada (SAF), incluyendo subcarpetas
-        scanCustomStorage(tracks, knownUris, knownDisplayNames, minMusicDurationMs)
+        scanCustomStorage(tracks, knownUris, knownDisplayNames, knownStorageKeys, minMusicDurationMs)
 
         return tracks
+    }
+
+    private fun storageKey(relativePath: String, displayName: String): String {
+        val folder = relativePath.lowercase(Locale.ROOT).trim().trimEnd('/')
+        val name = displayName.lowercase(Locale.ROOT).trim()
+        if (folder.isBlank() || name.isBlank()) return ""
+        return "$folder/$name"
+    }
+
+    private fun canonicalPath(path: String): String {
+        if (path.isBlank()) return ""
+        return runCatching {
+            File(path).canonicalFile.absolutePath.lowercase(Locale.ROOT)
+        }.getOrDefault(path.lowercase(Locale.ROOT))
+    }
+
+    private fun registerStorageIdentity(
+        absolutePath: String,
+        relativePath: String,
+        displayName: String,
+        knownStorageKeys: MutableSet<String>,
+    ) {
+        val pathKey = canonicalPath(absolutePath)
+        if (pathKey.isNotBlank()) knownStorageKeys.add("path:$pathKey")
+        val key = storageKey(relativePath, displayName)
+        if (key.isNotBlank()) knownStorageKeys.add("key:$key")
+    }
+
+    private fun isAlreadyIndexed(
+        absolutePath: String,
+        relativePath: String,
+        displayName: String,
+        knownStorageKeys: Set<String>,
+    ): Boolean {
+        val pathKey = canonicalPath(absolutePath)
+        if (pathKey.isNotBlank() && "path:$pathKey" in knownStorageKeys) return true
+        val key = storageKey(relativePath, displayName)
+        if (key.isNotBlank() && "key:$key" in knownStorageKeys) return true
+        return false
     }
 
     private fun audioCollectionUris(): List<Uri> {
@@ -133,6 +176,7 @@ class MediaStoreScanner(private val context: Context) {
         tracks: MutableList<DeviceTrack>,
         knownUris: MutableSet<String>,
         knownDisplayNames: MutableSet<String>,
+        knownStorageKeys: MutableSet<String>,
     ) {
         context.contentResolver.query(
             collection,
@@ -185,6 +229,7 @@ class MediaStoreScanner(private val context: Context) {
                 if (isLikelyNonMusicAudio(searchableText, mimeType, durationResolved)) continue
 
                 if (displayNameLower.isNotBlank()) knownDisplayNames.add(displayNameLower)
+                registerStorageIdentity(absolutePath, relativePath, displayName, knownStorageKeys)
 
                 tracks += DeviceTrack(
                     id = id,
@@ -204,6 +249,7 @@ class MediaStoreScanner(private val context: Context) {
         tracks: MutableList<DeviceTrack>,
         knownUris: MutableSet<String>,
         knownDisplayNames: MutableSet<String>,
+        knownStorageKeys: MutableSet<String>,
     ) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
 
@@ -257,6 +303,9 @@ class MediaStoreScanner(private val context: Context) {
                     if (!isRecognizedMusicFile(0, mimeType, displayNameLower, relativePath, absolutePath)) {
                         continue
                     }
+                    if (isAlreadyIndexed(absolutePath, relativePath, displayName, knownStorageKeys)) {
+                        continue
+                    }
 
                     val title = displayName.substringBeforeLast('.').ifBlank { displayName }
                     val searchableText = listOf(title, displayNameLower, absolutePath, relativePath)
@@ -268,6 +317,7 @@ class MediaStoreScanner(private val context: Context) {
                     if (isLikelyNonMusicAudio(searchableText, mimeType, durationResolved)) continue
 
                     if (displayNameLower.isNotBlank()) knownDisplayNames.add(displayNameLower)
+                    registerStorageIdentity(absolutePath, relativePath, displayName, knownStorageKeys)
 
                     tracks += DeviceTrack(
                         id = id,
@@ -287,6 +337,7 @@ class MediaStoreScanner(private val context: Context) {
         tracks: MutableList<DeviceTrack>,
         knownUris: MutableSet<String>,
         knownDisplayNames: MutableSet<String>,
+        knownStorageKeys: MutableSet<String>,
         minMusicDurationMs: Long,
     ) {
         val appMusicDir = File(context.filesDir, ".music")
@@ -299,6 +350,9 @@ class MediaStoreScanner(private val context: Context) {
 
             val uriString = file.toURI().toString()
             if (!knownUris.add(uriString)) return@forEachIndexed
+            if (isAlreadyIndexed(file.absolutePath, "", file.name, knownStorageKeys)) {
+                return@forEachIndexed
+            }
 
             val metaFile = File(file.parentFile, "${file.nameWithoutExtension}.meta.json")
             var title = file.nameWithoutExtension
@@ -339,6 +393,7 @@ class MediaStoreScanner(private val context: Context) {
             if (isTooShortForLibrary(durationMs, minMusicDurationMs)) return@forEachIndexed
 
             knownDisplayNames.add(file.name.lowercase(Locale.ROOT))
+            registerStorageIdentity(file.absolutePath, "", file.name, knownStorageKeys)
             tracks += DeviceTrack(
                 id = Int.MAX_VALUE.toLong() - index,
                 uri = uriString,
@@ -355,6 +410,7 @@ class MediaStoreScanner(private val context: Context) {
         tracks: MutableList<DeviceTrack>,
         knownUris: MutableSet<String>,
         knownDisplayNames: MutableSet<String>,
+        knownStorageKeys: MutableSet<String>,
         minMusicDurationMs: Long,
     ) {
         val customDocs = StorageSettings.listCustomAudioDocs(context)
@@ -364,6 +420,9 @@ class MediaStoreScanner(private val context: Context) {
 
             val uriString = doc.uri.toString()
             if (!knownUris.add(uriString)) return@forEachIndexed
+            if (docName.isNotBlank() && isAlreadyIndexed("", "", doc.name.orEmpty(), knownStorageKeys)) {
+                return@forEachIndexed
+            }
 
             var title = "Unknown"
             var artist = "Unknown artist"
@@ -388,6 +447,7 @@ class MediaStoreScanner(private val context: Context) {
 
             if (isTooShortForLibrary(durationMs, minMusicDurationMs)) return@forEachIndexed
 
+            registerStorageIdentity("", "", doc.name.orEmpty(), knownStorageKeys)
             tracks += DeviceTrack(
                 id = Long.MAX_VALUE - index,
                 uri = uriString,
