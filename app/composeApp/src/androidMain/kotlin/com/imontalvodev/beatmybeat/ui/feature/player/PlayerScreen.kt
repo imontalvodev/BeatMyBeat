@@ -811,23 +811,26 @@ fun PlayerScreen(
                 o.put("title", title)
                 o.put("artist", artist)
             }
-            // Shuffle: misma lista [shuffleOrder] que la UI; si el tema no está (p. ej. pool cambió), rehacer permutación.
-            val pendingShuffleIdx = if (!shuffleOn) {
-                -1
-            } else {
+            // Shuffle: reorganizamos shuffleOrder para que el track seleccionado quede en
+            // la posición 0, garantizando así que ExoPlayer recibe TODAS las canciones.
+            val nextItems: List<DeviceTrack>
+            if (shuffleOn) {
                 var idx = shuffleOrder.indexOfFirst { it.uri == track.uri }
                 if (idx < 0) {
                     rebuildShuffleOrderFromPool(playbackAnchor = track)
                     idx = shuffleOrder.indexOfFirst { it.uri == track.uri }
                 }
-                idx
-            }
-            val nextItems = if (shuffleOn && shuffleOrder.isNotEmpty() && pendingShuffleIdx >= 0) {
-                shuffleOrder.drop(pendingShuffleIdx + 1)
-            } else if (shuffleOn && shuffleOrder.isNotEmpty()) {
-                shuffleOrder.drop(1)
+                if (idx > 0 && idx < shuffleOrder.size) {
+                    // Rotar: poner el track en cabeza y conservar el orden del resto
+                    shuffleOrder = listOf(shuffleOrder[idx]) +
+                        shuffleOrder.drop(idx + 1) +
+                        shuffleOrder.take(idx)
+                    shuffleIndex = 0
+                    refreshShuffleQueueMirror()
+                }
+                nextItems = if (shuffleOrder.isNotEmpty()) shuffleOrder.drop(1) else emptyList()
             } else {
-                queue.toList()
+                nextItems = queue.toList()
             }
             val arr = JSONArray()
             arr.put(track.toJsonObject())
@@ -874,18 +877,15 @@ fun PlayerScreen(
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
         if (shuffleOn) {
-            shuffleOrder = pool.shuffled(Random(System.currentTimeMillis()))
-            var startIndex = shuffleOrder.indexOfFirst { it.uri == startTrack.uri }
-            if (startIndex < 0) {
-                shuffleOrder = (listOf(startTrack) + pool.filterNot { it.uri == startTrack.uri })
-                    .shuffled(Random(System.currentTimeMillis()))
-                startIndex = shuffleOrder.indexOfFirst { it.uri == startTrack.uri }
-            }
-            if (startIndex < 0) startIndex = 0
-            shuffleIndex = startIndex
+            // Colocamos startTrack en la posición 0 para garantizar que ExoPlayer
+            // recibe TODAS las canciones del pool (no solo las posteriores al índice).
+            val rest = pool.filterNot { it.uri == startTrack.uri }
+                .shuffled(Random(System.currentTimeMillis()))
+            shuffleOrder = listOf(startTrack) + rest
+            shuffleIndex = 0
             refreshShuffleQueueMirror()
             syncQueueToService()
-            playTrack(shuffleOrder[shuffleIndex], clearQueue = false)
+            playTrack(shuffleOrder[0], clearQueue = false)
             return
         }
 
