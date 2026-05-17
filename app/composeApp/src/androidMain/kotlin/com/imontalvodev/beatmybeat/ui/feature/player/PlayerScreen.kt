@@ -1,7 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.feature.player
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import android.app.Activity
 import android.app.RecoverableSecurityException
@@ -132,6 +131,7 @@ import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
+import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -468,7 +468,7 @@ fun PlayerScreen(
             val bytes = com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
                 .resolveArtworkBytes(context, currentTrack!!.uri)
             if (bytes != null && bytes.isNotEmpty()) {
-                return@withContext BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                return@withContext BitmapDecoding.decodeSampled(bytes, PLAYER_ARTWORK_MAX_PX)
             }
             null
         }
@@ -2115,7 +2115,7 @@ private fun ArtworkThumbnail(
             PlaybackArtworkHelper.resolveArtworkBytes(context, track.uri)
         } ?: return@LaunchedEffect
         val decoded = withContext(Dispatchers.IO) {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            BitmapDecoding.decodeSampled(bytes, LIST_ARTWORK_MAX_PX)
         }
         if (decoded != null) {
             ArtworkCache.put(track.id, decoded)
@@ -3137,6 +3137,9 @@ private fun ExpandedPlayerOverlay(
         }
     }
 }
+
+private const val LIST_ARTWORK_MAX_PX = 160
+private const val PLAYER_ARTWORK_MAX_PX = 512
 
 private enum class RepeatMode { OFF, LIST, ONE }
 

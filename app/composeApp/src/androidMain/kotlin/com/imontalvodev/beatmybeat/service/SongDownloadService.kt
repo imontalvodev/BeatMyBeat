@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -31,6 +32,7 @@ import org.json.JSONArray
 class SongDownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var downloadJob: Job? = null
+    private var lastProgressNotifyElapsed = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -205,6 +207,7 @@ class SongDownloadService : Service() {
 
     private fun reportSingleProgress(title: String, artist: String, phase: String, fraction: Float?) {
         DownloadProgressBus.setSingle(title, artist, phase, fraction)
+        if (!shouldPostProgressNotification()) return
         if (BeatMyBeatNotification.canPostNotifications(this)) {
             runCatching {
                 NotificationManagerCompat.from(this).notify(
@@ -219,7 +222,15 @@ class SongDownloadService : Service() {
         }
     }
 
+    private fun shouldPostProgressNotification(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastProgressNotifyElapsed < NOTIFY_THROTTLE_MS) return false
+        lastProgressNotifyElapsed = now
+        return true
+    }
+
     private fun updatePlaylistNotification(processed: Int, total: Int, currentTitle: String) {
+        if (!shouldPostProgressNotification()) return
         if (!BeatMyBeatNotification.canPostNotifications(this)) return
         runCatching {
             NotificationManagerCompat.from(this).notify(
@@ -234,6 +245,7 @@ class SongDownloadService : Service() {
     }
 
     private fun startDownloadForeground(title: String) {
+        lastProgressNotifyElapsed = 0L
         if (!BeatMyBeatNotification.canPostNotifications(this)) return
         runCatching {
             startForeground(
@@ -269,6 +281,7 @@ class SongDownloadService : Service() {
         private const val ACTION_DOWNLOAD_PLAYLIST =
             "com.imontalvodev.beatmybeat.action.DOWNLOAD_PLAYLIST"
         private const val ACTION_CANCEL = "com.imontalvodev.beatmybeat.action.CANCEL_DOWNLOAD"
+        private const val NOTIFY_THROTTLE_MS = 500L
         private const val EXTRA_TITLE = "extra_title"
         private const val EXTRA_ARTIST = "extra_artist"
         private const val EXTRA_ALBUM = "extra_album"

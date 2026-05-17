@@ -3,12 +3,14 @@ package com.imontalvodev.beatmybeat.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.graphics.Bitmap
 import android.os.Build
 import android.content.Intent
 import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -18,6 +20,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.imontalvodev.beatmybeat.MainActivity
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
+import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,6 +58,19 @@ class PlaybackService : Service() {
     private lateinit var mediaSession: MediaSession
     private val mainHandler = Handler(Looper.getMainLooper())
     private val artworkExecutor = Executors.newSingleThreadExecutor()
+    private var notificationArtwork: Bitmap? = null
+    private var notificationArtworkMediaId: String? = null
+    private var lastStatePushElapsed = 0L
+
+    private val positionTick = object : Runnable {
+        override fun run() {
+            if (!::exoPlayer.isInitialized) return
+            if (exoPlayer.isPlaying) {
+                pushState(force = false)
+                mainHandler.postDelayed(this, POSITION_TICK_MS)
+            }
+        }
+    }
 
     /** Referencia pública al player para seek directo desde la UI. */
     val player: ExoPlayer get() = exoPlayer
@@ -80,31 +96,29 @@ class PlaybackService : Service() {
             .build()
 
         exoPlayer.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) = pushState()
-            override fun onPlaybackStateChanged(state: Int) = pushState()
-            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                pushState()
-                updateNotification()
-                scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
-                scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    mainHandler.post(positionTick)
+                } else {
+                    mainHandler.removeCallbacks(positionTick)
+                }
+                pushState(force = true)
             }
+
+            override fun onPlaybackStateChanged(state: Int) = pushState(force = true)
+
+            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                pushState(force = true)
+                updateNotification()
+                scheduleNotificationArtwork()
+            }
+
             override fun onPositionDiscontinuity(
                 old: Player.PositionInfo,
                 new: Player.PositionInfo,
                 reason: Int,
-            ) = pushState()
+            ) = pushState(force = true)
         })
-
-        // Tick de posición mientras reproduce (solo actualiza posición, no causa recomposición total)
-        android.os.Handler(mainLooper).also { h ->
-            val tick = object : Runnable {
-                override fun run() {
-                    if (exoPlayer.isPlaying) pushState()
-                    h.postDelayed(this, 200)
-                }
-            }
-            h.post(tick)
-        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -140,7 +154,7 @@ class PlaybackService : Service() {
                 updateNotification()
             }
         }
-        pushState()
+        pushState(force = true)
         return START_STICKY
     }
 
@@ -183,9 +197,8 @@ class PlaybackService : Service() {
         exoPlayer.prepare()
         exoPlayer.play()
         startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
-        pushState()
-        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
-        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
+        pushState(force = true)
+        scheduleNotificationArtwork()
     }
 
     /**
@@ -212,30 +225,32 @@ class PlaybackService : Service() {
             /* mediaItems= */ newItems,
         )
         updateNotification()
-        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
-        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
     }
 
-    private fun scheduleArtworkForIndex(index: Int) {
-        if (index < 0 || index >= exoPlayer.mediaItemCount) return
-        val item = exoPlayer.getMediaItemAt(index)
+    /** Carátula solo para la notificación (no se duplica en cada MediaItem de la cola). */
+    private fun scheduleNotificationArtwork() {
+        val item = exoPlayer.currentMediaItem ?: return
         val uri = item.localConfiguration?.uri ?: return
-        if (item.mediaMetadata.artworkData != null) return
         val mediaId = item.mediaId
         val uriStr = uri.toString()
+        if (notificationArtworkMediaId == mediaId && notificationArtwork != null) return
         artworkExecutor.execute {
             val bytes = PlaybackArtworkHelper.resolveArtworkBytes(this@PlaybackService, uriStr) ?: return@execute
+            val bitmap = BitmapDecoding.decodeSampled(bytes, NOTIFICATION_ARTWORK_PX) ?: return@execute
             mainHandler.post {
-                if (index >= exoPlayer.mediaItemCount) return@post
-                val current = exoPlayer.getMediaItemAt(index)
-                if (current.mediaId != mediaId) return@post
-                if (current.mediaMetadata.artworkData != null) return@post
-                val newMeta = current.mediaMetadata.withArtworkBytes(bytes)
-                val updated = current.buildUpon().setMediaMetadata(newMeta).build()
-                exoPlayer.replaceMediaItem(index, updated)
-                if (index == exoPlayer.currentMediaItemIndex) updateNotification()
+                if (exoPlayer.currentMediaItem?.mediaId != mediaId) return@post
+                recycleNotificationArtwork()
+                notificationArtwork = bitmap
+                notificationArtworkMediaId = mediaId
+                updateNotification()
             }
         }
+    }
+
+    private fun recycleNotificationArtwork() {
+        notificationArtwork?.recycle()
+        notificationArtwork = null
+        notificationArtworkMediaId = null
     }
 
     /**
@@ -251,10 +266,15 @@ class PlaybackService : Service() {
         exoPlayer.seekTo(safe)
         // Garantizar que sigue reproduciendo si lo estaba antes del seek.
         if (wasPlaying) exoPlayer.play()
-        pushState()
+        pushState(force = true)
     }
 
-    private fun pushState() {
+    private fun pushState(force: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && exoPlayer.isPlaying) {
+            if (now - lastStatePushElapsed < STATE_PUSH_INTERVAL_MS) return
+        }
+        lastStatePushElapsed = now
         val dur = exoPlayer.duration.let { if (it == C.TIME_UNSET) 0L else it }
         val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
         val meta = exoPlayer.currentMediaItem?.mediaMetadata
@@ -289,7 +309,7 @@ class PlaybackService : Service() {
             }
         }
 
-        return NotificationCompat.Builder(this, "beatmybeat_playback")
+        val builder = NotificationCompat.Builder(this, "beatmybeat_playback")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(artist)
@@ -308,7 +328,13 @@ class PlaybackService : Service() {
                 MediaStyleNotificationHelper.MediaStyle(mediaSession)
                     .setShowActionsInCompactView(0, 1, 2),
             )
-            .build()
+
+        val art = notificationArtwork
+        if (art != null && !art.isRecycled) {
+            builder.setLargeIcon(art)
+        }
+
+        return builder.build()
     }
 
     private fun buildContentIntent(): PendingIntent {
@@ -340,7 +366,9 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(positionTick)
         artworkExecutor.shutdownNow()
+        recycleNotificationArtwork()
         mediaSession.release()
         exoPlayer.release()
         _state.value = PlaybackState()
@@ -356,17 +384,11 @@ class PlaybackService : Service() {
         const val ACTION_TOGGLE_SHUFFLE = "com.imontalvodev.beatmybeat.action.TOGGLE_SHUFFLE"
         const val ACTION_CYCLE_REPEAT   = "com.imontalvodev.beatmybeat.action.CYCLE_REPEAT"
 
+        private const val POSITION_TICK_MS = 500L
+        private const val STATE_PUSH_INTERVAL_MS = 500L
+        private const val NOTIFICATION_ARTWORK_PX = 256
+
         private val _state = MutableStateFlow(PlaybackState())
         val state: StateFlow<PlaybackState> = _state.asStateFlow()
     }
-}
-
-private fun MediaMetadata.withArtworkBytes(bytes: ByteArray): MediaMetadata {
-    val b = MediaMetadata.Builder()
-    title?.let { b.setTitle(it) }
-    artist?.let { b.setArtist(it) }
-    albumTitle?.let { b.setAlbumTitle(it) }
-    albumArtist?.let { b.setAlbumArtist(it) }
-    displayTitle?.let { b.setDisplayTitle(it) }
-    return b.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER).build()
 }

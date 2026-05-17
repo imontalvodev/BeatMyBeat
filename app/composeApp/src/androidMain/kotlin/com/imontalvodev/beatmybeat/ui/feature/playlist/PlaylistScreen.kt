@@ -1,7 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.feature.playlist
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,7 +49,8 @@ import com.imontalvodev.beatmybeat.ui.network.PlaylistResponse
 import com.imontalvodev.beatmybeat.ui.network.PlaylistSong
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
-import okhttp3.OkHttpClient
+import com.imontalvodev.beatmybeat.ui.network.AppHttpClient
+import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -279,7 +279,6 @@ private fun TrackRow(track: PlaylistSong, onPlay: () -> Unit) {
 
 @Composable
 private fun RemoteArtworkThumbnail(url: String) {
-    val client = remember { OkHttpClient() }
     val context = LocalContext.current
     var bitmap by remember(url) { mutableStateOf<Bitmap?>(RemoteArtworkCache.get(url)) }
 
@@ -290,10 +289,10 @@ private fun RemoteArtworkThumbnail(url: String) {
         val loaded = withContext(Dispatchers.IO) {
             runCatching {
                 val req = Request.Builder().url(url).get().build()
-                client.newCall(req).execute().use { res ->
+                AppHttpClient.instance.newCall(req).execute().use { res ->
                     if (!res.isSuccessful) return@use null
                     val bytes = res.body?.bytes() ?: return@use null
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    BitmapDecoding.decodeSampled(bytes, 160)
                 }
             }.getOrNull()
         }
