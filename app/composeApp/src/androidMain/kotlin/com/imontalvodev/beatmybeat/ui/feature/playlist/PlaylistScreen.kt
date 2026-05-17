@@ -26,11 +26,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -44,13 +44,12 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.network.RemoteArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
-import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
+import com.imontalvodev.beatmybeat.download.DownloadProgressBus
+import com.imontalvodev.beatmybeat.service.SongDownloadService
 import com.imontalvodev.beatmybeat.ui.network.PlaylistResponse
 import com.imontalvodev.beatmybeat.ui.network.PlaylistSong
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.PlaylistDownloadProgressCard
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
-import com.imontalvodev.beatmybeat.ui.theme.SingleDownloadProgressCard
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
@@ -64,19 +63,13 @@ fun PlaylistScreen(
     playlistUrl: String,
 ) {
     var loading by remember { mutableStateOf(false) }
-    var downloading by remember { mutableStateOf(false) }
-    var downloadDone by remember { mutableStateOf(0) }
-    var downloadTotal by remember { mutableStateOf(0) }
-    var downloadFailed by remember { mutableStateOf(0) }
-    var downloadCurrentTitle by remember { mutableStateOf("") }
-    var downloadCurrentPhase by remember { mutableStateOf("") }
-    var downloadCurrentFileFraction by remember { mutableStateOf<Float?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var title by remember { mutableStateOf("") }
     var tracks by remember { mutableStateOf<List<PlaylistSong>>(emptyList()) }
 
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val activeDownload by DownloadProgressBus.state.collectAsState()
+    val downloadInProgress = activeDownload != null
 
     LaunchedEffect(playlistUrl) {
         if (playlistUrl.isBlank()) return@LaunchedEffect
@@ -129,68 +122,17 @@ fun PlaylistScreen(
                     error != null -> error!!
                     else -> "${tracks.size} ${stringResource(R.string.playlist_tracks_found)}"
                 },
+                downloadEnabled = !downloadInProgress,
                 onPrimaryClick = {
-                    if (tracks.isEmpty() || downloading) return@PlaylistHeader
-                    downloading = true
-                    downloadTotal = tracks.size
-                    downloadDone = 0
-                    downloadFailed = 0
-                    downloadCurrentPhase = "Preparando…"
-                    downloadCurrentFileFraction = null
-                    scope.launch {
-                        try {
-                            for (t in tracks) {
-                                downloadCurrentTitle = t.title
-                                downloadCurrentFileFraction = null
-                                downloadCurrentPhase = "Iniciando…"
-                                val result = AudioDownloader.downloadAutoToAppMusic(
-                                    context = context,
-                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                    title = t.title,
-                                    artist = t.artist,
-                                    album = t.album,
-                                    imageUrl = t.imageUrl,
-                                    onProgress = { update ->
-                                        downloadCurrentPhase = update.phase
-                                        downloadCurrentFileFraction = update.fileFraction
-                                    },
-                                )
-                                if (result.success) downloadDone++ else downloadFailed++
-                            }
-                            downloading = false
-                            downloadCurrentTitle = ""
-                            downloadCurrentPhase = ""
-                            downloadCurrentFileFraction = null
-                            onOpenPlayer()
-                        } catch (e: Exception) {
-                            downloading = false
-                            downloadCurrentTitle = ""
-                            downloadCurrentPhase = ""
-                            downloadCurrentFileFraction = null
-                        }
-                    }
+                    if (tracks.isEmpty() || downloadInProgress) return@PlaylistHeader
+                    val videoIds = tracks.map { it.id.trim() }.filter { it.length == 11 }
+                    if (videoIds.isEmpty()) return@PlaylistHeader
+                    SongDownloadService.enqueuePlaylistDownload(
+                        context = context,
+                        videoIds = videoIds,
+                    )
                 },
             )
-
-            if (downloading && downloadTotal > 1) {
-                Spacer(modifier = Modifier.height(12.dp))
-                PlaylistDownloadProgressCard(
-                    done = downloadDone,
-                    total = downloadTotal,
-                    failed = downloadFailed,
-                    currentTitle = downloadCurrentTitle,
-                    phase = downloadCurrentPhase.ifBlank { stringResource(R.string.download_processing) },
-                    currentFileFraction = downloadCurrentFileFraction,
-                )
-            } else if (downloading) {
-                Spacer(modifier = Modifier.height(12.dp))
-                SingleDownloadProgressCard(
-                    title = downloadCurrentTitle,
-                    artist = "",
-                    phase = downloadCurrentPhase.ifBlank { stringResource(R.string.download_processing) },
-                    fileFraction = downloadCurrentFileFraction,
-                )
-            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -198,43 +140,20 @@ fun PlaylistScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(tracks) { track ->
-                    TrackRow(track = track,                     onPlay = {
-                        if (downloading) return@TrackRow
-                        downloading = true
-                        downloadTotal = 1
-                        downloadDone = 0
-                        downloadFailed = 0
-                        downloadCurrentTitle = track.title
-                        downloadCurrentPhase = "Iniciando…"
-                        downloadCurrentFileFraction = null
-                        scope.launch {
-                            try {
-                                val result = AudioDownloader.downloadAutoToAppMusic(
-                                    context = context,
-                                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                    title = track.title,
-                                    artist = track.artist,
-                                    album = track.album,
-                                    imageUrl = track.imageUrl,
-                                    onProgress = { update ->
-                                        downloadCurrentPhase = update.phase
-                                        downloadCurrentFileFraction = update.fileFraction
-                                    },
-                                )
-                                if (result.success) downloadDone = 1 else downloadFailed = 1
-                                downloading = false
-                                downloadCurrentTitle = ""
-                                downloadCurrentPhase = ""
-                                downloadCurrentFileFraction = null
-                                onOpenPlayer()
-                            } catch (e: Exception) {
-                                downloading = false
-                                downloadCurrentTitle = ""
-                                downloadCurrentPhase = ""
-                                downloadCurrentFileFraction = null
-                            }
-                        }
-                    })
+                    TrackRow(
+                        track = track,
+                        onPlay = {
+                            if (downloadInProgress) return@TrackRow
+                            SongDownloadService.enqueueDownload(
+                                context = context,
+                                title = track.title,
+                                artist = track.artist,
+                                album = track.album,
+                                videoId = track.id,
+                                thumbnailUrl = track.imageUrl,
+                            )
+                        },
+                    )
                 }
             }
         }
@@ -245,6 +164,7 @@ fun PlaylistScreen(
 private fun PlaylistHeader(
     title: String,
     subtitle: String,
+    downloadEnabled: Boolean,
     onPrimaryClick: () -> Unit,
 ) {
     Card(
@@ -300,6 +220,7 @@ private fun PlaylistHeader(
             PrimaryButton(
                 text = stringResource(R.string.playlist_download_all),
                 onClick = onPrimaryClick,
+                enabled = downloadEnabled,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

@@ -60,6 +60,16 @@
     <string name="download_progress_unknown_title">Canción</string>
     <string name="download_progress_background_hint">Puedes dejar la app en segundo plano mientras termina.</string>
     <string name="download_started_background">Descarga iniciada. Sigue el progreso abajo.</string>
+    <string name="download_progress_no_notification_permission">Permiso de notificaciones denegado: el progreso solo se muestra dentro de la app.</string>
+    <string name="download_playlist_preparing">Preparando descargas…</string>
+    <string name="download_playlist_starting_track">Iniciando pista…</string>
+    <string name="download_playlist_track_done">Pista completada</string>
+    <string name="download_playlist_none">No se pudo descargar ninguna canción de la playlist.</string>
+    <string name="download_playlist_partial">Descargadas %1$d de %2$d. Fallidas: %3$d.</string>
+    <string name="download_playlist_complete">Playlist descargada: %1$d canciones.</string>
+    <string name="download_playlist_failed">No se pudo completar la descarga de la playlist.</string>
+    <string name="download_cancel">Cancelar descarga</string>
+    <string name="download_cancelled">Descarga cancelada.</string>
 
     <string name="analyze_go_to_player">Ir al reproductor</string>
     <string name="analyze_tab_playlist">Playlist</string>

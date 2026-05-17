@@ -14,20 +14,40 @@ import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
+import com.imontalvodev.beatmybeat.ui.network.fetchYouTubeSongMetadata
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 
+/**
+ * Descargas en segundo plano (canción o playlist). Sobrevive a cambios de pantalla
+ * porque el trabajo vive en este servicio, no en el [rememberCoroutineScope] de Compose.
+ */
 class SongDownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var downloadJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ACTION_DOWNLOAD_SINGLE) return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_CANCEL -> {
+                cancelActiveWork(startId, showToast = true)
+                return START_NOT_STICKY
+            }
+            ACTION_DOWNLOAD_SINGLE -> handleSingleDownload(intent, startId)
+            ACTION_DOWNLOAD_PLAYLIST -> handlePlaylistDownload(intent, startId)
+            else -> stopSelf(startId)
+        }
+        return START_NOT_STICKY
+    }
 
+    private fun handleSingleDownload(intent: Intent, startId: Int) {
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         val artist = intent.getStringExtra(EXTRA_ARTIST).orEmpty()
         val album = intent.getStringExtra(EXTRA_ALBUM).orEmpty()
@@ -35,20 +55,9 @@ class SongDownloadService : Service() {
         val thumbnailUrl = intent.getStringExtra(EXTRA_THUMBNAIL_URL).orEmpty()
         val format = AudioDownloader.DownloadFormat.fromId(intent.getStringExtra(EXTRA_FORMAT))
 
-        if (BeatMyBeatNotification.canPostNotifications(this)) {
-            runCatching {
-                startForeground(
-                    BeatMyBeatNotification.DOWNLOAD_NOTIFICATION_ID,
-                    BeatMyBeatNotification.buildDownloadInProgressNotification(
-                        context = this,
-                        title = getString(R.string.download_song_title),
-                        subtitle = title.ifBlank { getString(R.string.download_processing) },
-                    ),
-                )
-            }
-        }
+        startDownloadForeground(title.ifBlank { getString(R.string.download_song_title) })
 
-        scope.launch {
+        launchDownload(startId) {
             DownloadProgressBus.setSingle(
                 title = title,
                 artist = artist,
@@ -66,60 +75,207 @@ class SongDownloadService : Service() {
                     videoId = videoId,
                     thumbnailUrl = thumbnailUrl,
                     onProgress = { update ->
-                        DownloadProgressBus.setSingle(
-                            title = title,
-                            artist = artist,
-                            phase = update.phase,
-                            fileFraction = update.fileFraction,
-                        )
-                        if (BeatMyBeatNotification.canPostNotifications(this@SongDownloadService)) {
-                            runCatching {
-                                NotificationManagerCompat.from(this@SongDownloadService).notify(
-                                    BeatMyBeatNotification.DOWNLOAD_NOTIFICATION_ID,
-                                    BeatMyBeatNotification.buildDownloadInProgressNotification(
-                                        context = this@SongDownloadService,
-                                        title = title.ifBlank { getString(R.string.download_song_title) },
-                                        subtitle = update.phase,
-                                    ),
-                                )
-                            }
-                        }
+                        if (downloadJob?.isActive != true) return@downloadAutoToAppMusic
+                        reportSingleProgress(title, artist, update.phase, update.fileFraction)
                     },
                 )
             }.getOrNull()
-            DownloadProgressBus.clear()
-            Handler(Looper.getMainLooper()).post {
-                val msg = when {
+            finishDownload(
+                startId = startId,
+                toastMessage = when {
                     result == null -> getString(R.string.download_song_error)
                     result.success -> getString(
                         R.string.download_song_success,
                         format.label,
-                        (result.fileName ?: title),
+                        result.fileName ?: title,
                     )
                     else -> getString(R.string.download_song_failed)
-                }
-                Toast.makeText(this@SongDownloadService, msg, Toast.LENGTH_SHORT).show()
-            }
-            runCatching { stopForeground(STOP_FOREGROUND_DETACH) }
-            stopSelf(startId)
+                },
+            )
         }
+    }
 
-        return START_NOT_STICKY
+    private fun handlePlaylistDownload(intent: Intent, startId: Int) {
+        val videoIds = parseVideoIds(intent.getStringExtra(EXTRA_VIDEO_IDS_JSON))
+        if (videoIds.isEmpty()) {
+            stopSelf(startId)
+            return
+        }
+        val format = AudioDownloader.DownloadFormat.fromId(intent.getStringExtra(EXTRA_FORMAT))
+        val total = videoIds.size
+
+        startDownloadForeground(getString(R.string.download_progress_playlist_headline))
+
+        launchDownload(startId) {
+            var downloaded = 0
+            var failed = 0
+            DownloadProgressBus.setBatch(
+                done = 0,
+                total = total,
+                failed = 0,
+                currentTitle = "",
+                phase = getString(R.string.download_playlist_preparing),
+                fileFraction = null,
+            )
+            updatePlaylistNotification(0, total, "")
+
+            for (videoId in videoIds) {
+                if (downloadJob?.isActive != true) break
+                val metadata = fetchYouTubeSongMetadata(videoId)
+                DownloadProgressBus.setBatch(
+                    done = downloaded,
+                    total = total,
+                    failed = failed,
+                    currentTitle = metadata.title,
+                    phase = getString(R.string.download_playlist_starting_track),
+                    fileFraction = null,
+                )
+                updatePlaylistNotification(downloaded + failed, total, metadata.title)
+
+                val single = AudioDownloader.downloadAutoToAppMusic(
+                    context = this@SongDownloadService,
+                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
+                    title = metadata.title,
+                    artist = metadata.artist,
+                    album = "",
+                    format = format,
+                    videoId = videoId,
+                    thumbnailUrl = metadata.thumbnailUrl,
+                    onProgress = { update ->
+                        if (downloadJob?.isActive != true) return@downloadAutoToAppMusic
+                        DownloadProgressBus.setBatch(
+                            done = downloaded,
+                            total = total,
+                            failed = failed,
+                            currentTitle = metadata.title,
+                            phase = update.phase,
+                            fileFraction = update.fileFraction,
+                        )
+                        updatePlaylistNotification(downloaded + failed, total, metadata.title)
+                    },
+                )
+                if (single.success) downloaded++ else failed++
+                DownloadProgressBus.setBatch(
+                    done = downloaded,
+                    total = total,
+                    failed = failed,
+                    currentTitle = metadata.title,
+                    phase = getString(R.string.download_playlist_track_done),
+                    fileFraction = 1f,
+                )
+            }
+
+            val toastMessage = when {
+                downloaded <= 0 -> getString(R.string.download_playlist_none)
+                failed > 0 -> getString(R.string.download_playlist_partial, downloaded, total, failed)
+                else -> getString(R.string.download_playlist_complete, downloaded)
+            }
+            finishDownload(startId, toastMessage)
+        }
+    }
+
+    private fun launchDownload(startId: Int, block: suspend () -> Unit) {
+        downloadJob?.cancel()
+        val job = scope.launch {
+            try {
+                block()
+            } catch (_: CancellationException) {
+                // Cancelación por el usuario (ACTION_CANCEL) o por una descarga nueva.
+            } finally {
+                if (downloadJob === this.coroutineContext[Job]) {
+                    downloadJob = null
+                }
+            }
+        }
+        downloadJob = job
+    }
+
+    private fun cancelActiveWork(startId: Int, showToast: Boolean) {
+        downloadJob?.cancel()
+        downloadJob = null
+        DownloadProgressBus.clear()
+        runCatching { stopForeground(STOP_FOREGROUND_DETACH) }
+        if (showToast) {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this, getString(R.string.download_cancelled), Toast.LENGTH_SHORT).show()
+            }
+        }
+        stopSelf(startId)
+    }
+
+    private fun reportSingleProgress(title: String, artist: String, phase: String, fraction: Float?) {
+        DownloadProgressBus.setSingle(title, artist, phase, fraction)
+        if (BeatMyBeatNotification.canPostNotifications(this)) {
+            runCatching {
+                NotificationManagerCompat.from(this).notify(
+                    BeatMyBeatNotification.DOWNLOAD_NOTIFICATION_ID,
+                    BeatMyBeatNotification.buildDownloadInProgressNotification(
+                        context = this,
+                        title = title.ifBlank { getString(R.string.download_song_title) },
+                        subtitle = phase,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun updatePlaylistNotification(processed: Int, total: Int, currentTitle: String) {
+        if (!BeatMyBeatNotification.canPostNotifications(this)) return
+        runCatching {
+            NotificationManagerCompat.from(this).notify(
+                BeatMyBeatNotification.DOWNLOAD_NOTIFICATION_ID,
+                BeatMyBeatNotification.buildDownloadInProgressNotification(
+                    context = this,
+                    title = getString(R.string.download_progress_playlist_headline),
+                    subtitle = "$processed/$total · ${currentTitle.take(40)}",
+                ),
+            )
+        }
+    }
+
+    private fun startDownloadForeground(title: String) {
+        if (!BeatMyBeatNotification.canPostNotifications(this)) return
+        runCatching {
+            startForeground(
+                BeatMyBeatNotification.DOWNLOAD_NOTIFICATION_ID,
+                BeatMyBeatNotification.buildDownloadInProgressNotification(
+                    context = this,
+                    title = title,
+                    subtitle = getString(R.string.download_processing),
+                ),
+            )
+        }
+    }
+
+    private fun finishDownload(startId: Int, toastMessage: String) {
+        DownloadProgressBus.clear()
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(this, toastMessage, Toast.LENGTH_SHORT).show()
+        }
+        runCatching { stopForeground(STOP_FOREGROUND_DETACH) }
+        stopSelf(startId)
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        downloadJob?.cancel()
+        downloadJob = null
         scope.cancel()
+        super.onDestroy()
     }
 
     companion object {
-        private const val ACTION_DOWNLOAD_SINGLE = "com.imontalvodev.beatmybeat.action.DOWNLOAD_SINGLE"
+        private const val ACTION_DOWNLOAD_SINGLE =
+            "com.imontalvodev.beatmybeat.action.DOWNLOAD_SINGLE"
+        private const val ACTION_DOWNLOAD_PLAYLIST =
+            "com.imontalvodev.beatmybeat.action.DOWNLOAD_PLAYLIST"
+        private const val ACTION_CANCEL = "com.imontalvodev.beatmybeat.action.CANCEL_DOWNLOAD"
         private const val EXTRA_TITLE = "extra_title"
         private const val EXTRA_ARTIST = "extra_artist"
         private const val EXTRA_ALBUM = "extra_album"
         private const val EXTRA_VIDEO_ID = "extra_video_id"
         private const val EXTRA_THUMBNAIL_URL = "extra_thumbnail_url"
         private const val EXTRA_FORMAT = "extra_format"
+        private const val EXTRA_VIDEO_IDS_JSON = "extra_video_ids_json"
 
         fun enqueueDownload(
             context: Context,
@@ -140,6 +296,44 @@ class SongDownloadService : Service() {
                 putExtra(EXTRA_FORMAT, format.id)
             }
             runCatching { ContextCompat.startForegroundService(context, intent) }
+        }
+
+        fun enqueuePlaylistDownload(
+            context: Context,
+            videoIds: List<String>,
+            format: AudioDownloader.DownloadFormat = AudioDownloader.DownloadFormat.MP3,
+        ) {
+            if (videoIds.isEmpty()) return
+            val arr = JSONArray()
+            videoIds.forEach { id -> if (id.isNotBlank()) arr.put(id) }
+            if (arr.length() == 0) return
+            val intent = Intent(context, SongDownloadService::class.java).apply {
+                action = ACTION_DOWNLOAD_PLAYLIST
+                putExtra(EXTRA_VIDEO_IDS_JSON, arr.toString())
+                putExtra(EXTRA_FORMAT, format.id)
+            }
+            runCatching { ContextCompat.startForegroundService(context, intent) }
+        }
+
+        fun cancelDownload(context: Context) {
+            DownloadProgressBus.clear()
+            val intent = Intent(context, SongDownloadService::class.java).apply {
+                action = ACTION_CANCEL
+            }
+            context.startService(intent)
+        }
+
+        private fun parseVideoIds(json: String?): List<String> {
+            if (json.isNullOrBlank()) return emptyList()
+            return runCatching {
+                val arr = JSONArray(json)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val id = arr.optString(i).trim()
+                        if (id.isNotBlank()) add(id)
+                    }
+                }
+            }.getOrDefault(emptyList())
         }
     }
 }

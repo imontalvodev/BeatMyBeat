@@ -347,9 +347,9 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
-                    }
                 }
             }
+        }
         }
     }
 }

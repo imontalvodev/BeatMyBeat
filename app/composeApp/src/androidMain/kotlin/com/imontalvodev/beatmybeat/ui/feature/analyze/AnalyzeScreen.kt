@@ -55,25 +55,21 @@ import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.SongSuggestion
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchClient
 import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
-import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.service.SongDownloadService
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.SuggestionListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
-import com.imontalvodev.beatmybeat.ui.theme.PlaylistDownloadProgressCard
-import com.imontalvodev.beatmybeat.ui.theme.SingleDownloadProgressCard
+import com.imontalvodev.beatmybeat.ui.theme.ActiveDownloadProgressSection
 import com.imontalvodev.beatmybeat.download.DownloadProgressBus
+import com.imontalvodev.beatmybeat.ui.network.fetchYouTubeSongMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import com.imontalvodev.beatmybeat.LocalSnackbarHostState
-import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
 
 @Composable
 fun AnalyzeScreen(
@@ -99,16 +95,10 @@ fun AnalyzeScreen(
     var downloadError by remember { mutableStateOf<String?>(null) }
     var songDownloadInfo by remember { mutableStateOf<String?>(null) }
     var playlistInputError by remember { mutableStateOf<String?>(null) }
-    var playlistDownloadRunning by remember { mutableStateOf(false) }
-    var playlistDownloadTotal by remember { mutableStateOf(0) }
-    var playlistDownloadDone by remember { mutableStateOf(0) }
-    var playlistDownloadFailed by remember { mutableStateOf(0) }
-    var playlistCurrentTitle by remember { mutableStateOf("") }
-    var playlistCurrentPhase by remember { mutableStateOf("") }
-    var playlistCurrentFileFraction by remember { mutableStateOf<Float?>(null) }
     var selectedFormat by remember { mutableStateOf(AudioDownloader.DownloadFormat.MP3) }
 
     val activeDownload by DownloadProgressBus.state.collectAsState()
+    val downloadInProgress = activeDownload != null
 
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -258,11 +248,11 @@ fun AnalyzeScreen(
 
                     PrimaryButton(
                         text = when {
+                            downloadInProgress -> stringResource(R.string.analyze_cta_downloading)
                             mode == "song" -> stringResource(R.string.analyze_cta_song)
-                            playlistDownloadRunning -> stringResource(R.string.analyze_cta_downloading)
                             else -> stringResource(R.string.analyze_cta_playlist)
                         },
-                        enabled = !playlistDownloadRunning,
+                        enabled = !downloadInProgress,
                         onClick = {
                             focusManager.clearFocus()
                             keyboardController?.hide()
@@ -322,74 +312,19 @@ fun AnalyzeScreen(
                                                         YouTubeSearchClient.fetchPlaylistVideoIds(parsed.listId, limit = 200)
                                                     }
                                                     if (videoIds.isEmpty()) {
-                                                        playlistInputError = "No se pudieron resolver canciones de la playlist/álbum."
+                                                        playlistInputError =
+                                                            "No se pudieron resolver canciones de la playlist/álbum."
                                                         return@launch
                                                     }
-
-                                                    playlistDownloadRunning = true
-                                                    playlistDownloadTotal = videoIds.size
-                                                    playlistDownloadDone = 0
-                                                    playlistDownloadFailed = 0
-                                                    playlistCurrentTitle = ""
-                                                    playlistCurrentPhase = "Preparando descargas…"
-                                                    playlistCurrentFileFraction = null
-                                                    showSnack("Descarga de playlist iniciada en segundo plano.")
-                                                    BeatMyBeatForegroundService.startDownload(
+                                                    SongDownloadService.enqueuePlaylistDownload(
                                                         context = context,
-                                                        title = "Descargando playlist",
-                                                        subtitle = "0/${videoIds.size}",
+                                                        videoIds = videoIds,
+                                                        format = selectedFormat,
                                                     )
-
-                                                    var downloaded = 0
-                                                    var failed = 0
-                                                    videoIds.forEach { videoId ->
-                                                        val metadata = withContext(Dispatchers.IO) {
-                                                            fetchYouTubeSongMetadata(videoId)
-                                                        }
-                                                        playlistCurrentTitle = metadata.title
-                                                        playlistCurrentFileFraction = null
-                                                        playlistCurrentPhase = "Iniciando…"
-                                                        BeatMyBeatForegroundService.startDownload(
-                                                            context = context,
-                                                            title = "Descargando playlist",
-                                                            subtitle = "${downloaded + failed}/${videoIds.size} · ${metadata.title.take(40)}",
-                                                        )
-                                                        val single = AudioDownloader.downloadAutoToAppMusic(
-                                                            context = context,
-                                                            middlewareBaseUrl = MIDDLEWARE_BASE_URL,
-                                                            title = metadata.title,
-                                                            artist = metadata.artist,
-                                                            album = "",
-                                                            format = selectedFormat,
-                                                            videoId = videoId,
-                                                            thumbnailUrl = metadata.thumbnailUrl,
-                                                            onProgress = { update ->
-                                                                playlistCurrentPhase = update.phase
-                                                                playlistCurrentFileFraction = update.fileFraction
-                                                            },
-                                                        )
-                                                        if (single.success) downloaded++ else failed++
-                                                        playlistDownloadDone = downloaded
-                                                        playlistDownloadFailed = failed
-                                                    }
-                                                    if (downloaded <= 0) {
-                                                        playlistInputError = "No se pudo descargar ninguna canción de esa playlist."
-                                                        showSnack("No se pudo descargar ninguna canción.")
-                                                    } else if (failed > 0) {
-                                                        playlistInputError = "Descargadas $downloaded de ${videoIds.size}. Fallidas: $failed."
-                                                        showSnack("Playlist completada: $downloaded descargadas, $failed fallidas.")
-                                                    } else {
-                                                        showSnack("Playlist descargada: $downloaded canciones.")
-                                                    }
+                                                    showSnack(context.getString(R.string.download_started_background))
                                                 } catch (_: Exception) {
                                                     playlistInputError =
                                                         "No se pudo resolver la playlist directamente desde YouTube. Inténtalo más tarde."
-                                                } finally {
-                                                    playlistDownloadRunning = false
-                                                    playlistCurrentTitle = ""
-                                                    playlistCurrentPhase = ""
-                                                    playlistCurrentFileFraction = null
-                                                    BeatMyBeatForegroundService.stopDownload(context)
                                                 }
                                             }
                                         }
@@ -417,14 +352,11 @@ fun AnalyzeScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    val singleActive = activeDownload?.takeIf { !it.isBatch }
-                    if (mode == "song" && singleActive != null) {
+                    if (activeDownload != null) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        SingleDownloadProgressCard(
-                            title = singleActive.title,
-                            artist = singleActive.subtitle,
-                            phase = singleActive.phase,
-                            fileFraction = singleActive.fileFraction,
+                        ActiveDownloadProgressSection(
+                            download = activeDownload!!,
+                            onCancel = { SongDownloadService.cancelDownload(context) },
                         )
                     } else if (mode == "song" && songDownloadInfo != null) {
                         Spacer(modifier = Modifier.height(12.dp))
@@ -433,31 +365,6 @@ fun AnalyzeScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                         )
-                    }
-
-                    if (mode == "playlist" && playlistDownloadRunning) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        PlaylistDownloadProgressCard(
-                            done = playlistDownloadDone,
-                            total = playlistDownloadTotal,
-                            failed = playlistDownloadFailed,
-                            currentTitle = playlistCurrentTitle,
-                            phase = playlistCurrentPhase.ifBlank { "Descargando…" },
-                            currentFileFraction = playlistCurrentFileFraction,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.download_progress_background_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                        )
-                        if (!BeatMyBeatNotification.canPostNotifications(context)) {
-                            Text(
-                                text = "Permiso de notificaciones denegado: el progreso solo se muestra dentro de la app.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                            )
-                        }
                     }
 
                     if (mode == "song") {
@@ -548,14 +455,12 @@ fun AnalyzeScreen(
             text = {
                 Column {
                     Text("¿Quieres descargar \"${suggestion.title}\" de ${suggestion.artist}?")
-                    val dialogProgress = activeDownload?.takeIf { !it.isBatch }
-                    if (dialogProgress != null) {
+                    activeDownload?.let { progress ->
                         Spacer(modifier = Modifier.height(12.dp))
-                        SingleDownloadProgressCard(
-                            title = dialogProgress.title,
-                            artist = dialogProgress.subtitle,
-                            phase = dialogProgress.phase,
-                            fileFraction = dialogProgress.fileFraction,
+                        ActiveDownloadProgressSection(
+                            download = progress,
+                            onCancel = { SongDownloadService.cancelDownload(context) },
+                            showBackgroundHint = false,
                         )
                     }
                     if (downloadError != null) {
@@ -680,12 +585,6 @@ private fun extractYouTubeVideoId(url: HttpUrl): String? {
     return null
 }
 
-private data class SongUrlMetadata(
-    val title: String,
-    val artist: String,
-    val thumbnailUrl: String,
-)
-
 @Composable
 private fun SuggestionThumbnail(url: String, contentDescription: String) {
     val context = LocalContext.current
@@ -707,30 +606,6 @@ private fun SuggestionThumbnail(url: String, contentDescription: String) {
             modifier = mod,
         )
     }
-}
-
-private fun fetchYouTubeSongMetadata(videoId: String): SongUrlMetadata {
-    val fallback = SongUrlMetadata(
-        title = "YouTube Track $videoId",
-        artist = "Unknown artist",
-        thumbnailUrl = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg",
-    )
-
-    return runCatching {
-        val targetUrl = "https://www.youtube.com/watch?v=$videoId"
-        val oEmbed = "https://www.youtube.com/oembed?url=$targetUrl&format=json"
-        val req = Request.Builder().url(oEmbed).get().build()
-        OkHttpClient().newCall(req).execute().use { res ->
-            if (!res.isSuccessful) return fallback
-            val body = res.body?.string().orEmpty()
-            val json = org.json.JSONObject(body)
-            SongUrlMetadata(
-                title = json.optString("title", fallback.title).ifBlank { fallback.title },
-                artist = json.optString("author_name", fallback.artist).ifBlank { fallback.artist },
-                thumbnailUrl = json.optString("thumbnail_url", fallback.thumbnailUrl).ifBlank { fallback.thumbnailUrl },
-            )
-        }
-    }.getOrElse { fallback }
 }
 
 /**
