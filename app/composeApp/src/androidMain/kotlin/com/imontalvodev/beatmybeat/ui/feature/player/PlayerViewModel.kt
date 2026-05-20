@@ -301,6 +301,69 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadSortOption(): String = prefs.getString(PREF_SORT, "name_asc") ?: "name_asc"
 
+    private val _shuffleEnabled = MutableStateFlow(false)
+    val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled.asStateFlow()
+
+    fun setShuffleEnabled(enabled: Boolean) {
+        _shuffleEnabled.value = enabled
+    }
+
+    fun loadShufflePersistedOrder(): List<String> {
+        val raw = prefs.getString(PREF_SHUFFLE_ORDER_JSON, null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optString(i).takeIf { it.isNotBlank() }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun loadShuffleIndex(): Int = prefs.getInt(PREF_SHUFFLE_INDEX, 0)
+
+    /**
+     * Si [enabled] y aún no hay orden persistido (lista vacía), no toca las claves de orden
+     * para no borrar el JSON antes de que la UI restaure la cola al reentrar en el reproductor.
+     */
+    fun persistShuffleState(enabled: Boolean, orderUris: List<String>, index: Int) {
+        val ed = prefs.edit().putBoolean(PREF_SHUFFLE_ON, enabled)
+        if (!enabled) {
+            ed.remove(PREF_SHUFFLE_ORDER_JSON).remove(PREF_SHUFFLE_INDEX)
+        } else if (orderUris.isNotEmpty()) {
+            val arr = JSONArray()
+            orderUris.forEach { arr.put(it) }
+            ed.putString(PREF_SHUFFLE_ORDER_JSON, arr.toString())
+                .putInt(PREF_SHUFFLE_INDEX, index.coerceIn(0, (orderUris.size - 1).coerceAtLeast(0)))
+        }
+        ed.apply()
+    }
+
+    /** Cola manual (sin shuffle): orden de URIs para restaurar al reabrir la pestaña del reproductor. */
+    fun loadManualQueueUris(): List<String> {
+        val raw = prefs.getString(PREF_MANUAL_QUEUE_URIS_JSON, null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optString(i).takeIf { it.isNotBlank() }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun persistManualQueueUris(uris: List<String>) {
+        val ed = prefs.edit()
+        if (uris.isEmpty()) {
+            ed.remove(PREF_MANUAL_QUEUE_URIS_JSON)
+        } else {
+            val arr = JSONArray()
+            uris.forEach { arr.put(it) }
+            ed.putString(PREF_MANUAL_QUEUE_URIS_JSON, arr.toString())
+        }
+        ed.apply()
+    }
+
+    fun clearManualQueuePersistence() {
+        prefs.edit().remove(PREF_MANUAL_QUEUE_URIS_JSON).apply()
+    }
+
     companion object {
         private const val PREF_FAVORITES = "favorites_ids"
         // Legacy (migración)
@@ -308,6 +371,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_PLAYLISTS_JSON = "playlists_json"
         private const val PREF_SECTION = "player_section"
         private const val PREF_SORT = "player_sort"
+        private const val PREF_SHUFFLE_ON = "player_shuffle_on"
+        private const val PREF_SHUFFLE_ORDER_JSON = "player_shuffle_order_uris"
+        private const val PREF_SHUFFLE_INDEX = "player_shuffle_index"
+        private const val PREF_MANUAL_QUEUE_URIS_JSON = "player_manual_queue_uris"
     }
 }
 

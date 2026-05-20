@@ -114,6 +114,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -178,6 +179,7 @@ fun PlayerScreen(
     val favoriteIds = viewModel.favoriteIds.collectAsState().value
     val playlists = viewModel.playlists.collectAsState().value
     val context = LocalContext.current
+    val resources = LocalResources.current
     val uiScope = rememberCoroutineScope()
     val snackbarHostState = LocalSnackbarHostState.current
     fun showSnack(message: String, long: Boolean = false) {
@@ -269,13 +271,19 @@ fun PlayerScreen(
     val favoritesListState = rememberLazyListState()
     val playlistListState = rememberLazyListState()
 
-    var shuffleOn by remember { mutableStateOf(false) }
+    val shuffleOn by viewModel.shuffleEnabled.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
     var queueRepeatSnapshot by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
     var queueRepeatIndex by remember { mutableStateOf(-1) }
     var shuffleOrder by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
     var shuffleIndex by remember { mutableStateOf(-1) }
+    /**
+     * Evita persistir la cola manual vacía antes de intentar restaurar desde prefs:
+     * varios [LaunchedEffect] corren en corrutinas distintas y el de persistencia podía
+     * borrar el JSON antes de que [queue] se rellenara (p. ej. al recargar la pestaña dos veces).
+     */
+    var manualQueueHydrated by remember { mutableStateOf(false) }
 
     // Serializa la cola de "próximas canciones" y la envía al servicio para que
     // la notificación (Next/Prev) navegue por los mismos ítems que ve la UI.
@@ -728,10 +736,71 @@ fun PlayerScreen(
         syncQueueToService()
     }
 
+    // Restaurar cola shuffle al reentrar en el reproductor / al recargar la pestaña (el remember se reinicia).
+    LaunchedEffect(deviceTracks, shuffleOn) {
+        if (!shuffleOn) return@LaunchedEffect
+        if (deviceTracks.isEmpty()) return@LaunchedEffect
+        if (shuffleOrder.isNotEmpty()) return@LaunchedEffect
+        val uris = viewModel.loadShufflePersistedOrder()
+        val savedIdx = viewModel.loadShuffleIndex()
+        if (uris.isNotEmpty()) {
+            val byUri = deviceTracks.associateBy { it.uri }
+            val resolved = uris.mapNotNull { byUri[it] }
+            if (resolved.isNotEmpty()) {
+                shuffleOrder = resolved
+                shuffleIndex = savedIdx.coerceIn(0, resolved.lastIndex)
+                refreshShuffleQueueMirror()
+                syncQueueToService()
+                return@LaunchedEffect
+            }
+        }
+        rebuildShuffleOrderFromPool()
+    }
+
+    // Restaurar cola manual (sin shuffle) al reentrar; marcar hydrated al terminar el intento.
+    LaunchedEffect(deviceTracks, shuffleOn) {
+        if (shuffleOn) {
+            manualQueueHydrated = true
+            return@LaunchedEffect
+        }
+        if (deviceTracks.isEmpty()) return@LaunchedEffect
+        if (queue.isEmpty()) {
+            val uris = viewModel.loadManualQueueUris()
+            if (uris.isNotEmpty()) {
+                val byUri = deviceTracks.associateBy { it.uri }
+                val resolved = uris.mapNotNull { byUri[it] }
+                if (resolved.isEmpty()) {
+                    viewModel.clearManualQueuePersistence()
+                } else {
+                    queue.addAll(resolved)
+                    syncQueueToService()
+                }
+            }
+        }
+        manualQueueHydrated = true
+    }
+
+    val manualQueuePersistenceKey = if (shuffleOn) "\u0000" else queue.joinToString("\u0001") { it.uri }
+    LaunchedEffect(shuffleOn, manualQueueHydrated, manualQueuePersistenceKey) {
+        if (shuffleOn) return@LaunchedEffect
+        if (!manualQueueHydrated) return@LaunchedEffect
+        viewModel.persistManualQueueUris(queue.map { it.uri })
+    }
+
+    LaunchedEffect(shuffleOn, shuffleOrder, shuffleIndex) {
+        if (shuffleOn && shuffleOrder.isEmpty()) return@LaunchedEffect
+        viewModel.persistShuffleState(
+            enabled = shuffleOn,
+            orderUris = shuffleOrder.map { it.uri },
+            index = shuffleIndex,
+        )
+    }
+
     fun onToggleShuffle() {
         val next = !shuffleOn
-        shuffleOn = next
-        if (shuffleOn) {
+        viewModel.setShuffleEnabled(next)
+        if (next) {
+            viewModel.clearManualQueuePersistence()
             queueRepeatSnapshot = emptyList()
             queueRepeatIndex = -1
             rebuildShuffleOrderFromPool()
@@ -765,7 +834,20 @@ fun PlayerScreen(
     }
 
     // Cambio de sección/playlist: vaciar cola manual; si shuffle ON, nueva permutación del pool actual.
+    // No reaccionar al primer composition (reentrar en el reproductor reinicia [remember]) ni al
+    // primer id de playlist resuelto desde null (evita reconstruir antes de restaurar shuffle desde prefs).
+    var previousSectionPlaylistKey by remember { mutableStateOf<Pair<PlayerSection, Long?>?>(null) }
     LaunchedEffect(selectedSection, selectedPlaylistId) {
+        val key = selectedSection to selectedPlaylistId
+        val prev = previousSectionPlaylistKey
+        previousSectionPlaylistKey = key
+        if (prev == null) return@LaunchedEffect
+        if (prev == key) return@LaunchedEffect
+        if (prev.first == PlayerSection.Playlist && key.first == PlayerSection.Playlist &&
+            prev.second == null && key.second != null
+        ) {
+            return@LaunchedEffect
+        }
         queue.clear()
         if (shuffleOn) rebuildShuffleOrderFromPool()
         else syncQueueToService()
@@ -1345,7 +1427,7 @@ fun PlayerScreen(
                                     if (selectedTracksOrdered.size == 1) {
                                         queueAddedText
                                     } else {
-                                        context.getString(
+                                        resources.getString(
                                             R.string.player_bulk_queue_added,
                                             selectedTracksOrdered.size,
                                         )
@@ -1361,7 +1443,7 @@ fun PlayerScreen(
                                     if (selectedTracksOrdered.size == 1) {
                                         playNextAddedText
                                     } else {
-                                        context.getString(
+                                        resources.getString(
                                             R.string.player_bulk_play_next_added,
                                             selectedTracksOrdered.size,
                                         )
@@ -1943,7 +2025,7 @@ fun PlayerScreen(
                                     if (batch.size == 1) {
                                         songDeletedText
                                     } else {
-                                        context.getString(
+                                        resources.getString(
                                             R.string.player_bulk_deleted,
                                             batch.size,
                                         )
