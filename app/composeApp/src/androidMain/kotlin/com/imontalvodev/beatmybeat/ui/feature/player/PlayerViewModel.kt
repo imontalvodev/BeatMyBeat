@@ -338,8 +338,32 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Cola manual (sin shuffle): orden de URIs para restaurar al reabrir la pestaña del reproductor. */
-    fun loadManualQueueUris(): List<String> {
-        val raw = prefs.getString(PREF_MANUAL_QUEUE_URIS_JSON, null) ?: return emptyList()
+    fun loadManualQueueUris(): List<String> = loadUriListFromPrefs(PREF_MANUAL_QUEUE_URIS_JSON)
+
+    fun persistManualQueueUris(uris: List<String>) {
+        persistUriListToPrefs(PREF_MANUAL_QUEUE_URIS_JSON, uris)
+    }
+
+    fun clearManualQueuePersistence() {
+        prefs.edit().remove(PREF_MANUAL_QUEUE_URIS_JSON).apply()
+    }
+
+    /**
+     * Cola personalizada "A continuación" (manual o resto del shuffle).
+     * Se restaura al reiniciar la app aunque el botón Aleatorio arranque desactivado.
+     */
+    fun loadLastPendingQueueUris(): List<String> = loadUriListFromPrefs(PREF_LAST_PENDING_QUEUE_URIS_JSON)
+
+    fun persistLastPendingQueue(uris: List<String>) {
+        persistUriListToPrefs(PREF_LAST_PENDING_QUEUE_URIS_JSON, uris)
+    }
+
+    fun clearLastPendingQueuePersistence() {
+        prefs.edit().remove(PREF_LAST_PENDING_QUEUE_URIS_JSON).apply()
+    }
+
+    private fun loadUriListFromPrefs(key: String): List<String> {
+        val raw = prefs.getString(key, null) ?: return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
             (0 until arr.length()).mapNotNull { i ->
@@ -348,20 +372,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }.getOrDefault(emptyList())
     }
 
-    fun persistManualQueueUris(uris: List<String>) {
+    private fun persistUriListToPrefs(key: String, uris: List<String>) {
         val ed = prefs.edit()
         if (uris.isEmpty()) {
-            ed.remove(PREF_MANUAL_QUEUE_URIS_JSON)
+            ed.remove(key)
         } else {
             val arr = JSONArray()
             uris.forEach { arr.put(it) }
-            ed.putString(PREF_MANUAL_QUEUE_URIS_JSON, arr.toString())
+            ed.putString(key, arr.toString())
         }
         ed.apply()
-    }
-
-    fun clearManualQueuePersistence() {
-        prefs.edit().remove(PREF_MANUAL_QUEUE_URIS_JSON).apply()
     }
 
     companion object {
@@ -375,6 +395,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_SHUFFLE_ORDER_JSON = "player_shuffle_order_uris"
         private const val PREF_SHUFFLE_INDEX = "player_shuffle_index"
         private const val PREF_MANUAL_QUEUE_URIS_JSON = "player_manual_queue_uris"
+        private const val PREF_LAST_PENDING_QUEUE_URIS_JSON = "player_last_pending_queue_uris"
     }
 }
 

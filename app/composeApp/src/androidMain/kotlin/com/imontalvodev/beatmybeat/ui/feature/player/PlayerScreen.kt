@@ -284,6 +284,14 @@ fun PlayerScreen(
      * borrar el JSON antes de que [queue] se rellenara (p. ej. al recargar la pestaña dos veces).
      */
     var manualQueueHydrated by remember { mutableStateOf(false) }
+    var shuffleQueueHydrated by remember { mutableStateOf(false) }
+
+    fun pendingQueueUrisForPersistence(): List<String> =
+        if (shuffleOn && shuffleOrder.isNotEmpty()) {
+            shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0)).map { it.uri }
+        } else {
+            queue.map { it.uri }
+        }
 
     // Serializa la cola de "próximas canciones" y la envía al servicio para que
     // la notificación (Next/Prev) navegue por los mismos ítems que ve la UI.
@@ -736,11 +744,17 @@ fun PlayerScreen(
         syncQueueToService()
     }
 
-    // Restaurar cola shuffle al reentrar en el reproductor / al recargar la pestaña (el remember se reinicia).
+    // Restaurar cola shuffle al reentrar / al recargar la pestaña (el remember se reinicia).
     LaunchedEffect(deviceTracks, shuffleOn) {
-        if (!shuffleOn) return@LaunchedEffect
+        if (!shuffleOn) {
+            shuffleQueueHydrated = true
+            return@LaunchedEffect
+        }
         if (deviceTracks.isEmpty()) return@LaunchedEffect
-        if (shuffleOrder.isNotEmpty()) return@LaunchedEffect
+        if (shuffleOrder.isNotEmpty()) {
+            shuffleQueueHydrated = true
+            return@LaunchedEffect
+        }
         val uris = viewModel.loadShufflePersistedOrder()
         val savedIdx = viewModel.loadShuffleIndex()
         if (uris.isNotEmpty()) {
@@ -751,13 +765,15 @@ fun PlayerScreen(
                 shuffleIndex = savedIdx.coerceIn(0, resolved.lastIndex)
                 refreshShuffleQueueMirror()
                 syncQueueToService()
+                shuffleQueueHydrated = true
                 return@LaunchedEffect
             }
         }
         rebuildShuffleOrderFromPool()
+        shuffleQueueHydrated = true
     }
 
-    // Restaurar cola manual (sin shuffle) al reentrar; marcar hydrated al terminar el intento.
+    // Restaurar cola al reentrar o al reiniciar la app (Aleatorio suele arrancar desactivado).
     LaunchedEffect(deviceTracks, shuffleOn) {
         if (shuffleOn) {
             manualQueueHydrated = true
@@ -765,11 +781,13 @@ fun PlayerScreen(
         }
         if (deviceTracks.isEmpty()) return@LaunchedEffect
         if (queue.isEmpty()) {
-            val uris = viewModel.loadManualQueueUris()
+            val uris = viewModel.loadLastPendingQueueUris()
+                .ifEmpty { viewModel.loadManualQueueUris() }
             if (uris.isNotEmpty()) {
                 val byUri = deviceTracks.associateBy { it.uri }
                 val resolved = uris.mapNotNull { byUri[it] }
                 if (resolved.isEmpty()) {
+                    viewModel.clearLastPendingQueuePersistence()
                     viewModel.clearManualQueuePersistence()
                 } else {
                     queue.addAll(resolved)
@@ -781,13 +799,23 @@ fun PlayerScreen(
     }
 
     val manualQueuePersistenceKey = if (shuffleOn) "\u0000" else queue.joinToString("\u0001") { it.uri }
-    LaunchedEffect(shuffleOn, manualQueueHydrated, manualQueuePersistenceKey) {
-        if (shuffleOn) return@LaunchedEffect
+    val pendingQueuePersistenceKey = pendingQueueUrisForPersistence().joinToString("\u0001")
+    LaunchedEffect(
+        shuffleOn,
+        shuffleOrder,
+        shuffleIndex,
+        manualQueueHydrated,
+        shuffleQueueHydrated,
+        manualQueuePersistenceKey,
+        pendingQueuePersistenceKey,
+    ) {
         if (!manualQueueHydrated) return@LaunchedEffect
-        viewModel.persistManualQueueUris(queue.map { it.uri })
-    }
-
-    LaunchedEffect(shuffleOn, shuffleOrder, shuffleIndex) {
+        if (shuffleOn && !shuffleQueueHydrated) return@LaunchedEffect
+        val pendingUris = pendingQueueUrisForPersistence()
+        viewModel.persistLastPendingQueue(pendingUris)
+        if (!shuffleOn) {
+            viewModel.persistManualQueueUris(queue.map { it.uri })
+        }
         if (shuffleOn && shuffleOrder.isEmpty()) return@LaunchedEffect
         viewModel.persistShuffleState(
             enabled = shuffleOn,
@@ -1627,6 +1655,8 @@ fun PlayerScreen(
                                         shuffleIndex = 0
                                         refreshShuffleQueueMirror()
                                     }
+                                    viewModel.clearLastPendingQueuePersistence()
+                                    viewModel.clearManualQueuePersistence()
                                     syncQueueToService()
                                 }) {
                                     Text(stringResource(R.string.player_clear_queue))
