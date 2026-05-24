@@ -190,14 +190,24 @@ class PlaybackService : Service() {
      * Activar [Player.shuffleModeEnabled] encima de esa cola hace que Media3 reordene de nuevo y rompe
      * [Player.hasNextMediaItem] / avance desde la notificación o el reproductor del sistema.
      */
-    fun loadQueue(queueJson: String, startIndex: Int, @Suppress("UNUSED_PARAMETER") shuffleEnabled: Boolean = false) {
+    fun loadQueue(
+        queueJson: String,
+        startIndex: Int,
+        startPositionMs: Long = 0L,
+        autoPlay: Boolean = true,
+        @Suppress("UNUSED_PARAMETER") shuffleEnabled: Boolean = false,
+    ) {
         val items = parseQueue(queueJson)
         if (items.isEmpty()) return
         exoPlayer.shuffleModeEnabled = false
-        exoPlayer.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
+        val idx = startIndex.coerceIn(0, items.lastIndex)
+        exoPlayer.setMediaItems(items, idx, startPositionMs.coerceAtLeast(0L))
         exoPlayer.prepare()
-        exoPlayer.play()
-        startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+        exoPlayer.playWhenReady = autoPlay
+        if (autoPlay) {
+            exoPlayer.play()
+            startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+        }
         pushState(force = true)
         scheduleNotificationArtwork()
     }

@@ -308,59 +308,101 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _shuffleEnabled.value = enabled
     }
 
-    fun loadShufflePersistedOrder(): List<String> {
-        val raw = prefs.getString(PREF_SHUFFLE_ORDER_JSON, null) ?: return emptyList()
-        return runCatching {
-            val arr = JSONArray(raw)
-            (0 until arr.length()).mapNotNull { i ->
-                arr.optString(i).takeIf { it.isNotBlank() }
-            }
-        }.getOrDefault(emptyList())
-    }
+    // ── Cola de reproducción unificada (JSON) ───────────────────────────────
 
-    fun loadShuffleIndex(): Int = prefs.getInt(PREF_SHUFFLE_INDEX, 0)
-
-    /**
-     * Si [enabled] y aún no hay orden persistido (lista vacía), no toca las claves de orden
-     * para no borrar el JSON antes de que la UI restaure la cola al reentrar en el reproductor.
-     */
-    fun persistShuffleState(enabled: Boolean, orderUris: List<String>, index: Int) {
-        val ed = prefs.edit().putBoolean(PREF_SHUFFLE_ON, enabled)
-        if (!enabled) {
-            ed.remove(PREF_SHUFFLE_ORDER_JSON).remove(PREF_SHUFFLE_INDEX)
-        } else if (orderUris.isNotEmpty()) {
-            val arr = JSONArray()
-            orderUris.forEach { arr.put(it) }
-            ed.putString(PREF_SHUFFLE_ORDER_JSON, arr.toString())
-                .putInt(PREF_SHUFFLE_INDEX, index.coerceIn(0, (orderUris.size - 1).coerceAtLeast(0)))
+    fun loadPlaybackQueueSnapshot(): PlaybackQueueSnapshot? {
+        val raw = prefs.getString(PREF_PLAYBACK_QUEUE_JSON, null)
+        if (!raw.isNullOrBlank()) {
+            return PlaybackQueueSnapshot.fromJson(raw)
         }
-        ed.apply()
+        return migrateLegacyQueueSnapshot()
     }
 
-    /** Cola manual (sin shuffle): orden de URIs para restaurar al reabrir la pestaña del reproductor. */
-    fun loadManualQueueUris(): List<String> = loadUriListFromPrefs(PREF_MANUAL_QUEUE_URIS_JSON)
-
-    fun persistManualQueueUris(uris: List<String>) {
-        persistUriListToPrefs(PREF_MANUAL_QUEUE_URIS_JSON, uris)
+    fun savePlaybackQueueSnapshot(snapshot: PlaybackQueueSnapshot) {
+        if (snapshot.isEmpty) {
+            clearPlaybackQueueSnapshot()
+            return
+        }
+        prefs.edit()
+            .putString(PREF_PLAYBACK_QUEUE_JSON, snapshot.toJson().toString())
+            .apply()
+        removeLegacyQueueKeys()
     }
 
-    fun clearManualQueuePersistence() {
-        prefs.edit().remove(PREF_MANUAL_QUEUE_URIS_JSON).apply()
+    fun clearPlaybackQueueSnapshot() {
+        prefs.edit().remove(PREF_PLAYBACK_QUEUE_JSON).apply()
+        removeLegacyQueueKeys()
     }
 
-    /**
-     * Cola personalizada "A continuación" (manual o resto del shuffle).
-     * Se restaura al reiniciar la app aunque el botón Aleatorio arranque desactivado.
-     */
-    fun loadLastPendingQueueUris(): List<String> = loadUriListFromPrefs(PREF_LAST_PENDING_QUEUE_URIS_JSON)
+    /** Migra claves antiguas (pending/manual/shuffle) al modelo unificado si existían. */
+    private fun migrateLegacyQueueSnapshot(): PlaybackQueueSnapshot? {
+        val shuffleUris = loadUriListFromPrefs(PREF_SHUFFLE_ORDER_JSON)
+        val shuffleIdx = prefs.getInt(PREF_SHUFFLE_INDEX, 0)
+        val shuffleOn = prefs.getBoolean(PREF_SHUFFLE_ON, false)
+        val pending = loadUriListFromPrefs(PREF_LAST_PENDING_QUEUE_URIS_JSON)
+            .ifEmpty { loadUriListFromPrefs(PREF_MANUAL_QUEUE_URIS_JSON) }
 
-    fun persistLastPendingQueue(uris: List<String>) {
-        persistUriListToPrefs(PREF_LAST_PENDING_QUEUE_URIS_JSON, uris)
+        val orderUris = when {
+            shuffleUris.isNotEmpty() -> shuffleUris
+            pending.isNotEmpty() -> pending
+            else -> return null
+        }
+        return PlaybackQueueSnapshot(
+            orderUris = orderUris,
+            currentIndex = if (shuffleUris.isNotEmpty()) shuffleIdx else 0,
+            positionMs = 0L,
+            shuffleOn = shuffleOn && shuffleUris.isNotEmpty(),
+        ).also { savePlaybackQueueSnapshot(it) }
     }
 
-    fun clearLastPendingQueuePersistence() {
-        prefs.edit().remove(PREF_LAST_PENDING_QUEUE_URIS_JSON).apply()
+    private fun removeLegacyQueueKeys() {
+        prefs.edit()
+            .remove(PREF_SHUFFLE_ON)
+            .remove(PREF_SHUFFLE_ORDER_JSON)
+            .remove(PREF_SHUFFLE_INDEX)
+            .remove(PREF_MANUAL_QUEUE_URIS_JSON)
+            .remove(PREF_LAST_PENDING_QUEUE_URIS_JSON)
+            .apply()
     }
+
+    @Deprecated("Usar loadPlaybackQueueSnapshot", ReplaceWith("loadPlaybackQueueSnapshot()"))
+    fun loadShufflePersistedOrder(): List<String> =
+        loadPlaybackQueueSnapshot()?.orderUris ?: emptyList()
+
+    @Deprecated("Usar loadPlaybackQueueSnapshot", ReplaceWith("loadPlaybackQueueSnapshot()?.currentIndex ?: 0"))
+    fun loadShuffleIndex(): Int =
+        loadPlaybackQueueSnapshot()?.currentIndex ?: 0
+
+    @Deprecated("Usar savePlaybackQueueSnapshot")
+    fun persistShuffleState(enabled: Boolean, orderUris: List<String>, index: Int) {
+        val current = loadPlaybackQueueSnapshot()
+        savePlaybackQueueSnapshot(
+            PlaybackQueueSnapshot(
+                orderUris = orderUris,
+                currentIndex = index,
+                positionMs = current?.positionMs ?: 0L,
+                shuffleOn = enabled,
+            ),
+        )
+    }
+
+    @Deprecated("Usar loadPlaybackQueueSnapshot")
+    fun loadManualQueueUris(): List<String> = emptyList()
+
+    @Deprecated("Usar savePlaybackQueueSnapshot")
+    fun persistManualQueueUris(@Suppress("UNUSED_PARAMETER") uris: List<String>) = Unit
+
+    @Deprecated("Usar clearPlaybackQueueSnapshot")
+    fun clearManualQueuePersistence() = Unit
+
+    @Deprecated("Usar loadPlaybackQueueSnapshot")
+    fun loadLastPendingQueueUris(): List<String> = emptyList()
+
+    @Deprecated("Usar savePlaybackQueueSnapshot")
+    fun persistLastPendingQueue(@Suppress("UNUSED_PARAMETER") uris: List<String>) = Unit
+
+    @Deprecated("Usar clearPlaybackQueueSnapshot")
+    fun clearLastPendingQueuePersistence() = Unit
 
     private fun loadUriListFromPrefs(key: String): List<String> {
         val raw = prefs.getString(key, null) ?: return emptyList()
@@ -391,6 +433,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_PLAYLISTS_JSON = "playlists_json"
         private const val PREF_SECTION = "player_section"
         private const val PREF_SORT = "player_sort"
+        private const val PREF_PLAYBACK_QUEUE_JSON = "player_playback_queue_json"
+        // Legacy (migración)
         private const val PREF_SHUFFLE_ON = "player_shuffle_on"
         private const val PREF_SHUFFLE_ORDER_JSON = "player_shuffle_order_uris"
         private const val PREF_SHUFFLE_INDEX = "player_shuffle_index"

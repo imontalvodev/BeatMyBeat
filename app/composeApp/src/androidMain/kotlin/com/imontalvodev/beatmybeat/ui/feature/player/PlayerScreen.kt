@@ -96,6 +96,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
@@ -225,8 +226,22 @@ fun PlayerScreen(
     val boundService = LocalPlaybackService.current
 
     // Cola pendiente si el usuario pulsa play antes de que el servicio esté ligado.
-    data class PendingPlay(val queueJson: String, val index: Int, val shuffleEnabled: Boolean)
+    data class PendingPlay(
+        val queueJson: String,
+        val index: Int,
+        val startPositionMs: Long = 0L,
+        val autoPlay: Boolean = true,
+        val shuffleEnabled: Boolean = false,
+    )
     var pendingPlay by remember { mutableStateOf<PendingPlay?>(null) }
+
+    data class PendingRestore(
+        val queueJson: String,
+        val startIndex: Int,
+        val positionMs: Long,
+        val shuffleOn: Boolean,
+    )
+    var pendingRestore by remember { mutableStateOf<PendingRestore?>(null) }
 
     LaunchedEffect(boundService, pendingPlay) {
         val svc = boundService ?: return@LaunchedEffect
@@ -234,9 +249,24 @@ fun PlayerScreen(
         svc.loadQueue(
             queueJson = pending.queueJson,
             startIndex = pending.index,
+            startPositionMs = pending.startPositionMs,
+            autoPlay = pending.autoPlay,
             shuffleEnabled = pending.shuffleEnabled,
         )
         pendingPlay = null
+    }
+
+    LaunchedEffect(boundService, pendingRestore) {
+        val svc = boundService ?: return@LaunchedEffect
+        val restore = pendingRestore ?: return@LaunchedEffect
+        svc.loadQueue(
+            queueJson = restore.queueJson,
+            startIndex = restore.startIndex,
+            startPositionMs = restore.positionMs,
+            autoPlay = false,
+            shuffleEnabled = restore.shuffleOn,
+        )
+        pendingRestore = null
     }
 
     // ── Playback state: única fuente de verdad ──────────────────────────────
@@ -280,26 +310,14 @@ fun PlayerScreen(
     var shuffleOrder by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
     var shuffleIndex by remember { mutableStateOf(-1) }
     /**
-     * Evita persistir la cola manual vacía antes de intentar restaurar desde prefs:
-     * varios [LaunchedEffect] corren en corrutinas distintas y el de persistencia podía
-     * borrar el JSON antes de que [queue] se rellenara (p. ej. al recargar la pestaña dos veces).
+     * Evita persistir la cola vacía antes de restaurar desde el JSON unificado.
      */
-    var manualQueueHydrated by remember { mutableStateOf(false) }
-    var shuffleQueueHydrated by remember { mutableStateOf(false) }
+    var queueSnapshotHydrated by remember { mutableStateOf(false) }
 
-    fun pendingQueueUrisForPersistence(): List<String> =
-        if (shuffleOn && shuffleOrder.isNotEmpty()) {
-            shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0)).map { it.uri }
-        } else {
-            queue.map { it.uri }
-        }
-
-    // Serializa la cola de "próximas canciones" y la envía al servicio para que
-    // la notificación (Next/Prev) navegue por los mismos ítems que ve la UI.
-    // En modo shuffle usa el resto de shuffleOrder; en modo normal, la cola manual.
-    fun syncQueueToService() {
+    fun syncQueueToServiceOnly() {
         val svc = boundService ?: return
-        val nextTracks = if (shuffleOn && shuffleOrder.isNotEmpty()) {
+        val shuffleActive = viewModel.shuffleEnabled.value
+        val nextTracks = if (shuffleActive && shuffleOrder.isNotEmpty()) {
             shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0))
         } else {
             queue.toList()
@@ -385,20 +403,6 @@ fun PlayerScreen(
 
     LaunchedEffect(selectedSection, query, selectedPlaylistId) {
         clearTrackSelection()
-    }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) {
-                clearTrackSelection()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            clearTrackSelection()
-        }
     }
 
     BackHandler(enabled = isSelectionModeActive && !isExpanded) {
@@ -721,7 +725,7 @@ fun PlayerScreen(
      * lo pendiente: shuffleOrder.drop(shuffleIndex + 1).
      */
     fun refreshShuffleQueueMirror() {
-        if (!shuffleOn || shuffleOrder.isEmpty()) return
+        if (!viewModel.shuffleEnabled.value || shuffleOrder.isEmpty()) return
         queue.clear()
         queue.addAll(shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0)))
     }
@@ -732,7 +736,7 @@ fun PlayerScreen(
      * determina [shuffleIndex]; si no, se usa [currentTrack].
      */
     fun rebuildShuffleOrderFromPool(playbackAnchor: DeviceTrack? = null) {
-        if (!shuffleOn) return
+        if (!viewModel.shuffleEnabled.value) return
         val base = shufflePoolTracks.toMutableList()
         val anchor = playbackAnchor ?: currentTrack
         anchor?.let { a ->
@@ -742,7 +746,7 @@ fun PlayerScreen(
             shuffleOrder = emptyList()
             shuffleIndex = -1
             queue.clear()
-            syncQueueToService()
+            syncQueueToServiceOnly()
             return
         }
         shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
@@ -752,104 +756,185 @@ fun PlayerScreen(
             else -> shuffleOrder.indexOfFirst { it.uri == anchor.uri }.takeIf { it >= 0 } ?: 0
         }
         refreshShuffleQueueMirror()
-        syncQueueToService()
+        syncQueueToServiceOnly()
     }
 
-    // Restaurar cola shuffle al reentrar / al recargar la pestaña (el remember se reinicia).
-    LaunchedEffect(deviceTracks, shuffleOn) {
-        if (!shuffleOn) {
-            shuffleQueueHydrated = true
-            return@LaunchedEffect
-        }
-        if (deviceTracks.isEmpty()) return@LaunchedEffect
-        if (shuffleOrder.isNotEmpty()) {
-            shuffleQueueHydrated = true
-            return@LaunchedEffect
-        }
-        val uris = viewModel.loadShufflePersistedOrder()
-        val savedIdx = viewModel.loadShuffleIndex()
-        if (uris.isNotEmpty()) {
-            val byUri = deviceTracks.associateBy { it.uri }
-            val resolved = uris.mapNotNull { byUri[it] }
-            if (resolved.isNotEmpty()) {
-                shuffleOrder = resolved
-                shuffleIndex = savedIdx.coerceIn(0, resolved.lastIndex)
-                refreshShuffleQueueMirror()
-                syncQueueToService()
-                shuffleQueueHydrated = true
-                return@LaunchedEffect
+    fun buildPlaybackSnapshot(positionMs: Long = playbackPositionMs): PlaybackQueueSnapshot? {
+        val shuffleActive = viewModel.shuffleEnabled.value
+        val orderUris: List<String>
+        val currentIndex: Int
+        if (shuffleActive && shuffleOrder.isNotEmpty()) {
+            orderUris = shuffleOrder.map { it.uri }
+            currentIndex = shuffleIndex.coerceIn(0, shuffleOrder.lastIndex)
+        } else {
+            val current = currentTrack
+            if (current == null && queue.isEmpty()) return null
+            orderUris = buildList {
+                current?.let { add(it.uri) }
+                addAll(queue.map { it.uri })
             }
+            currentIndex = 0
         }
-        rebuildShuffleOrderFromPool()
-        shuffleQueueHydrated = true
-    }
-
-    // Restaurar cola al reentrar o al reiniciar la app (Aleatorio suele arrancar desactivado).
-    LaunchedEffect(deviceTracks, shuffleOn) {
-        if (shuffleOn) {
-            manualQueueHydrated = true
-            return@LaunchedEffect
-        }
-        if (deviceTracks.isEmpty()) return@LaunchedEffect
-        if (queue.isEmpty()) {
-            val uris = viewModel.loadLastPendingQueueUris()
-                .ifEmpty { viewModel.loadManualQueueUris() }
-            if (uris.isNotEmpty()) {
-                val byUri = deviceTracks.associateBy { it.uri }
-                val resolved = uris.mapNotNull { byUri[it] }
-                if (resolved.isEmpty()) {
-                    viewModel.clearLastPendingQueuePersistence()
-                    viewModel.clearManualQueuePersistence()
-                } else {
-                    queue.addAll(resolved)
-                    syncQueueToService()
-                }
-            }
-        }
-        manualQueueHydrated = true
-    }
-
-    val manualQueuePersistenceKey = if (shuffleOn) "\u0000" else queue.joinToString("\u0001") { it.uri }
-    val pendingQueuePersistenceKey = pendingQueueUrisForPersistence().joinToString("\u0001")
-    LaunchedEffect(
-        shuffleOn,
-        shuffleOrder,
-        shuffleIndex,
-        manualQueueHydrated,
-        shuffleQueueHydrated,
-        manualQueuePersistenceKey,
-        pendingQueuePersistenceKey,
-    ) {
-        if (!manualQueueHydrated) return@LaunchedEffect
-        if (shuffleOn && !shuffleQueueHydrated) return@LaunchedEffect
-        val pendingUris = pendingQueueUrisForPersistence()
-        viewModel.persistLastPendingQueue(pendingUris)
-        if (!shuffleOn) {
-            viewModel.persistManualQueueUris(queue.map { it.uri })
-        }
-        if (shuffleOn && shuffleOrder.isEmpty()) return@LaunchedEffect
-        viewModel.persistShuffleState(
-            enabled = shuffleOn,
-            orderUris = shuffleOrder.map { it.uri },
-            index = shuffleIndex,
+        if (orderUris.isEmpty()) return null
+        return PlaybackQueueSnapshot(
+            orderUris = orderUris,
+            currentIndex = currentIndex,
+            positionMs = positionMs.coerceAtLeast(0L),
+            shuffleOn = shuffleActive,
         )
     }
 
+    fun persistPlaybackSnapshot(positionMs: Long = playbackPositionMs) {
+        if (!queueSnapshotHydrated) return
+        // Estado inconsistente (p. ej. remember recién reiniciado): no pisar el JSON completo.
+        if (viewModel.shuffleEnabled.value && shuffleOrder.isEmpty() && queue.isEmpty()) return
+        val snapshot = buildPlaybackSnapshot(positionMs)
+        if (snapshot == null) {
+            viewModel.clearPlaybackQueueSnapshot()
+        } else {
+            viewModel.savePlaybackQueueSnapshot(snapshot)
+        }
+    }
+
+    fun syncQueueToService(persist: Boolean = true) {
+        syncQueueToServiceOnly()
+        if (persist) persistPlaybackSnapshot()
+    }
+
+    fun applyResolvedPlaybackQueue(resolved: ResolvedPlaybackQueue) {
+        viewModel.setShuffleEnabled(resolved.shuffleOn)
+        if (resolved.shuffleOn) {
+            shuffleOrder = resolved.tracks
+            shuffleIndex = resolved.currentIndex
+            refreshShuffleQueueMirror()
+        } else {
+            shuffleOrder = emptyList()
+            shuffleIndex = -1
+            queue.clear()
+            queue.addAll(resolved.tracks.drop(resolved.currentIndex + 1))
+        }
+        currentTrack = resolved.tracks.getOrNull(resolved.currentIndex)
+        currentIndex = currentTrack?.let { t ->
+            deviceTracks.indexOfFirst { it.uri == t.uri }.takeIf { it >= 0 }
+                ?: deviceTracks.indexOfFirst { it.id == t.id }
+        } ?: -1
+    }
+
+    fun clearPlaybackQueueState(keepCurrentInShuffle: Boolean = false) {
+        if (keepCurrentInShuffle && shuffleOn && shuffleIndex in shuffleOrder.indices) {
+            shuffleOrder = listOf(shuffleOrder[shuffleIndex])
+            shuffleIndex = 0
+            refreshShuffleQueueMirror()
+        } else {
+            queue.clear()
+            shuffleOrder = emptyList()
+            shuffleIndex = -1
+        }
+        queueRepeatSnapshot = emptyList()
+        queueRepeatIndex = -1
+        syncQueueToService(persist = false)
+        persistPlaybackSnapshot()
+    }
+
+    val persistOnPause by rememberUpdatedState {
+        {
+            if (queueSnapshotHydrated) {
+                persistPlaybackSnapshot(PlaybackService.state.value.positionMs)
+            }
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                persistOnPause()
+                clearTrackSelection()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            clearTrackSelection()
+        }
+    }
+
+    // Restaurar cola unificada al reentrar en el reproductor (remember se reinicia).
+    LaunchedEffect(deviceTracks, librarySyncing) {
+        if (deviceTracks.isEmpty()) return@LaunchedEffect
+        if (queueSnapshotHydrated) return@LaunchedEffect
+        if (shuffleOrder.isNotEmpty() || queue.isNotEmpty()) {
+            queueSnapshotHydrated = true
+            return@LaunchedEffect
+        }
+
+        val snapshot = viewModel.loadPlaybackQueueSnapshot()
+        if (snapshot == null) {
+            queueSnapshotHydrated = true
+            return@LaunchedEffect
+        }
+
+        val resolved = resolvePlaybackQueueSnapshot(
+            snapshot,
+            deviceTracks.associateBy { it.uri },
+        )
+        if (resolved == null) {
+            if (librarySyncing) return@LaunchedEffect
+            viewModel.clearPlaybackQueueSnapshot()
+            queueSnapshotHydrated = true
+            return@LaunchedEffect
+        }
+
+        applyResolvedPlaybackQueue(resolved)
+        syncQueueToService(persist = false)
+
+        val current = resolved.tracks.getOrNull(resolved.currentIndex)
+        val alreadyInPlayer = current != null &&
+            playbackMediaId == current.uri &&
+            playbackDurationMs > 0L
+        if (current != null && !alreadyInPlayer) {
+            pendingRestore = PendingRestore(
+                queueJson = resolved.tracks.toQueueJsonArray().toString(),
+                startIndex = resolved.currentIndex,
+                positionMs = resolved.positionMs,
+                shuffleOn = resolved.shuffleOn,
+            )
+        }
+        queueSnapshotHydrated = true
+    }
+
+    val playbackPersistenceKey = buildString {
+        append(shuffleOn)
+        append('|')
+        if (shuffleOn && shuffleOrder.isNotEmpty()) {
+            append(shuffleOrder.joinToString("\u0001") { it.uri })
+            append('|')
+            append(shuffleIndex)
+        } else {
+            append(currentTrack?.uri ?: "")
+            append('|')
+            append(queue.joinToString("\u0001") { it.uri })
+        }
+    }
+    LaunchedEffect(playbackPersistenceKey, queueSnapshotHydrated) {
+        if (!queueSnapshotHydrated) return@LaunchedEffect
+        persistPlaybackSnapshot()
+    }
+
     fun onToggleShuffle() {
-        val next = !shuffleOn
+        val next = !viewModel.shuffleEnabled.value
         viewModel.setShuffleEnabled(next)
+        viewModel.clearPlaybackQueueSnapshot()
+        queueRepeatSnapshot = emptyList()
+        queueRepeatIndex = -1
         if (next) {
-            viewModel.clearManualQueuePersistence()
-            queueRepeatSnapshot = emptyList()
-            queueRepeatIndex = -1
             rebuildShuffleOrderFromPool()
+            syncQueueToService()
         } else {
             shuffleOrder = emptyList()
             shuffleIndex = -1
             queue.clear()
             syncQueueToService()
-            queueRepeatSnapshot = emptyList()
-            queueRepeatIndex = -1
         }
     }
 
@@ -887,6 +972,7 @@ fun PlayerScreen(
         ) {
             return@LaunchedEffect
         }
+        viewModel.clearPlaybackQueueSnapshot()
         queue.clear()
         if (shuffleOn) rebuildShuffleOrderFromPool()
         else syncQueueToService()
@@ -987,6 +1073,7 @@ fun PlayerScreen(
                     refreshShuffleQueueMirror()
                 }
             }
+            persistPlaybackSnapshot()
         } catch (e: Exception) {
             showSnack(cannotPlayFileText)
         }
@@ -1693,17 +1780,7 @@ fun PlayerScreen(
 
                             if (displayQueue.isNotEmpty()) {
                                 TextButton(onClick = {
-                                    queue.clear()
-                                    if (shuffleOn) {
-                                        shuffleOrder = if (shuffleIndex >= 0 && shuffleIndex < shuffleOrder.size)
-                                            listOf(shuffleOrder[shuffleIndex])
-                                        else emptyList()
-                                        shuffleIndex = 0
-                                        refreshShuffleQueueMirror()
-                                    }
-                                    viewModel.clearLastPendingQueuePersistence()
-                                    viewModel.clearManualQueuePersistence()
-                                    syncQueueToService()
+                                    clearPlaybackQueueState(keepCurrentInShuffle = shuffleOn)
                                 }) {
                                     Text(stringResource(R.string.player_clear_queue))
                                 }
