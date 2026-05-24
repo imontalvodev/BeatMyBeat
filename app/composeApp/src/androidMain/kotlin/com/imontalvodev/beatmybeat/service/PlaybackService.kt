@@ -1,8 +1,11 @@
+@file:OptIn(UnstableApi::class)
+
 package com.imontalvodev.beatmybeat.service
 
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.os.Build
 import android.content.Intent
@@ -29,6 +32,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import kotlin.OptIn
+import androidx.annotation.OptIn as AndroidOptIn
 import androidx.core.app.NotificationCompat
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
@@ -36,10 +40,11 @@ import androidx.media3.session.MediaStyleNotificationHelper
 /**
  * Servicio de reproducción basado en Media3 ExoPlayer.
  *
- * Expone un [Binder] para que [PlayerScreen] acceda al [ExoPlayer] directamente.
+ * Expone un [Binder] para que la UI del reproductor acceda al [ExoPlayer] directamente.
  * Esto garantiza que player.seekTo(ms) sea una llamada síncrona al reproductor,
  * sin pasar por el sistema de intents (que era la causa del bug de seek).
  */
+@AndroidOptIn(markerClass = [UnstableApi::class])
 class PlaybackService : Service() {
 
     inner class LocalBinder : Binder() {
@@ -308,6 +313,7 @@ class PlaybackService : Service() {
         )
     }
 
+    @SuppressLint("MissingPermission")
     private fun promoteToForegroundIfAllowed() {
         if (!BeatMyBeatNotification.canPostNotifications(this)) return
         runCatching {
@@ -315,6 +321,7 @@ class PlaybackService : Service() {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun updateNotification() {
         if (!BeatMyBeatNotification.canPostNotifications(this)) return
         runCatching {
@@ -323,7 +330,6 @@ class PlaybackService : Service() {
         }
     }
 
-    @OptIn(UnstableApi::class)
     private fun buildNotification(): Notification {
         val meta = exoPlayer.currentMediaItem?.mediaMetadata
         val title = meta?.title?.toString()?.ifBlank { "BeatMyBeat" } ?: "BeatMyBeat"

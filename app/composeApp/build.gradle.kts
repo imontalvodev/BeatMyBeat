@@ -11,6 +11,7 @@ kotlin {
     androidTarget {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
+            optIn.add("androidx.media3.common.util.UnstableApi")
         }
     }
 
