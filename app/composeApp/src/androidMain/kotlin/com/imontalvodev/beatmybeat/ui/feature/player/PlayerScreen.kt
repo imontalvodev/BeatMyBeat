@@ -115,6 +115,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -207,7 +208,7 @@ fun PlayerScreen(
                 viewModel.syncLibrary(auto = true)
             } else {
                 showSnack(
-                    context.getString(R.string.player_audio_permission_denied_snack),
+                    resources.getString(R.string.player_audio_permission_denied_snack),
                     long = true,
                 )
                 viewModel.syncLibrary(auto = true)
@@ -553,7 +554,7 @@ fun PlayerScreen(
     LaunchedEffect(currentTrack?.id) {
         val t = currentTrack ?: run {
             lyricsState = LyricsUiState.Empty(
-                context.getString(R.string.player_lyrics_select_song),
+                resources.getString(R.string.player_lyrics_select_song),
             )
             return@LaunchedEffect
         }
@@ -570,7 +571,7 @@ fun PlayerScreen(
 
         if (isUnknown(title) || isUnknown(artist)) {
             lyricsState = LyricsUiState.Empty(
-                context.getString(R.string.player_lyrics_unavailable),
+                resources.getString(R.string.player_lyrics_unavailable),
             )
             return@LaunchedEffect
         }
@@ -584,7 +585,7 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
         lyricsState = LyricsUiState.Empty(
-            context.getString(R.string.player_lyrics_tap_download),
+            resources.getString(R.string.player_lyrics_tap_download),
         )
     }
 
@@ -630,7 +631,7 @@ fun PlayerScreen(
 
                 if (isUnknown(title) || isUnknown(artist)) {
                     lyricsState = LyricsUiState.Empty(
-                        context.getString(R.string.player_lyrics_unavailable),
+                        resources.getString(R.string.player_lyrics_unavailable),
                     )
                     return@launch
                 }
@@ -663,7 +664,7 @@ fun PlayerScreen(
                 }
 
                 lyricsState = LyricsUiState.Empty(
-                    context.getString(R.string.player_lyrics_unavailable),
+                    resources.getString(R.string.player_lyrics_unavailable),
                 )
             } finally {
                 lyricsDownloading = false
@@ -1144,7 +1145,7 @@ fun PlayerScreen(
             currentTrack = null
             currentArtwork = null
             lyricsState = LyricsUiState.Empty(
-                context.getString(R.string.player_lyrics_select_song),
+                resources.getString(R.string.player_lyrics_select_song),
             )
             BeatMyBeatForegroundService.stopPlayback(context)
         }
@@ -1190,7 +1191,7 @@ fun PlayerScreen(
                 val path = uri.path
                 val deleted = if (path.isNullOrBlank()) false else File(path).delete()
                 if (deleted) finishDeletion(track, showToast)
-                else if (showToast) showSnack(context.getString(R.string.player_delete_failed))
+                else if (showToast) showSnack(resources.getString(R.string.player_delete_failed))
             }
             "content" -> {
                 if (isSafUri(uri)) {
@@ -1199,7 +1200,7 @@ fun PlayerScreen(
                         DocumentFile.fromSingleUri(context, uri)?.delete() == true
                     }.getOrDefault(false)
                     if (deleted) finishDeletion(track, showToast)
-                    else if (showToast) showSnack(context.getString(R.string.player_delete_failed_saf))
+                    else if (showToast) showSnack(resources.getString(R.string.player_delete_failed_saf))
                 } else {
                     // URI de MediaStore: intentar borrado directo y si falla pedir permiso al usuario
                     val directResult = runCatching {
@@ -1217,16 +1218,16 @@ fun PlayerScreen(
                         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && ex is RecoverableSecurityException) {
                             ex.userAction.actionIntent.intentSender
                         } else {
-                            if (showToast) showSnack(context.getString(R.string.player_delete_failed))
+                            if (showToast) showSnack(resources.getString(R.string.player_delete_failed))
                             return
                         }
                         pendingDeleteTrack = track
                         deletionApprovalLauncher.launch(
                             IntentSenderRequest.Builder(sender).build()
                         )
-                        if (showToast) showSnack(context.getString(R.string.player_delete_confirm_system))
+                        if (showToast) showSnack(resources.getString(R.string.player_delete_confirm_system))
                     } catch (_: Exception) {
-                        if (showToast) showSnack(context.getString(R.string.player_delete_permission_error))
+                        if (showToast) showSnack(resources.getString(R.string.player_delete_permission_error))
                     }
                 }
             }
@@ -1234,7 +1235,7 @@ fun PlayerScreen(
                 val path = uri.path
                 val deleted = if (path.isNullOrBlank()) false else File(path).delete()
                 if (deleted) finishDeletion(track, showToast)
-                else if (showToast) showSnack(context.getString(R.string.player_delete_failed))
+                else if (showToast) showSnack(resources.getString(R.string.player_delete_failed))
             }
         }
     }
@@ -1313,7 +1314,7 @@ fun PlayerScreen(
                         },
                         onCreateEmpty = {
                             val res = viewModel.createPlaylist(
-                                context.getString(R.string.player_default_playlist_name),
+                                resources.getString(R.string.player_default_playlist_name),
                             )
                             selectedPlaylistId = when (res) {
                                 is PlayerViewModel.CreatePlaylistResult.Created -> res.id
@@ -1551,9 +1552,9 @@ fun PlayerScreen(
                                 }
                                 showSnack(
                                     if (selectedTracksOrdered.size == 1) {
-                                        context.getString(R.string.player_playlist_removed_one)
+                                        resources.getString(R.string.player_playlist_removed_one)
                                     } else {
-                                        context.getString(R.string.player_playlist_removed_many)
+                                        resources.getString(R.string.player_playlist_removed_many)
                                     },
                                 )
                                 clearTrackSelection()
@@ -2000,12 +2001,12 @@ fun PlayerScreen(
                                     when (res) {
                                         is PlayerViewModel.CreatePlaylistResult.Created -> {
                                             selectedPlaylistId = res.id
-                                            showSnack(context.getString(R.string.player_playlist_created, newName))
+                                            showSnack(resources.getString(R.string.player_playlist_created, newName))
                                             res.id
                                         }
 
                                         is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
-                                            showSnack(context.getString(R.string.player_playlist_name_exists))
+                                            showSnack(resources.getString(R.string.player_playlist_name_exists))
                                             selectedPlaylistId = res.id
                                             res.id
                                         }
@@ -2015,11 +2016,11 @@ fun PlayerScreen(
                                     if (existingId == null) {
                                         // UX: si no hay playlist todavía, crear una por defecto y continuar.
                                         when (val created = viewModel.createPlaylist(
-                                            context.getString(R.string.player_default_playlist_name),
+                                            resources.getString(R.string.player_default_playlist_name),
                                         )) {
                                             is PlayerViewModel.CreatePlaylistResult.Created -> {
                                                 selectedPlaylistId = created.id
-                                                showSnack(context.getString(R.string.player_playlist_default_created))
+                                                showSnack(resources.getString(R.string.player_playlist_default_created))
                                                 created.id
                                             }
                                             is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
@@ -2064,9 +2065,9 @@ fun PlayerScreen(
                                 } else if (anyAdded) {
                                     showSnack(
                                         if (tracksToAdd.size == 1) {
-                                            context.getString(R.string.player_track_added_playlist)
+                                            resources.getString(R.string.player_track_added_playlist)
                                         } else {
-                                            context.getString(R.string.player_tracks_added_playlist)
+                                            resources.getString(R.string.player_tracks_added_playlist)
                                         },
                                     )
                                     clearTrackSelection()
@@ -2152,7 +2153,7 @@ fun PlayerScreen(
                                         allowDuplicate = true,
                                     )
                                 }
-                                showSnack(context.getString(R.string.player_duplicates_added))
+                                showSnack(resources.getString(R.string.player_duplicates_added))
                                 duplicateDialog = null
                                 clearTrackSelection()
                             },
@@ -2164,7 +2165,7 @@ fun PlayerScreen(
                         TextButton(
                             onClick = {
                                 duplicateDialog = null
-                                showSnack(context.getString(R.string.player_skip_duplicates_snack))
+                                showSnack(resources.getString(R.string.player_skip_duplicates_snack))
                                 clearTrackSelection()
                             },
                         ) {
@@ -2188,7 +2189,7 @@ fun PlayerScreen(
                                 val ok = viewModel.deletePlaylist(id)
                                 playlistDeleteDialogId = null
                                 if (!ok) {
-                                    showSnack(context.getString(R.string.player_delete_playlist_failed))
+                                    showSnack(resources.getString(R.string.player_delete_playlist_failed))
                                 }
                             },
                         ) {
@@ -2223,7 +2224,7 @@ fun PlayerScreen(
                             onClick = {
                                 val newName = playlistRenameNewName.trim()
                                 if (newName.isBlank()) {
-                                    showSnack(context.getString(R.string.player_edit_playlist_invalid_name))
+                                    showSnack(resources.getString(R.string.player_edit_playlist_invalid_name))
                                     return@TextButton
                                 }
 

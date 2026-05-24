@@ -43,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -102,6 +103,7 @@ fun AnalyzeScreen(
     val downloadInProgress = activeDownload != null
 
     val context = LocalContext.current
+    val resources = LocalResources.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
@@ -288,11 +290,11 @@ fun AnalyzeScreen(
                                 }
                                             } else {
                                                 suggestionError =
-                                                    context.getString(R.string.analyze_no_results)
+                                                    resources.getString(R.string.analyze_no_results)
                                             }
                                         } catch (e: Exception) {
                                             suggestionError =
-                                                context.getString(R.string.analyze_connection_error)
+                                                resources.getString(R.string.analyze_connection_error)
                                         } finally {
                                             searchingSuggestions = false
                                         }
@@ -302,11 +304,11 @@ fun AnalyzeScreen(
                                 val normalizedUrl = playlistUrl.trim()
                                 if (normalizedUrl.isBlank()) {
                                     playlistInputError =
-                                        context.getString(R.string.analyze_playlist_url_required)
+                                        resources.getString(R.string.analyze_playlist_url_required)
                                 } else {
                                     when (val parsed = parseYouTubeInput(normalizedUrl)) {
                                         is ParsedYouTubeInput.Invalid -> {
-                                            playlistInputError = context.getString(parsed.reasonRes)
+                                            playlistInputError = resources.getString(parsed.reasonRes)
                                         }
                                         is ParsedYouTubeInput.PlaylistOrAlbum -> {
                                             scope.launch {
@@ -316,7 +318,7 @@ fun AnalyzeScreen(
                                                     }
                                                     if (videoIds.isEmpty()) {
                                                         playlistInputError =
-                                                            context.getString(R.string.analyze_playlist_resolve_empty)
+                                                            resources.getString(R.string.analyze_playlist_resolve_empty)
                                                         return@launch
                                                     }
                                                     SongDownloadService.enqueuePlaylistDownload(
@@ -324,10 +326,10 @@ fun AnalyzeScreen(
                                                         videoIds = videoIds,
                                                         format = selectedFormat,
                                                     )
-                                                    showSnack(context.getString(R.string.download_started_background))
+                                                    showSnack(resources.getString(R.string.download_started_background))
                                                 } catch (_: Exception) {
                                                     playlistInputError =
-                                                        context.getString(R.string.analyze_playlist_resolve_failed)
+                                                        resources.getString(R.string.analyze_playlist_resolve_failed)
                                                 }
                                             }
                                         }
@@ -345,7 +347,7 @@ fun AnalyzeScreen(
                                                     thumbnailUrl = metadata.thumbnailUrl,
                                                     format = selectedFormat,
                                                 )
-                                                songDownloadInfo = context.getString(R.string.download_started_background)
+                                                songDownloadInfo = resources.getString(R.string.download_started_background)
                                             }
                                         }
                                     }
@@ -504,10 +506,10 @@ fun AnalyzeScreen(
                                     format = selectedFormat,
                                 )
                                 selectedSuggestion = null
-                                songDownloadInfo = context.getString(R.string.download_started_background)
+                                songDownloadInfo = resources.getString(R.string.download_started_background)
                             } catch (e: Exception) {
                                 android.util.Log.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
-                                downloadError = context.getString(
+                                downloadError = resources.getString(
                                     R.string.analyze_download_error,
                                     e.javaClass.simpleName,
                                 )

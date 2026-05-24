@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,7 @@ fun PlaylistScreen(
     var tracks by remember { mutableStateOf<List<PlaylistSong>>(emptyList()) }
 
     val context = LocalContext.current
+    val resources = LocalResources.current
     val activeDownload by DownloadProgressBus.state.collectAsState()
     val downloadInProgress = activeDownload != null
 
@@ -85,17 +87,17 @@ fun PlaylistScreen(
                 playlist = null,
                 songs = emptyList(),
                 error = "NetworkError",
-                message = context.getString(R.string.playlist_error_cannot_connect),
+                message = resources.getString(R.string.playlist_error_cannot_connect),
             )
         }
         loading = false
         if (!res.success) {
-            error = res.message ?: res.error ?: context.getString(R.string.playlist_error_cannot_load)
-            title = context.getString(R.string.playlist_default_title)
+            error = res.message ?: res.error ?: resources.getString(R.string.playlist_error_cannot_load)
+            title = resources.getString(R.string.playlist_default_title)
             tracks = emptyList()
         } else {
-            title = res.playlist?.name?.ifBlank { context.getString(R.string.playlist_default_title) }
-                ?: context.getString(R.string.playlist_default_title)
+            title = res.playlist?.name?.ifBlank { resources.getString(R.string.playlist_default_title) }
+                ?: resources.getString(R.string.playlist_default_title)
             tracks = res.songs
         }
     }
