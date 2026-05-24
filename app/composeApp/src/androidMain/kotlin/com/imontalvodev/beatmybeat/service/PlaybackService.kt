@@ -16,6 +16,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.imontalvodev.beatmybeat.MainActivity
 import com.imontalvodev.beatmybeat.R
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
+import kotlin.OptIn
 import androidx.core.app.NotificationCompat
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
@@ -127,9 +129,7 @@ class PlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Notificación persistente si ya hay cola (p. ej. acciones desde segundo plano / notificación).
         if (exoPlayer.mediaItemCount > 0) {
-            runCatching {
-                startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
-            }
+            promoteToForegroundIfAllowed()
         }
         when (intent?.action) {
             ACTION_PLAY -> exoPlayer.play()
@@ -206,7 +206,7 @@ class PlaybackService : Service() {
         exoPlayer.playWhenReady = autoPlay
         if (autoPlay) {
             exoPlayer.play()
-            startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+            promoteToForegroundIfAllowed()
         }
         pushState(force = true)
         scheduleNotificationArtwork()
@@ -308,11 +308,22 @@ class PlaybackService : Service() {
         )
     }
 
-    private fun updateNotification() {
-        val nm = androidx.core.app.NotificationManagerCompat.from(this)
-        nm.notify(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+    private fun promoteToForegroundIfAllowed() {
+        if (!BeatMyBeatNotification.canPostNotifications(this)) return
+        runCatching {
+            startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+        }
     }
 
+    private fun updateNotification() {
+        if (!BeatMyBeatNotification.canPostNotifications(this)) return
+        runCatching {
+            androidx.core.app.NotificationManagerCompat.from(this)
+                .notify(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+        }
+    }
+
+    @OptIn(UnstableApi::class)
     private fun buildNotification(): Notification {
         val meta = exoPlayer.currentMediaItem?.mediaMetadata
         val title = meta?.title?.toString()?.ifBlank { "BeatMyBeat" } ?: "BeatMyBeat"
