@@ -16,7 +16,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
@@ -30,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -120,6 +123,7 @@ class MainActivity : AppCompatActivity() {
             BeatMyBeatTheme(themeProfile = activeProfile) {
                 CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
                     PlaybackServiceBinding {
+                        key(localeTick) {
                         val navController = rememberNavController()
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route
@@ -142,7 +146,13 @@ class MainActivity : AppCompatActivity() {
                                                 contentDescription = stringResource(R.string.nav_download),
                                             )
                                         },
-                                        label = { Text(stringResource(R.string.nav_download)) },
+                                        label = {
+                                            Text(
+                                                text = stringResource(R.string.nav_download),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            )
+                                        },
                                     )
                                     NavigationBarItem(
                                         selected = currentRoute == "player",
@@ -155,7 +165,13 @@ class MainActivity : AppCompatActivity() {
                                                 contentDescription = stringResource(R.string.nav_player),
                                             )
                                         },
-                                        label = { Text(stringResource(R.string.nav_player)) },
+                                        label = {
+                                            Text(
+                                                text = stringResource(R.string.nav_player),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                textAlign = TextAlign.Center,
+                                            )
+                                        },
                                     )
                                     NavigationBarItem(
                                         selected = currentRoute == "profile",
@@ -168,7 +184,13 @@ class MainActivity : AppCompatActivity() {
                                                 contentDescription = stringResource(R.string.nav_profile),
                                             )
                                         },
-                                        label = { Text(stringResource(R.string.nav_profile)) },
+                                        label = {
+                                            Text(
+                                                text = stringResource(R.string.nav_profile),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                textAlign = TextAlign.Center,
+                                            )
+                                        },
                                     )
                                 }
                             }
@@ -347,9 +369,10 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
-                }
-            }
-        }
-        }
-    }
+                        } // localeTick
+                    } // PlaybackServiceBinding
+                } // CompositionLocalProvider
+            } // BeatMyBeatTheme
+        } // setContent
+    } // onCreate
 }

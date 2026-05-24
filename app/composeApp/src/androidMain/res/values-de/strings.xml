@@ -1,5 +1,9 @@
 <resources>
     <string name="app_name">BeatMyBeat</string>
+    <string name="nav_download">Herunterladen</string>
+    <string name="nav_player">Player</string>
+    <string name="nav_profile">Profil</string>
+    <string name="profile_folder_open_failed">Ordner konnte auf diesem Gerät nicht geöffnet werden.</string>
     <string name="common_cancel">Abbrechen</string>
     <string name="common_apply">Anwenden</string>
     <string name="common_delete">Löschen</string>
@@ -9,6 +13,7 @@
     <string name="player_header_playlist_fallback">PLAYLIST</string>
     <string name="player_downloader_button">Downloader</string>
     <string name="player_search_placeholder">Suche</string>
+    <string name="player_search_clear_cd">Suche löschen</string>
     <string name="player_section_songs">Songs</string>
     <string name="player_section_favorites">Favoriten</string>
     <string name="player_section_playlist">Playlist</string>

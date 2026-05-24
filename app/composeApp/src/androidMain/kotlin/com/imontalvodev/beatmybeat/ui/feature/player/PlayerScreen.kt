@@ -207,7 +207,7 @@ fun PlayerScreen(
                 viewModel.syncLibrary(auto = true)
             } else {
                 showSnack(
-                    "Permiso de música denegado. Solo verás descargas de BeatMyBeat.",
+                    context.getString(R.string.player_audio_permission_denied_snack),
                     long = true,
                 )
                 viewModel.syncLibrary(auto = true)
@@ -552,7 +552,9 @@ fun PlayerScreen(
     var lyricsDownloading by remember { mutableStateOf(false) }
     LaunchedEffect(currentTrack?.id) {
         val t = currentTrack ?: run {
-            lyricsState = LyricsUiState.Empty("Selecciona una canción")
+            lyricsState = LyricsUiState.Empty(
+                context.getString(R.string.player_lyrics_select_song),
+            )
             return@LaunchedEffect
         }
 
@@ -567,7 +569,9 @@ fun PlayerScreen(
                 s.isBlank()
 
         if (isUnknown(title) || isUnknown(artist)) {
-            lyricsState = LyricsUiState.Empty("No hay letra disponible para esta canción")
+            lyricsState = LyricsUiState.Empty(
+                context.getString(R.string.player_lyrics_unavailable),
+            )
             return@LaunchedEffect
         }
 
@@ -579,7 +583,9 @@ fun PlayerScreen(
             lyricsState = LyricsUiState.Ready(cached)
             return@LaunchedEffect
         }
-        lyricsState = LyricsUiState.Empty("Toca para descargar la letra (necesitas internet).")
+        lyricsState = LyricsUiState.Empty(
+            context.getString(R.string.player_lyrics_tap_download),
+        )
     }
 
     fun sanitizeTitle(input: String): String {
@@ -623,7 +629,9 @@ fun PlayerScreen(
                 val (title, artist) = withContext(Dispatchers.IO) { resolveTrackMeta(track) }
 
                 if (isUnknown(title) || isUnknown(artist)) {
-                    lyricsState = LyricsUiState.Empty("No hay letra disponible para esta canción")
+                    lyricsState = LyricsUiState.Empty(
+                        context.getString(R.string.player_lyrics_unavailable),
+                    )
                     return@launch
                 }
 
@@ -654,7 +662,9 @@ fun PlayerScreen(
                     }
                 }
 
-                lyricsState = LyricsUiState.Empty("No hay letra disponible para esta canción")
+                lyricsState = LyricsUiState.Empty(
+                    context.getString(R.string.player_lyrics_unavailable),
+                )
             } finally {
                 lyricsDownloading = false
             }
@@ -1133,7 +1143,9 @@ fun PlayerScreen(
         if (currentTrack?.uri == track.uri) {
             currentTrack = null
             currentArtwork = null
-            lyricsState = LyricsUiState.Empty("Selecciona una canción")
+            lyricsState = LyricsUiState.Empty(
+                context.getString(R.string.player_lyrics_select_song),
+            )
             BeatMyBeatForegroundService.stopPlayback(context)
         }
         viewModel.syncLibrary(auto = true)
@@ -1178,7 +1190,7 @@ fun PlayerScreen(
                 val path = uri.path
                 val deleted = if (path.isNullOrBlank()) false else File(path).delete()
                 if (deleted) finishDeletion(track, showToast)
-                else if (showToast) showSnack("No se pudo eliminar la canción.")
+                else if (showToast) showSnack(context.getString(R.string.player_delete_failed))
             }
             "content" -> {
                 if (isSafUri(uri)) {
@@ -1187,7 +1199,7 @@ fun PlayerScreen(
                         DocumentFile.fromSingleUri(context, uri)?.delete() == true
                     }.getOrDefault(false)
                     if (deleted) finishDeletion(track, showToast)
-                    else if (showToast) showSnack("No se pudo eliminar (SAF).")
+                    else if (showToast) showSnack(context.getString(R.string.player_delete_failed_saf))
                 } else {
                     // URI de MediaStore: intentar borrado directo y si falla pedir permiso al usuario
                     val directResult = runCatching {
@@ -1205,16 +1217,16 @@ fun PlayerScreen(
                         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && ex is RecoverableSecurityException) {
                             ex.userAction.actionIntent.intentSender
                         } else {
-                            if (showToast) showSnack("No se pudo eliminar la canción.")
+                            if (showToast) showSnack(context.getString(R.string.player_delete_failed))
                             return
                         }
                         pendingDeleteTrack = track
                         deletionApprovalLauncher.launch(
                             IntentSenderRequest.Builder(sender).build()
                         )
-                        if (showToast) showSnack("Confirma la eliminación en el diálogo del sistema.")
+                        if (showToast) showSnack(context.getString(R.string.player_delete_confirm_system))
                     } catch (_: Exception) {
-                        if (showToast) showSnack("Error solicitando permiso de eliminación.")
+                        if (showToast) showSnack(context.getString(R.string.player_delete_permission_error))
                     }
                 }
             }
@@ -1222,7 +1234,7 @@ fun PlayerScreen(
                 val path = uri.path
                 val deleted = if (path.isNullOrBlank()) false else File(path).delete()
                 if (deleted) finishDeletion(track, showToast)
-                else if (showToast) showSnack("No se pudo eliminar la canción.")
+                else if (showToast) showSnack(context.getString(R.string.player_delete_failed))
             }
         }
     }
@@ -1247,10 +1259,37 @@ fun PlayerScreen(
                     onValueChange = { query = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 48.dp),
-                    textStyle = MaterialTheme.typography.bodyMedium,
+                        .height(48.dp),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        textAlign = TextAlign.Center,
+                        platformStyle = androidx.compose.ui.text.PlatformTextStyle(
+                            includeFontPadding = false,
+                        ),
+                    ),
                     singleLine = true,
-                    placeholder = { Text(stringResource(R.string.player_search_placeholder)) },
+                    placeholder = {
+                        Text(
+                            text = stringResource(R.string.player_search_placeholder),
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(
+                                onClick = { query = "" },
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = stringResource(R.string.player_search_clear_cd),
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                )
+                            }
+                        }
+                    },
                     shape = RoundedCornerShape(18.dp),
                 )
 
@@ -1273,7 +1312,9 @@ fun PlayerScreen(
                             selectedPlaylistId = id
                         },
                         onCreateEmpty = {
-                            val res = viewModel.createPlaylist("Mi playlist")
+                            val res = viewModel.createPlaylist(
+                                context.getString(R.string.player_default_playlist_name),
+                            )
                             selectedPlaylistId = when (res) {
                                 is PlayerViewModel.CreatePlaylistResult.Created -> res.id
                                 is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
@@ -1509,7 +1550,11 @@ fun PlayerScreen(
                                     )
                                 }
                                 showSnack(
-                                    if (selectedTracksOrdered.size == 1) "Canción quitada de la playlist." else "Canciones quitadas de la playlist.",
+                                    if (selectedTracksOrdered.size == 1) {
+                                        context.getString(R.string.player_playlist_removed_one)
+                                    } else {
+                                        context.getString(R.string.player_playlist_removed_many)
+                                    },
                                 )
                                 clearTrackSelection()
                             },
@@ -1736,8 +1781,8 @@ fun PlayerScreen(
                             }
                         } else {
                             Text(
-                                text = "A continuación (${displayQueue.size})" +
-                                    if (shuffleOn) " • Aleatorio" else "",
+                                text = stringResource(R.string.player_queue_up_next, displayQueue.size) +
+                                    if (shuffleOn) " • ${stringResource(R.string.player_shuffle_suffix)}" else "",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             )
@@ -1804,7 +1849,7 @@ fun PlayerScreen(
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.PlayArrow,
-                                                    contentDescription = "Reproducir ya",
+                                                    contentDescription = stringResource(R.string.player_play_now_cd),
                                                     tint = MaterialTheme.colorScheme.primary,
                                                     modifier = Modifier.size(20.dp),
                                                 )
@@ -1819,7 +1864,7 @@ fun PlayerScreen(
                                                 ) {
                                                     Icon(
                                                         imageVector = Icons.Filled.Close,
-                                                        contentDescription = "Quitar de cola",
+                                                        contentDescription = stringResource(R.string.player_remove_from_queue_cd),
                                                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                                                         modifier = Modifier.size(18.dp),
                                                     )
@@ -1856,14 +1901,14 @@ fun PlayerScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(
-                            text = "Añadir a playlist",
+                            text = stringResource(R.string.player_add_to_playlist_title),
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
 
                         if (playlists.isNotEmpty()) {
                             Text(
-                                text = "Playlist objetivo",
+                                text = stringResource(R.string.player_playlist_target),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                             )
@@ -1894,13 +1939,17 @@ fun PlayerScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Text(
-                                                text = "${p.name} (Canciones: ${p.songIds.size})",
+                                                text = stringResource(
+                                                    R.string.player_playlist_song_count,
+                                                    p.name,
+                                                    p.songIds.size,
+                                                ),
                                                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                                                 color = MaterialTheme.colorScheme.onSurface,
                                             )
                                             if (selected) {
                                                 Text(
-                                                    text = "Seleccionada",
+                                                    text = stringResource(R.string.player_playlist_selected),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.primary,
                                                 )
@@ -1915,12 +1964,12 @@ fun PlayerScreen(
                             value = addToPlaylistNewName,
                             onValueChange = { addToPlaylistNewName = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Nueva playlist (opcional)") },
-                            placeholder = { Text("Ej: Mis favoritos Chill") },
+                            label = { Text(stringResource(R.string.player_new_playlist_optional)) },
+                            placeholder = { Text(stringResource(R.string.player_new_playlist_placeholder)) },
                         )
 
                         Text(
-                            text = "Si no pones nombre nuevo, se añade a la playlist seleccionada.",
+                            text = stringResource(R.string.player_new_playlist_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         )
@@ -1951,12 +2000,12 @@ fun PlayerScreen(
                                     when (res) {
                                         is PlayerViewModel.CreatePlaylistResult.Created -> {
                                             selectedPlaylistId = res.id
-                                            showSnack("Playlist \"$newName\" creada.")
+                                            showSnack(context.getString(R.string.player_playlist_created, newName))
                                             res.id
                                         }
 
                                         is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
-                                            showSnack("Ya existe una playlist con ese nombre.")
+                                            showSnack(context.getString(R.string.player_playlist_name_exists))
                                             selectedPlaylistId = res.id
                                             res.id
                                         }
@@ -1965,10 +2014,12 @@ fun PlayerScreen(
                                     val existingId = chosenId
                                     if (existingId == null) {
                                         // UX: si no hay playlist todavía, crear una por defecto y continuar.
-                                        when (val created = viewModel.createPlaylist("Mi playlist")) {
+                                        when (val created = viewModel.createPlaylist(
+                                            context.getString(R.string.player_default_playlist_name),
+                                        )) {
                                             is PlayerViewModel.CreatePlaylistResult.Created -> {
                                                 selectedPlaylistId = created.id
-                                                showSnack("Playlist \"Mi playlist\" creada.")
+                                                showSnack(context.getString(R.string.player_playlist_default_created))
                                                 created.id
                                             }
                                             is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
@@ -2012,14 +2063,17 @@ fun PlayerScreen(
                                     )
                                 } else if (anyAdded) {
                                     showSnack(
-                                        if (tracksToAdd.size == 1) "Canción añadida a la playlist."
-                                        else "Canciones añadidas a la playlist.",
+                                        if (tracksToAdd.size == 1) {
+                                            context.getString(R.string.player_track_added_playlist)
+                                        } else {
+                                            context.getString(R.string.player_tracks_added_playlist)
+                                        },
                                     )
                                     clearTrackSelection()
                                 }
                                 },
                             ) {
-                                Text("Añadir")
+                                Text(stringResource(R.string.player_add_button))
                             }
                         }
                     }
@@ -2081,10 +2135,10 @@ fun PlayerScreen(
                 val count = d.trackIds.distinct().size
                 AlertDialog(
                     onDismissRequest = { duplicateDialog = null },
-                    title = { Text("Duplicados detectados") },
+                    title = { Text(stringResource(R.string.player_duplicates_title)) },
                     text = {
                         Text(
-                            "Hay $count canción(es) ya existentes en la playlist. ¿Quieres duplicarlas todas?"
+                            stringResource(R.string.player_duplicates_message, count)
                         )
                     },
                     confirmButton = {
@@ -2098,23 +2152,23 @@ fun PlayerScreen(
                                         allowDuplicate = true,
                                     )
                                 }
-                                showSnack("Duplicados añadidos a la playlist.")
+                                showSnack(context.getString(R.string.player_duplicates_added))
                                 duplicateDialog = null
                                 clearTrackSelection()
                             },
                         ) {
-                            Text("Duplicar")
+                            Text(stringResource(R.string.player_duplicate_action))
                         }
                     },
                     dismissButton = {
                         TextButton(
                             onClick = {
                                 duplicateDialog = null
-                                showSnack("Se han omitido las canciones duplicadas.")
+                                showSnack(context.getString(R.string.player_skip_duplicates_snack))
                                 clearTrackSelection()
                             },
                         ) {
-                            Text("No duplicar")
+                            Text(stringResource(R.string.player_skip_duplicates))
                         }
                     },
                 )
@@ -2126,19 +2180,19 @@ fun PlayerScreen(
                 val name = playlists.firstOrNull { it.id == id }?.name ?: "Playlist"
                 AlertDialog(
                     onDismissRequest = { playlistDeleteDialogId = null },
-                    title = { Text("Eliminar playlist") },
-                    text = { Text("¿Seguro que quieres eliminar \"${name}\"?") },
+                    title = { Text(stringResource(R.string.player_delete_playlist_title)) },
+                    text = { Text(stringResource(R.string.player_delete_playlist_message, name)) },
                     confirmButton = {
                         TextButton(
                             onClick = {
                                 val ok = viewModel.deletePlaylist(id)
                                 playlistDeleteDialogId = null
                                 if (!ok) {
-                                    showSnack("No se pudo eliminar la playlist.")
+                                    showSnack(context.getString(R.string.player_delete_playlist_failed))
                                 }
                             },
                         ) {
-                            Text("Eliminar")
+                            Text(stringResource(R.string.common_delete))
                         }
                     },
                     dismissButton = {
@@ -2155,13 +2209,13 @@ fun PlayerScreen(
                 val currentName = playlists.firstOrNull { it.id == id }?.name ?: ""
                 AlertDialog(
                     onDismissRequest = { playlistRenameDialogId = null },
-                    title = { Text("Editar nombre") },
+                    title = { Text(stringResource(R.string.player_edit_playlist_title)) },
                     text = {
                         OutlinedTextField(
                             value = playlistRenameNewName,
                             onValueChange = { playlistRenameNewName = it },
                             modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Nombre de la playlist") },
+                            label = { Text(stringResource(R.string.player_edit_playlist_name)) },
                         )
                     },
                     confirmButton = {
@@ -2169,7 +2223,7 @@ fun PlayerScreen(
                             onClick = {
                                 val newName = playlistRenameNewName.trim()
                                 if (newName.isBlank()) {
-                                    showSnack("Introduce un nombre válido.")
+                                    showSnack(context.getString(R.string.player_edit_playlist_invalid_name))
                                     return@TextButton
                                 }
 
@@ -2184,7 +2238,7 @@ fun PlayerScreen(
                                 }
                             },
                         ) {
-                            Text("Guardar")
+                            Text(stringResource(R.string.player_save_button))
                         }
                     },
                     dismissButton = {
@@ -2522,11 +2576,11 @@ private fun TrackOverflowMenu(
             onDismissRequest = { expanded = false },
         ) {
             DropdownMenuItem(
-                text = { Text("Poner en cola") },
+                text = { Text(stringResource(R.string.player_action_queue)) },
                 onClick = { expanded = false; onQueue() },
             )
             DropdownMenuItem(
-                text = { Text("Reproducir a continuación") },
+                text = { Text(stringResource(R.string.player_action_play_next)) },
                 onClick = { expanded = false; onPlayNext() },
             )
             DropdownMenuItem(
@@ -2536,15 +2590,15 @@ private fun TrackOverflowMenu(
                 onClick = { expanded = false; onToggleFavorite() },
             )
             DropdownMenuItem(
-                text = { Text("Añadir a playlist") },
+                text = { Text(stringResource(R.string.player_action_playlist)) },
                 onClick = { expanded = false; onAddToPlaylist() },
             )
             DropdownMenuItem(
-                text = { Text("Ocultar") },
+                text = { Text(stringResource(R.string.player_action_hide)) },
                 onClick = { expanded = false; onHide() },
             )
             DropdownMenuItem(
-                text = { Text("Eliminar del teléfono") },
+                text = { Text(stringResource(R.string.player_action_delete)) },
                 onClick = {
                     expanded = false
                     onDeleteFromDevice()
@@ -2553,7 +2607,7 @@ private fun TrackOverflowMenu(
 
             if (showRemoveFromPlaylist) {
                 DropdownMenuItem(
-                    text = { Text("Quitar de la playlist") },
+                    text = { Text(stringResource(R.string.player_action_remove_playlist)) },
                     onClick = {
                         expanded = false
                         onRemoveFromPlaylist()
@@ -2797,7 +2851,7 @@ private fun PlaylistPickerBar(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             TextButton(onClick = onCreateEmpty) {
-                Text("Crear")
+                Text(stringResource(R.string.player_create_playlist_button))
             }
         }
 
@@ -2881,14 +2935,14 @@ private fun PlaylistPickerBar(
                             onDismissRequest = { menuExpanded = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Editar nombre") },
+                                text = { Text(stringResource(R.string.player_edit_playlist_menu)) },
                                 onClick = {
                                     menuExpanded = false
                                     onRequestRename(p.id)
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("Eliminar playlist") },
+                                text = { Text(stringResource(R.string.player_delete_playlist_menu)) },
                                 onClick = {
                                     menuExpanded = false
                                     onRequestDelete(p.id)
@@ -3105,7 +3159,7 @@ private fun MiniPlayerBar(
                     }
                     Spacer(modifier = Modifier.size(8.dp))
                     Text(
-                        text = "${(track?.title ?: "Sin canción").toTitleCaseSimple()} · ${(track?.artist ?: "").toTitleCaseSimple()}",
+                        text = "${(track?.title ?: stringResource(R.string.player_no_song)).toTitleCaseSimple()} · ${(track?.artist ?: "").toTitleCaseSimple()}",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
@@ -3152,7 +3206,7 @@ private fun MiniPlayerBar(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.SkipPrevious,
-                        contentDescription = "Anterior",
+                        contentDescription = stringResource(R.string.player_prev_cd),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
@@ -3174,7 +3228,7 @@ private fun MiniPlayerBar(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.SkipNext,
-                        contentDescription = "Siguiente",
+                        contentDescription = stringResource(R.string.player_next_cd),
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
@@ -3448,7 +3502,7 @@ private fun ExpandedPlayerOverlay(
                             IconButton(onClick = onPrev) {
                                 Icon(
                                     imageVector = Icons.Filled.SkipPrevious,
-                                    contentDescription = "Anterior",
+                                    contentDescription = stringResource(R.string.player_prev_cd),
                                     tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
@@ -3465,7 +3519,7 @@ private fun ExpandedPlayerOverlay(
                             IconButton(onClick = onNext) {
                                 Icon(
                                     imageVector = Icons.Filled.SkipNext,
-                                    contentDescription = "Siguiente",
+                                    contentDescription = stringResource(R.string.player_next_cd),
                                     tint = MaterialTheme.colorScheme.onSurface,
                                 )
                             }

@@ -1,5 +1,9 @@
 <resources>
     <string name="app_name">BeatMyBeat</string>
+    <string name="nav_download">Preuzmi</string>
+    <string name="nav_player">Reproduktor</string>
+    <string name="nav_profile">Profil</string>
+    <string name="profile_folder_open_failed">Nije moguće otvoriti mapu na ovom uređaju.</string>
     <string name="common_cancel">Odustani</string>
     <string name="common_apply">Primijeni</string>
     <string name="common_delete">Obriši</string>
@@ -9,6 +13,7 @@
     <string name="player_header_playlist_fallback">PLAYLIST</string>
     <string name="player_downloader_button">Downloader</string>
     <string name="player_search_placeholder">Pretraga</string>
+    <string name="player_search_clear_cd">Očisti pretragu</string>
     <string name="player_section_songs">Pjesme</string>
     <string name="player_section_favorites">Favoriti</string>
     <string name="player_section_playlist">Playlist</string>

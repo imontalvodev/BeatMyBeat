@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.annotation.StringRes
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.imontalvodev.beatmybeat.R
@@ -286,11 +287,12 @@ fun AnalyzeScreen(
                                     )
                                 }
                                             } else {
-                                                suggestionError = "No se encontraron resultados para esa búsqueda."
+                                                suggestionError =
+                                                    context.getString(R.string.analyze_no_results)
                                             }
                                         } catch (e: Exception) {
                                             suggestionError =
-                                                "Error de conexión. Comprueba tu internet e inténtalo de nuevo."
+                                                context.getString(R.string.analyze_connection_error)
                                         } finally {
                                             searchingSuggestions = false
                                         }
@@ -299,11 +301,12 @@ fun AnalyzeScreen(
                             } else {
                                 val normalizedUrl = playlistUrl.trim()
                                 if (normalizedUrl.isBlank()) {
-                                    playlistInputError = "Introduce una URL de YouTube o YouTube Music."
+                                    playlistInputError =
+                                        context.getString(R.string.analyze_playlist_url_required)
                                 } else {
                                     when (val parsed = parseYouTubeInput(normalizedUrl)) {
                                         is ParsedYouTubeInput.Invalid -> {
-                                            playlistInputError = parsed.reason
+                                            playlistInputError = context.getString(parsed.reasonRes)
                                         }
                                         is ParsedYouTubeInput.PlaylistOrAlbum -> {
                                             scope.launch {
@@ -313,7 +316,7 @@ fun AnalyzeScreen(
                                                     }
                                                     if (videoIds.isEmpty()) {
                                                         playlistInputError =
-                                                            "No se pudieron resolver canciones de la playlist/álbum."
+                                                            context.getString(R.string.analyze_playlist_resolve_empty)
                                                         return@launch
                                                     }
                                                     SongDownloadService.enqueuePlaylistDownload(
@@ -324,7 +327,7 @@ fun AnalyzeScreen(
                                                     showSnack(context.getString(R.string.download_started_background))
                                                 } catch (_: Exception) {
                                                     playlistInputError =
-                                                        "No se pudo resolver la playlist directamente desde YouTube. Inténtalo más tarde."
+                                                        context.getString(R.string.analyze_playlist_resolve_failed)
                                                 }
                                             }
                                         }
@@ -387,7 +390,7 @@ fun AnalyzeScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Text(
-                                        text = "Resultados",
+                                        text = stringResource(R.string.analyze_results_title),
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
@@ -422,12 +425,16 @@ fun AnalyzeScreen(
                                                         verticalArrangement = Arrangement.spacedBy(2.dp),
                                                     ) {
                                                         Text(
-                                                            text = suggestion.title.ifBlank { "Sin título" },
+                                                            text = suggestion.title.ifBlank {
+                                                                stringResource(R.string.analyze_no_title)
+                                                            },
                                                             style = MaterialTheme.typography.bodyMedium,
                                                             color = MaterialTheme.colorScheme.onSurface,
                                                         )
                                                         Text(
-                                                            text = suggestion.artist.ifBlank { "Artista desconocido" },
+                                                            text = suggestion.artist.ifBlank {
+                                                                stringResource(R.string.analyze_unknown_artist)
+                                                            },
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                                         )
@@ -451,10 +458,16 @@ fun AnalyzeScreen(
             onDismissRequest = {
                 if (!downloadingSuggestion) selectedSuggestion = null
             },
-            title = { Text("Descargar canción") },
+            title = { Text(stringResource(R.string.analyze_download_dialog_title)) },
             text = {
                 Column {
-                    Text("¿Quieres descargar \"${suggestion.title}\" de ${suggestion.artist}?")
+                    Text(
+                        stringResource(
+                            R.string.analyze_download_dialog_message,
+                            suggestion.title,
+                            suggestion.artist,
+                        ),
+                    )
                     activeDownload?.let { progress ->
                         Spacer(modifier = Modifier.height(12.dp))
                         ActiveDownloadProgressSection(
@@ -494,14 +507,23 @@ fun AnalyzeScreen(
                                 songDownloadInfo = context.getString(R.string.download_started_background)
                             } catch (e: Exception) {
                                 android.util.Log.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
-                                downloadError = "Error: ${e.javaClass.simpleName}"
+                                downloadError = context.getString(
+                                    R.string.analyze_download_error,
+                                    e.javaClass.simpleName,
+                                )
                             } finally {
                                 downloadingSuggestion = false
                             }
                         }
                     },
                 ) {
-                    Text(if (downloadingSuggestion) "Descargando..." else "Sí, descargar")
+                    Text(
+                        if (downloadingSuggestion) {
+                            stringResource(R.string.analyze_downloading_button)
+                        } else {
+                            stringResource(R.string.analyze_download_confirm)
+                        },
+                    )
                 }
             },
             dismissButton = {
@@ -509,7 +531,7 @@ fun AnalyzeScreen(
                     enabled = !downloadingSuggestion,
                     onClick = { selectedSuggestion = null },
                 ) {
-                    Text("Cancelar")
+                    Text(stringResource(R.string.common_cancel))
                 }
             },
         )
@@ -519,21 +541,17 @@ fun AnalyzeScreen(
 private sealed interface ParsedYouTubeInput {
     data class PlaylistOrAlbum(val url: String, val listId: String) : ParsedYouTubeInput
     data class SingleSong(val videoId: String) : ParsedYouTubeInput
-    data class Invalid(val reason: String) : ParsedYouTubeInput
+    data class Invalid(@StringRes val reasonRes: Int) : ParsedYouTubeInput
 }
 
 private fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
     val url = raw.toHttpUrlOrNull()
-        ?: return ParsedYouTubeInput.Invalid(
-            "Formato inválido. Usa una URL completa de YouTube o YouTube Music.",
-        )
+        ?: return ParsedYouTubeInput.Invalid(R.string.analyze_url_invalid_format)
 
     val host = url.host.lowercase().removePrefix("www.")
     val allowedHosts = setOf("youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be")
     if (host !in allowedHosts) {
-        return ParsedYouTubeInput.Invalid(
-            "Solo se admiten enlaces de YouTube o YouTube Music.",
-        )
+        return ParsedYouTubeInput.Invalid(R.string.analyze_url_host_not_allowed)
     }
 
     val videoId = extractYouTubeVideoId(url)
@@ -547,9 +565,7 @@ private fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
         return ParsedYouTubeInput.PlaylistOrAlbum(normalized, listId)
     }
 
-    return ParsedYouTubeInput.Invalid(
-        "URL no válida. Introduce un enlace de playlist/álbum o de canción de YouTube/YT Music.",
-    )
+    return ParsedYouTubeInput.Invalid(R.string.analyze_url_invalid_generic)
 }
 
 private fun buildCanonicalPlaylistUrl(url: HttpUrl, listId: String): String {
