@@ -64,6 +64,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.Shuffle
@@ -354,6 +355,7 @@ fun PlayerScreen(
     }
 
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var playlistDetailOpen by remember { mutableStateOf(false) }
     var isSelectionModeActive by remember { mutableStateOf(false) }
     /** URI (única por fichero); evita seleccionar dos filas con el mismo MediaStore id. */
     var selectedTrackUris by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -403,6 +405,16 @@ fun PlayerScreen(
 
     LaunchedEffect(selectedSection, query, selectedPlaylistId) {
         clearTrackSelection()
+    }
+
+    LaunchedEffect(selectedSection) {
+        if (selectedSection != PlayerSection.Playlist) {
+            playlistDetailOpen = false
+        }
+    }
+
+    BackHandler(enabled = playlistDetailOpen && !isExpanded && !isSelectionModeActive) {
+        playlistDetailOpen = false
     }
 
     BackHandler(enabled = isSelectionModeActive && !isExpanded) {
@@ -1393,37 +1405,58 @@ fun PlayerScreen(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 if (selectedSection == PlayerSection.Playlist) {
-                    PlaylistPickerBar(
-                        playlists = playlists,
-                        selectedPlaylistId = selectedPlaylistId,
-                        onSelect = { id ->
-                            selectedPlaylistId = id
-                        },
-                        onCreateEmpty = {
-                            val res = viewModel.createPlaylist(
-                                resources.getString(R.string.player_default_playlist_name),
-                            )
-                            selectedPlaylistId = when (res) {
-                                is PlayerViewModel.CreatePlaylistResult.Created -> res.id
-                                is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
-                            }
-                        },
-                        onRequestDelete = { id ->
-                            playlistDeleteDialogId = id
-                        },
-                        onRequestRename = { id ->
-                            playlistRenameDialogId = id
-                            val currentName = playlists.firstOrNull { it.id == id }?.name ?: ""
-                            playlistRenameNewName = currentName
-                        },
-                    )
+                    if (playlistDetailOpen && selectedPlaylistId != null) {
+                        val openPlaylist = playlists.firstOrNull { it.id == selectedPlaylistId }
+                        PlaylistDetailHeader(
+                            playlistName = openPlaylist?.name ?: "",
+                            trackCount = openPlaylist?.songIds?.size ?: 0,
+                            onBack = { playlistDetailOpen = false },
+                            onRequestRename = { id ->
+                                playlistRenameDialogId = id
+                                val currentName = playlists.firstOrNull { it.id == id }?.name ?: ""
+                                playlistRenameNewName = currentName
+                            },
+                            onRequestDelete = { id ->
+                                playlistDeleteDialogId = id
+                            },
+                            playlistId = selectedPlaylistId!!,
+                        )
+                    } else {
+                        PlaylistPickerBar(
+                            playlists = playlists,
+                            selectedPlaylistId = selectedPlaylistId,
+                            onSelect = { id ->
+                                selectedPlaylistId = id
+                                playlistDetailOpen = true
+                            },
+                            onCreateEmpty = {
+                                val res = viewModel.createPlaylist(
+                                    resources.getString(R.string.player_default_playlist_name),
+                                )
+                                selectedPlaylistId = when (res) {
+                                    is PlayerViewModel.CreatePlaylistResult.Created -> res.id
+                                    is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
+                                }
+                            },
+                            onRequestDelete = { id ->
+                                playlistDeleteDialogId = id
+                            },
+                            onRequestRename = { id ->
+                                playlistRenameDialogId = id
+                                val currentName = playlists.firstOrNull { it.id == id }?.name ?: ""
+                                playlistRenameNewName = currentName
+                            },
+                        )
+                    }
                     Spacer(modifier = Modifier.height(6.dp))
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
+                val showTracksArea = selectedSection != PlayerSection.Playlist || playlistDetailOpen
+
                 val selectedTracksOrdered = visibleTracks.filter { selectedTrackUris.contains(it.uri) }
-                if (selectionMode) {
+                if (selectionMode && showTracksArea) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1457,21 +1490,23 @@ fun PlayerScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                PrimaryPillButton(
-                    text = stringResource(R.string.player_play_all_tracks),
-                    onClick = {
-                        if (visibleTracks.isEmpty()) return@PrimaryPillButton
-                        val startTrack = if (shuffleOn) {
-                            visibleTracks.shuffled(Random(System.currentTimeMillis())).first()
-                        } else {
-                            visibleTracks.first()
-                        }
-                        startPlaybackFromCollection(startTrack)
-                    },
-                )
+                if (showTracksArea) {
+                    PrimaryPillButton(
+                        text = stringResource(R.string.player_play_all_tracks),
+                        onClick = {
+                            if (visibleTracks.isEmpty()) return@PrimaryPillButton
+                            val startTrack = if (shuffleOn) {
+                                visibleTracks.shuffled(Random(System.currentTimeMillis())).first()
+                            } else {
+                                visibleTracks.first()
+                            }
+                            startPlaybackFromCollection(startTrack)
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
 
-                Spacer(modifier = Modifier.height(6.dp))
-
+                if (showTracksArea) {
                 AnimatedContent(
                     targetState = selectedSection,
                     transitionSpec = {
@@ -1659,6 +1694,7 @@ fun PlayerScreen(
                             },
                         )
                     }
+                }
                 }
                 }
             }
@@ -2265,6 +2301,10 @@ fun PlayerScreen(
                             onClick = {
                                 val ok = viewModel.deletePlaylist(id)
                                 playlistDeleteDialogId = null
+                                if (ok && id == selectedPlaylistId) {
+                                    playlistDetailOpen = false
+                                    selectedPlaylistId = playlists.firstOrNull { it.id != id }?.id
+                                }
                                 if (!ok) {
                                     showSnack(resources.getString(R.string.player_delete_playlist_failed))
                                 }
@@ -2885,6 +2925,89 @@ private fun LibraryFiltersMenu(
 }
 
 @Composable
+private fun PlaylistDetailHeader(
+    playlistName: String,
+    trackCount: Int,
+    playlistId: Long,
+    onBack: () -> Unit,
+    onRequestRename: (Long) -> Unit,
+    onRequestDelete: (Long) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.common_cancel),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = playlistName,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "$trackCount canciones",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+            }
+            var menuExpanded by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.player_edit_playlist_menu)) },
+                        onClick = {
+                            menuExpanded = false
+                            onRequestRename(playlistId)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.player_delete_playlist_menu)) },
+                        onClick = {
+                            menuExpanded = false
+                            onRequestDelete(playlistId)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PlaylistPickerBar(
     playlists: List<PlayerViewModel.PlaylistEntity>,
     selectedPlaylistId: Long?,
@@ -2917,7 +3040,11 @@ private fun PlaylistPickerBar(
         return
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
