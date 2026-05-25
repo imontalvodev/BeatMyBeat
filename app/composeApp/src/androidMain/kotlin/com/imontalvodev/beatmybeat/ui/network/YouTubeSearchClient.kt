@@ -61,9 +61,17 @@ object YouTubeSearchClient {
         return parseResults(responseBody, limit)
     }
 
-    fun fetchPlaylistVideoIds(listId: String, limit: Int = 200): List<String> {
+    data class PlaylistInfo(
+        val title: String,
+        val videoIds: List<String>,
+    )
+
+    fun fetchPlaylistVideoIds(listId: String, limit: Int = 200): List<String> =
+        fetchPlaylistInfo(listId, limit).videoIds
+
+    fun fetchPlaylistInfo(listId: String, limit: Int = 200): PlaylistInfo {
         val safeListId = listId.trim()
-        if (safeListId.isBlank()) return emptyList()
+        if (safeListId.isBlank()) return PlaylistInfo("", emptyList())
 
         val playlistUrl = "https://www.youtube.com/playlist?list=$safeListId"
         val request = Request.Builder()
@@ -77,17 +85,25 @@ object YouTubeSearchClient {
             .build()
 
         val html = client.newCall(request).execute().use { res ->
-            if (!res.isSuccessful) return emptyList()
+            if (!res.isSuccessful) return PlaylistInfo("", emptyList())
             res.body?.string().orEmpty()
         }
-        if (html.isBlank()) return emptyList()
+        if (html.isBlank()) return PlaylistInfo("", emptyList())
 
-        val regex = Regex("\"videoId\":\"([A-Za-z0-9_-]{11})\"")
-        return regex.findAll(html)
+        val titleRegex = Regex(""""title":\s*\{"simpleText":"([^"]+)"\}""")
+        val ogTitleRegex = Regex("""<meta\s+property="og:title"\s+content="([^"]+)"""")
+        val title = titleRegex.find(html)?.groupValues?.get(1)
+            ?: ogTitleRegex.find(html)?.groupValues?.get(1)
+            ?: ""
+
+        val videoRegex = Regex("\"videoId\":\"([A-Za-z0-9_-]{11})\"")
+        val ids = videoRegex.findAll(html)
             .map { it.groupValues[1] }
             .distinct()
             .take(limit)
             .toList()
+
+        return PlaylistInfo(title, ids)
     }
 
     private fun parseResults(json: String, limit: Int): List<YouTubeSearchResult> {

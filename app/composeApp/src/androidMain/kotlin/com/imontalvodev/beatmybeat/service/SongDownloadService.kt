@@ -104,6 +104,7 @@ class SongDownloadService : Service() {
             return
         }
         val format = AudioDownloader.DownloadFormat.fromId(intent.getStringExtra(EXTRA_FORMAT))
+        val playlistName = intent.getStringExtra(EXTRA_PLAYLIST_NAME).orEmpty().trim()
         val total = videoIds.size
 
         startDownloadForeground(getString(R.string.download_progress_playlist_headline))
@@ -111,6 +112,7 @@ class SongDownloadService : Service() {
         launchDownload(startId) {
             var downloaded = 0
             var failed = 0
+            val downloadedFileNames = mutableListOf<String>()
             DownloadProgressBus.setBatch(
                 done = 0,
                 total = total,
@@ -156,7 +158,12 @@ class SongDownloadService : Service() {
                         updatePlaylistNotification(downloaded + failed, total, metadata.title)
                     },
                 )
-                if (single.success) downloaded++ else failed++
+                if (single.success) {
+                    downloaded++
+                    single.fileName?.let { downloadedFileNames.add(it) }
+                } else {
+                    failed++
+                }
                 DownloadProgressBus.setBatch(
                     done = downloaded,
                     total = total,
@@ -167,6 +174,10 @@ class SongDownloadService : Service() {
                 )
             }
 
+            if (playlistName.isNotBlank() && downloadedFileNames.isNotEmpty()) {
+                createAutoPlaylist(playlistName, downloadedFileNames)
+            }
+
             val toastMessage = when {
                 downloaded <= 0 -> getString(R.string.download_playlist_none)
                 failed > 0 -> getString(R.string.download_playlist_partial, downloaded, total, failed)
@@ -174,6 +185,68 @@ class SongDownloadService : Service() {
             }
             finishDownload(startId, toastMessage)
         }
+    }
+
+    private fun createAutoPlaylist(name: String, fileNames: List<String>) {
+        val resolver = contentResolver
+        val collection = android.provider.MediaStore.Audio.Media.getContentUri(
+            android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY,
+        )
+        val trackIds = mutableListOf<Long>()
+        for (fileName in fileNames) {
+            val cursor = resolver.query(
+                collection,
+                arrayOf(android.provider.MediaStore.Audio.Media._ID),
+                "${android.provider.MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+                arrayOf(fileName),
+                null,
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    trackIds.add(it.getLong(0))
+                }
+            }
+        }
+        if (trackIds.isEmpty()) return
+
+        val prefs = getSharedPreferences("beatmybeat_player_prefs", Context.MODE_PRIVATE)
+        val raw = prefs.getString("playlists_json", null).orEmpty()
+        val root = if (raw.isNotBlank()) {
+            runCatching { org.json.JSONObject(raw) }.getOrElse { org.json.JSONObject() }
+        } else {
+            org.json.JSONObject()
+        }
+        val arr = root.optJSONArray("playlists") ?: org.json.JSONArray()
+
+        val normalized = name.lowercase()
+        var existingIdx = -1
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            if (obj.optString("name", "").lowercase() == normalized) {
+                existingIdx = i
+                break
+            }
+        }
+
+        if (existingIdx >= 0) {
+            val existing = arr.getJSONObject(existingIdx)
+            val songIdsArr = existing.optJSONArray("songIds") ?: org.json.JSONArray()
+            val existingIds = mutableSetOf<Long>()
+            for (j in 0 until songIdsArr.length()) existingIds.add(songIdsArr.optLong(j))
+            for (id in trackIds) {
+                if (id !in existingIds) songIdsArr.put(id)
+            }
+            existing.put("songIds", songIdsArr)
+        } else {
+            val newPlaylist = org.json.JSONObject().apply {
+                put("id", System.currentTimeMillis())
+                put("name", name)
+                put("songIds", org.json.JSONArray().apply { trackIds.forEach { put(it) } })
+            }
+            arr.put(newPlaylist)
+        }
+        root.put("playlists", arr)
+        prefs.edit().putString("playlists_json", root.toString()).apply()
     }
 
     private fun launchDownload(startId: Int, block: suspend () -> Unit) {
@@ -289,6 +362,7 @@ class SongDownloadService : Service() {
         private const val EXTRA_THUMBNAIL_URL = "extra_thumbnail_url"
         private const val EXTRA_FORMAT = "extra_format"
         private const val EXTRA_VIDEO_IDS_JSON = "extra_video_ids_json"
+        private const val EXTRA_PLAYLIST_NAME = "extra_playlist_name"
 
         fun enqueueDownload(
             context: Context,
@@ -315,6 +389,7 @@ class SongDownloadService : Service() {
             context: Context,
             videoIds: List<String>,
             format: AudioDownloader.DownloadFormat = AudioDownloader.DownloadFormat.MP3,
+            playlistName: String = "",
         ) {
             if (videoIds.isEmpty()) return
             val arr = JSONArray()
@@ -324,6 +399,7 @@ class SongDownloadService : Service() {
                 action = ACTION_DOWNLOAD_PLAYLIST
                 putExtra(EXTRA_VIDEO_IDS_JSON, arr.toString())
                 putExtra(EXTRA_FORMAT, format.id)
+                if (playlistName.isNotBlank()) putExtra(EXTRA_PLAYLIST_NAME, playlistName)
             }
             runCatching { ContextCompat.startForegroundService(context, intent) }
         }

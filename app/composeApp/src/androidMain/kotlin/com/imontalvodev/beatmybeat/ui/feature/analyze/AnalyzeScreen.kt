@@ -52,10 +52,10 @@ import androidx.annotation.StringRes
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.imontalvodev.beatmybeat.R
-import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.SongSuggestion
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchClient
+import com.imontalvodev.beatmybeat.ui.network.YouTubeSongMetadata
 import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
 import com.imontalvodev.beatmybeat.service.SongDownloadService
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -67,6 +67,8 @@ import com.imontalvodev.beatmybeat.ui.theme.ActiveDownloadProgressSection
 import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import com.imontalvodev.beatmybeat.ui.network.fetchYouTubeSongMetadata
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -84,8 +86,8 @@ fun AnalyzeScreen(
         )
     }
 
-    var mode by remember { mutableStateOf("song") }
-    var playlistUrl by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf("url") }
+    var urlInput by remember { mutableStateOf("") }
     var songTitle by remember { mutableStateOf("") }
     var songArtist by remember { mutableStateOf("") }
     var songAlbum by remember { mutableStateOf("") }
@@ -96,8 +98,14 @@ fun AnalyzeScreen(
     var downloadingSuggestion by remember { mutableStateOf(false) }
     var downloadError by remember { mutableStateOf<String?>(null) }
     var songDownloadInfo by remember { mutableStateOf<String?>(null) }
-    var playlistInputError by remember { mutableStateOf<String?>(null) }
+    var urlInputError by remember { mutableStateOf<String?>(null) }
     var selectedFormat by remember { mutableStateOf(AudioDownloader.DownloadFormat.MP3) }
+
+    // URL preview state
+    var urlResolving by remember { mutableStateOf(false) }
+    var urlPreviewTitle by remember { mutableStateOf("") }
+    var urlPreviewTracks by remember { mutableStateOf<List<PreviewTrack>>(emptyList()) }
+    var urlPreviewError by remember { mutableStateOf<String?>(null) }
 
     val activeDownload by DownloadProgressBus.state.collectAsState()
     val downloadInProgress = activeDownload != null
@@ -130,14 +138,14 @@ fun AnalyzeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            val tabPlaylist = stringResource(R.string.analyze_tab_playlist)
+            val tabUrl = stringResource(R.string.analyze_tab_url)
             val tabSong = stringResource(R.string.analyze_tab_song)
-            val selectedTabIndex = if (mode == "playlist") 0 else 1
+            val selectedTabIndex = if (mode == "url") 0 else 1
             PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
                 Tab(
-                    selected = mode == "playlist",
-                    onClick = { mode = "playlist" },
-                    text = { Text(tabPlaylist) },
+                    selected = mode == "url",
+                    onClick = { mode = "url" },
+                    text = { Text(tabUrl) },
                 )
                 Tab(
                     selected = mode == "song",
@@ -169,20 +177,20 @@ fun AnalyzeScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    if (mode == "playlist") {
+                    if (mode == "url") {
                         OutlinedTextField(
-                            value = playlistUrl,
+                            value = urlInput,
                             onValueChange = {
-                                playlistUrl = it
-                                playlistInputError = null
+                                urlInput = it
+                                urlInputError = null
                             },
-                            label = { Text(stringResource(R.string.analyze_playlist_url_label)) },
-                            placeholder = { Text(stringResource(R.string.analyze_playlist_url_placeholder)) },
-                            isError = playlistInputError != null,
-                            supportingText = if (playlistInputError != null) {
+                            label = { Text(stringResource(R.string.analyze_url_label)) },
+                            placeholder = { Text(stringResource(R.string.analyze_url_placeholder)) },
+                            isError = urlInputError != null,
+                            supportingText = if (urlInputError != null) {
                                 {
                                     Text(
-                                        text = playlistInputError!!,
+                                        text = urlInputError!!,
                                         color = MaterialTheme.colorScheme.error,
                                     )
                                 }
@@ -253,16 +261,15 @@ fun AnalyzeScreen(
                         text = when {
                             downloadInProgress -> stringResource(R.string.analyze_cta_downloading)
                             mode == "song" -> stringResource(R.string.analyze_cta_song)
-                            else -> stringResource(R.string.analyze_cta_playlist)
+                            urlResolving -> stringResource(R.string.analyze_url_resolving)
+                            else -> stringResource(R.string.analyze_cta_url)
                         },
-                        enabled = !downloadInProgress,
+                        enabled = !downloadInProgress && !urlResolving,
                         onClick = {
                             focusManager.clearFocus()
                             keyboardController?.hide()
                             if (mode == "song") {
                                 if (songTitle.isBlank() && songArtist.isBlank() && songAlbum.isBlank()) {
-                                    // Mantener feedback por pantalla (y no notificación) en validaciones rápidas.
-                                    // En caso de descarga real, usamos notificaciones.
                                 } else {
                                     scope.launch {
                                         searchingSuggestions = true
@@ -276,18 +283,17 @@ fun AnalyzeScreen(
                                             val results = withContext(Dispatchers.IO) {
                                                 YouTubeSearchClient.search(searchQuery, limit = 10)
                                             }
-                            if (results.isNotEmpty()) {
-                                suggestions = results.map { r ->
-                                    // Muchos vídeos tienen "Artista - Título" en el título
-                                    val (parsedTitle, parsedArtist) = parseYouTubeTitle(r.title, r.channel)
-                                    SongSuggestion(
-                                        title = parsedTitle,
-                                        artist = parsedArtist,
-                                        videoId = r.videoId,
-                                        thumbnailUrl = r.thumbnailUrl,
-                                        durationText = r.durationText,
-                                    )
-                                }
+                                            if (results.isNotEmpty()) {
+                                                suggestions = results.map { r ->
+                                                    val (parsedTitle, parsedArtist) = parseYouTubeTitle(r.title, r.channel)
+                                                    SongSuggestion(
+                                                        title = parsedTitle,
+                                                        artist = parsedArtist,
+                                                        videoId = r.videoId,
+                                                        thumbnailUrl = r.thumbnailUrl,
+                                                        durationText = r.durationText,
+                                                    )
+                                                }
                                             } else {
                                                 suggestionError =
                                                     resources.getString(R.string.analyze_no_results)
@@ -301,53 +307,78 @@ fun AnalyzeScreen(
                                     }
                                 }
                             } else {
-                                val normalizedUrl = playlistUrl.trim()
+                                val normalizedUrl = urlInput.trim()
                                 if (normalizedUrl.isBlank()) {
-                                    playlistInputError =
+                                    urlInputError =
                                         resources.getString(R.string.analyze_playlist_url_required)
                                 } else {
                                     when (val parsed = parseYouTubeInput(normalizedUrl)) {
                                         is ParsedYouTubeInput.Invalid -> {
-                                            playlistInputError = resources.getString(parsed.reasonRes)
+                                            urlInputError = resources.getString(parsed.reasonRes)
                                         }
                                         is ParsedYouTubeInput.PlaylistOrAlbum -> {
                                             scope.launch {
+                                                urlResolving = true
+                                                urlPreviewError = null
+                                                urlPreviewTracks = emptyList()
+                                                urlPreviewTitle = ""
                                                 try {
-                                                    val videoIds = withContext(Dispatchers.IO) {
-                                                        YouTubeSearchClient.fetchPlaylistVideoIds(parsed.listId, limit = 200)
+                                                    val info = withContext(Dispatchers.IO) {
+                                                        YouTubeSearchClient.fetchPlaylistInfo(parsed.listId, limit = 200)
                                                     }
-                                                    if (videoIds.isEmpty()) {
-                                                        playlistInputError =
+                                                    if (info.videoIds.isEmpty()) {
+                                                        urlPreviewError =
                                                             resources.getString(R.string.analyze_playlist_resolve_empty)
-                                                        return@launch
+                                                    } else {
+                                                        urlPreviewTitle = info.title.ifBlank { "Playlist" }
+                                                        val tracks = withContext(Dispatchers.IO) {
+                                                            info.videoIds.map { id ->
+                                                                async {
+                                                                    val meta = fetchYouTubeSongMetadata(id)
+                                                                    PreviewTrack(
+                                                                        videoId = id,
+                                                                        title = meta.title,
+                                                                        artist = meta.artist,
+                                                                        thumbnailUrl = meta.thumbnailUrl,
+                                                                    )
+                                                                }
+                                                            }.awaitAll()
+                                                        }
+                                                        urlPreviewTracks = tracks
                                                     }
-                                                    SongDownloadService.enqueuePlaylistDownload(
-                                                        context = context,
-                                                        videoIds = videoIds,
-                                                        format = selectedFormat,
-                                                    )
-                                                    showSnack(resources.getString(R.string.download_started_background))
                                                 } catch (_: Exception) {
-                                                    playlistInputError =
+                                                    urlPreviewError =
                                                         resources.getString(R.string.analyze_playlist_resolve_failed)
+                                                } finally {
+                                                    urlResolving = false
                                                 }
                                             }
                                         }
                                         is ParsedYouTubeInput.SingleSong -> {
                                             scope.launch {
-                                                val metadata = withContext(Dispatchers.IO) {
-                                                    fetchYouTubeSongMetadata(parsed.videoId)
+                                                urlResolving = true
+                                                urlPreviewError = null
+                                                urlPreviewTracks = emptyList()
+                                                urlPreviewTitle = ""
+                                                try {
+                                                    val meta = withContext(Dispatchers.IO) {
+                                                        fetchYouTubeSongMetadata(parsed.videoId)
+                                                    }
+                                                    urlPreviewTitle = resources.getString(R.string.analyze_url_preview_single)
+                                                    urlPreviewTracks = listOf(
+                                                        PreviewTrack(
+                                                            videoId = parsed.videoId,
+                                                            title = meta.title,
+                                                            artist = meta.artist,
+                                                            thumbnailUrl = meta.thumbnailUrl,
+                                                        )
+                                                    )
+                                                } catch (_: Exception) {
+                                                    urlPreviewError =
+                                                        resources.getString(R.string.analyze_connection_error)
+                                                } finally {
+                                                    urlResolving = false
                                                 }
-                                                SongDownloadService.enqueueDownload(
-                                                    context = context,
-                                                    title = metadata.title,
-                                                    artist = metadata.artist,
-                                                    album = "",
-                                                    videoId = parsed.videoId,
-                                                    thumbnailUrl = metadata.thumbnailUrl,
-                                                    format = selectedFormat,
-                                                )
-                                                songDownloadInfo = resources.getString(R.string.download_started_background)
                                             }
                                         }
                                     }
@@ -363,13 +394,71 @@ fun AnalyzeScreen(
                             download = activeDownload!!,
                             onCancel = { SongDownloadService.cancelDownload(context) },
                         )
-                    } else if (mode == "song" && songDownloadInfo != null) {
+                    } else if (songDownloadInfo != null) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = songDownloadInfo!!,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                         )
+                    }
+
+                    if (mode == "url") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        when {
+                            urlResolving -> {
+                                SuggestionListSkeleton()
+                            }
+                            urlPreviewError != null -> {
+                                Text(
+                                    text = urlPreviewError!!,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            urlPreviewTracks.isNotEmpty() -> {
+                                UrlPreviewSection(
+                                    title = urlPreviewTitle,
+                                    tracks = urlPreviewTracks,
+                                    downloadEnabled = !downloadInProgress,
+                                    onDownloadAll = {
+                                        val videoIds = urlPreviewTracks.map { it.videoId }
+                                        if (urlPreviewTracks.size == 1) {
+                                            val t = urlPreviewTracks[0]
+                                            SongDownloadService.enqueueDownload(
+                                                context = context,
+                                                title = t.title,
+                                                artist = t.artist,
+                                                album = "",
+                                                videoId = t.videoId,
+                                                thumbnailUrl = t.thumbnailUrl,
+                                                format = selectedFormat,
+                                            )
+                                        } else {
+                                            SongDownloadService.enqueuePlaylistDownload(
+                                                context = context,
+                                                videoIds = videoIds,
+                                                format = selectedFormat,
+                                                playlistName = urlPreviewTitle,
+                                            )
+                                        }
+                                        showSnack(resources.getString(R.string.download_started_background))
+                                    },
+                                    onDownloadSingle = { track ->
+                                        SongDownloadService.enqueueDownload(
+                                            context = context,
+                                            title = track.title,
+                                            artist = track.artist,
+                                            album = "",
+                                            videoId = track.videoId,
+                                            thumbnailUrl = track.thumbnailUrl,
+                                            format = selectedFormat,
+                                        )
+                                        showSnack(resources.getString(R.string.download_started_background))
+                                    },
+                                )
+                            }
+                        }
                     }
 
                     if (mode == "song") {
@@ -540,6 +629,13 @@ fun AnalyzeScreen(
     }
 }
 
+private data class PreviewTrack(
+    val videoId: String,
+    val title: String,
+    val artist: String,
+    val thumbnailUrl: String,
+)
+
 private sealed interface ParsedYouTubeInput {
     data class PlaylistOrAlbum(val url: String, val listId: String) : ParsedYouTubeInput
     data class SingleSong(val videoId: String) : ParsedYouTubeInput
@@ -556,15 +652,15 @@ private fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
         return ParsedYouTubeInput.Invalid(R.string.analyze_url_host_not_allowed)
     }
 
-    val videoId = extractYouTubeVideoId(url)
-    if (videoId != null) {
-        return ParsedYouTubeInput.SingleSong(videoId)
-    }
-
     val listId = url.queryParameter("list")?.trim().orEmpty()
     if (listId.isNotBlank()) {
         val normalized = buildCanonicalPlaylistUrl(url, listId)
         return ParsedYouTubeInput.PlaylistOrAlbum(normalized, listId)
+    }
+
+    val videoId = extractYouTubeVideoId(url)
+    if (videoId != null) {
+        return ParsedYouTubeInput.SingleSong(videoId)
     }
 
     return ParsedYouTubeInput.Invalid(R.string.analyze_url_invalid_generic)
@@ -601,6 +697,90 @@ private fun extractYouTubeVideoId(url: HttpUrl): String? {
         return segments[1].takeIf { it.length == 11 }
     }
     return null
+}
+
+@Composable
+private fun UrlPreviewSection(
+    title: String,
+    tracks: List<PreviewTrack>,
+    downloadEnabled: Boolean,
+    onDownloadAll: () -> Unit,
+    onDownloadSingle: (PreviewTrack) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(R.string.analyze_url_preview_playlist, tracks.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                )
+            }
+        }
+
+        PrimaryButton(
+            text = if (tracks.size == 1) {
+                stringResource(R.string.analyze_url_download_single)
+            } else {
+                stringResource(R.string.analyze_url_download_all, tracks.size)
+            },
+            enabled = downloadEnabled,
+            onClick = onDownloadAll,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        tracks.forEach { track ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = downloadEnabled) { onDownloadSingle(track) },
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    SuggestionThumbnail(
+                        url = track.thumbnailUrl,
+                        contentDescription = track.title,
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = track.artist,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
