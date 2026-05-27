@@ -13,6 +13,9 @@ import java.util.concurrent.TimeUnit
 data class LyricsResponse(
     val success: Boolean,
     val lyrics: String,
+    /** LRC con marcas de tiempo; null si solo hay texto plano (p. ej. lyrics.ovh). */
+    val syncedLrc: String? = null,
+    val lrclibId: Long? = null,
     val source: String?,
     val sourceUrl: String?,
     val error: String?,
@@ -77,13 +80,21 @@ object MiddlewareApi {
             val json = runCatching { JSONObject(body) }.getOrNull()
             if (json == null) {
                 return LyricsResponse(
-                    success = false, lyrics = "", source = null, sourceUrl = null,
-                    error = "InvalidJson", message = "Invalid JSON from server",
+                    success = false,
+                    lyrics = "",
+                    syncedLrc = null,
+                    lrclibId = null,
+                    source = null,
+                    sourceUrl = null,
+                    error = "InvalidJson",
+                    message = "Invalid JSON from server",
                 )
             }
             return LyricsResponse(
                 success = json.optBoolean("success", false),
                 lyrics = json.optString("lyrics", ""),
+                syncedLrc = json.optString("syncedLrc").takeIf { it.isNotBlank() },
+                lrclibId = json.optLong("lrclibId", 0L).takeIf { it > 0L },
                 source = json.opt("source")?.toString(),
                 sourceUrl = json.opt("sourceUrl")?.toString(),
                 error = json.opt("error")?.toString(),
@@ -190,9 +201,13 @@ object MiddlewareApi {
      */
     fun fetchLyricsDirect(title: String, artist: String): LyricsResponse {
         val safeArtist = cleanArtistForLyrics(artist)
-            .ifBlank { return LyricsResponse(false, "", null, null, "MissingArtist", null) }
+            .ifBlank {
+                return LyricsResponse(false, "", null, null, null, null, "MissingArtist", null)
+            }
         val safeTitle = title.trim()
-            .ifBlank { return LyricsResponse(false, "", null, null, "MissingTitle", null) }
+            .ifBlank {
+                return LyricsResponse(false, "", null, null, null, null, "MissingTitle", null)
+            }
         val encArtist = Uri.encode(safeArtist)
         val encTitle = Uri.encode(safeTitle)
         val url = "https://api.lyrics.ovh/v1/$encArtist/$encTitle"
@@ -210,6 +225,8 @@ object MiddlewareApi {
                     return LyricsResponse(
                         success = false,
                         lyrics = "",
+                        syncedLrc = null,
+                        lrclibId = null,
                         source = null,
                         sourceUrl = null,
                         error = if (!res.isSuccessful) "Http${res.code}" else "InvalidJson",
@@ -218,15 +235,17 @@ object MiddlewareApi {
                 }
                 if (!res.isSuccessful) {
                     val err = json.optString("error").ifBlank { "HTTP ${res.code}" }
-                    return LyricsResponse(false, "", null, null, "HttpError", err)
+                    return LyricsResponse(false, "", null, null, null, null, "HttpError", err)
                 }
                 val lyrics = json.optString("lyrics", "")
                 if (lyrics.isNotBlank()) {
-                    LyricsResponse(true, lyrics, "lyrics.ovh", url, null, null)
+                    LyricsResponse(true, lyrics, null, null, "lyrics.ovh", url, null, null)
                 } else {
                     LyricsResponse(
                         success = false,
                         lyrics = "",
+                        syncedLrc = null,
+                        lrclibId = null,
                         source = null,
                         sourceUrl = null,
                         error = "NoLyrics",
@@ -235,7 +254,7 @@ object MiddlewareApi {
                 }
             }
         } catch (e: Exception) {
-            LyricsResponse(false, "", null, null, "NetworkError", e.message)
+            LyricsResponse(false, "", null, null, null, null, "NetworkError", e.message)
         }
     }
 

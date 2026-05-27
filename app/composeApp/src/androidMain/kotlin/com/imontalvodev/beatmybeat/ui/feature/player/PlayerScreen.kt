@@ -140,6 +140,7 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
+import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
@@ -592,12 +593,14 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
 
-        // Intentar caché local (offline-friendly)
-        val cached = withContext(Dispatchers.IO) {
-            LyricsCache.get(context, title, artist)
+        val cachedEntry = withContext(Dispatchers.IO) {
+            LyricsCache.getEntry(context, title, artist)
         }
-        if (!cached.isNullOrBlank()) {
-            lyricsState = LyricsUiState.Ready(cached)
+        if (cachedEntry != null && cachedEntry.hasAnyLyrics()) {
+            lyricsState = LyricsUiState.Ready(
+                lyrics = cachedEntry.displayPlain(),
+                syncedLrc = cachedEntry.syncedLrc,
+            )
             return@LaunchedEffect
         }
         lyricsState = LyricsUiState.Empty(
@@ -642,46 +645,45 @@ fun PlayerScreen(
 
         uiScope.launch {
             try {
-                // Leer metadatos reales desde .meta.json si existen
-                val (title, artist) = withContext(Dispatchers.IO) { resolveTrackMeta(track) }
+                val meta = withContext(Dispatchers.IO) { resolveTrackMetadata(track) }
 
-                if (isUnknown(title) || isUnknown(artist)) {
+                if (isUnknown(meta.title) || isUnknown(meta.artist)) {
                     lyricsState = LyricsUiState.Empty(
                         resources.getString(R.string.player_lyrics_unavailable),
                     )
                     return@launch
                 }
 
-                // 1) Caché local (offline-first)
-                val cached = withContext(Dispatchers.IO) { LyricsCache.get(context, title, artist) }
-                if (!cached.isNullOrBlank()) {
-                    lyricsState = LyricsUiState.Ready(cached)
-                    return@launch
-                }
-
-                // 2) Varios candidatos de título limpio
                 val uriTitle = titleFromUri(track.uri)
-                val attempts = listOf(title, sanitizeTitle(title), uriTitle, sanitizeTitle(uriTitle))
-                    .map { it.trim() }.filter { it.isNotBlank() }.distinct()
+                val titleCandidates = listOf(
+                    sanitizeTitle(meta.title),
+                    uriTitle,
+                    sanitizeTitle(uriTitle),
+                )
 
-                // 3) lyrics.ovh directo (sin servidor)
-                for (candidate in attempts) {
-                    val res = runCatching {
-                        withContext(Dispatchers.IO) {
-                            MiddlewareApi.fetchLyricsDirect(title = candidate, artist = artist)
-                        }
-                    }.getOrNull()
-
-                    if (res != null && res.success && res.lyrics.isNotBlank()) {
-                        withContext(Dispatchers.IO) { LyricsCache.put(context, title, artist, res.lyrics) }
-                        lyricsState = LyricsUiState.Ready(res.lyrics)
-                        return@launch
-                    }
+                val res = withContext(Dispatchers.IO) {
+                    LyricsFetcher.fetch(
+                        context,
+                        LyricsFetcher.Request(
+                            title = meta.title,
+                            artist = meta.artist,
+                            album = meta.album,
+                            durationMs = meta.durationMs,
+                            titleCandidates = titleCandidates,
+                        ),
+                    )
                 }
 
-                lyricsState = LyricsUiState.Empty(
-                    resources.getString(R.string.player_lyrics_unavailable),
-                )
+                if (res.success && res.lyrics.isNotBlank()) {
+                    lyricsState = LyricsUiState.Ready(
+                        lyrics = res.lyrics,
+                        syncedLrc = res.syncedLrc,
+                    )
+                } else {
+                    lyricsState = LyricsUiState.Empty(
+                        resources.getString(R.string.player_lyrics_unavailable),
+                    )
+                }
             } finally {
                 lyricsDownloading = false
             }
@@ -3807,15 +3809,25 @@ private fun buildVisibleTracksForSection(
 private sealed interface LyricsUiState {
     data object Idle : LyricsUiState
     data object Loading : LyricsUiState
-    data class Ready(val lyrics: String) : LyricsUiState
+    data class Ready(
+        val lyrics: String,
+        /** LRC guardado para sincronización futura con la posición de reproducción. */
+        val syncedLrc: String? = null,
+    ) : LyricsUiState
     data class Empty(val message: String) : LyricsUiState
 }
 
+private data class TrackLyricsMetadata(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val durationMs: Long,
+)
+
 /**
- * Devuelve (title, artist) leyendo primero el sidecar .meta.json del archivo
- * descargado. Si no existe o no tiene los campos, usa los valores de DeviceTrack.
+ * Metadatos para búsqueda de letras (LRCLIB usa álbum y duración).
  */
-private fun resolveTrackMeta(track: com.imontalvodev.beatmybeat.ui.data.DeviceTrack): Pair<String, String> {
+private fun resolveTrackMetadata(track: com.imontalvodev.beatmybeat.ui.data.DeviceTrack): TrackLyricsMetadata {
     runCatching {
         val uri = android.net.Uri.parse(track.uri)
         val path = uri.path ?: return@runCatching null
@@ -3827,11 +3839,30 @@ private fun resolveTrackMeta(track: com.imontalvodev.beatmybeat.ui.data.DeviceTr
         val rawArtist = json.optString("artist").takeIf {
             it.isNotBlank() && !it.equals("unknown artist", ignoreCase = true)
         } ?: track.artist
-        // Limpiar sufijos de canal YouTube antes de buscar letras
-        val a = com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics(rawArtist)
-        Pair(t, a)
+        val album = json.optString("album").takeIf { it.isNotBlank() }
+            ?: track.album.orEmpty()
+        val durationMs = json.optString("durationMs").toLongOrNull()
+            ?: json.optLong("durationMs", 0L).takeIf { it > 0L }
+            ?: track.durationMs
+        TrackLyricsMetadata(
+            title = t,
+            artist = com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics(rawArtist),
+            album = album,
+            durationMs = durationMs,
+        )
     }.getOrNull()?.let { return it }
-    return Pair(track.title, com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics(track.artist))
+    return TrackLyricsMetadata(
+        title = track.title,
+        artist = com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics(track.artist),
+        album = track.album.orEmpty(),
+        durationMs = track.durationMs,
+    )
+}
+
+/** Devuelve (title, artist) para compatibilidad con llamadas existentes. */
+private fun resolveTrackMeta(track: com.imontalvodev.beatmybeat.ui.data.DeviceTrack): Pair<String, String> {
+    val m = resolveTrackMetadata(track)
+    return Pair(m.title, m.artist)
 }
 
 private fun String.toTitleCaseSimple(): String {

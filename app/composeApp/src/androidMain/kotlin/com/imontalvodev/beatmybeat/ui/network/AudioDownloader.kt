@@ -282,12 +282,23 @@ object AudioDownloader {
 
             ArtworkCache.clear()
 
-            // --- Paso 6: letras desde lyrics.ovh directo ---
-            val isUnknown = { s: String -> s.isBlank() || s.equals("unknown", ignoreCase = true) || s.equals("unknown artist", ignoreCase = true) }
+            // --- Paso 6: letras (LRCLIB + fallback lyrics.ovh) ---
+            val isUnknown = { s: String ->
+                s.isBlank() || s.equals("unknown", ignoreCase = true) ||
+                    s.equals("unknown artist", ignoreCase = true)
+            }
             if (!isUnknown(safeTitle) && !isUnknown(safeArtist)) {
                 runCatching {
-                    val lyr = MiddlewareApi.fetchLyricsDirect(safeTitle, safeArtist)
-                    if (lyr.success && lyr.lyrics.isNotBlank()) LyricsCache.put(context, safeTitle, safeArtist, lyr.lyrics)
+                    val album = album.trim()
+                    LyricsFetcher.fetch(
+                        context,
+                        LyricsFetcher.Request(
+                            title = safeTitle,
+                            artist = safeArtist,
+                            album = album,
+                            durationMs = 0L,
+                        ),
+                    )
                 }
             }
 
