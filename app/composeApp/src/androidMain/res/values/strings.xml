@@ -181,6 +181,9 @@
     <string name="player_lyrics_select_song">Selecciona una canción</string>
     <string name="player_lyrics_unavailable">No hay letra disponible para esta canción</string>
     <string name="player_lyrics_tap_download">Toca para descargar la letra (necesitas internet).</string>
+    <string name="player_lyrics_synced_mode">Letra sincronizada</string>
+    <string name="player_lyrics_tap_load">Pulsa para cargar letra</string>
+    <string name="player_lyrics_loading">Cargando letra…</string>
     <string name="player_delete_failed">No se pudo eliminar la canción.</string>
     <string name="player_delete_failed_saf">No se pudo eliminar (SAF).</string>
     <string name="player_delete_confirm_system">Confirma la eliminación en el diálogo del sistema.</string>

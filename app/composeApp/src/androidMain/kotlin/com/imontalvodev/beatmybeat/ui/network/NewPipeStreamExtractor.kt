@@ -7,9 +7,11 @@ import okhttp3.Response
 import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.downloader.Downloader
+import org.schabi.newpipe.extractor.localization.ContentCountry
+import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.AudioStream
-import org.schabi.newpipe.extractor.stream.StreamExtractor
+import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.VideoStream
 import java.util.concurrent.TimeUnit
 
 data class AudioStreamInfo(
@@ -28,7 +30,11 @@ object NewPipeStreamExtractor {
         if (initialized) return
         synchronized(this) {
             if (initialized) return
-            NewPipe.init(OkHttpDownloader.instance)
+            NewPipe.init(
+                OkHttpDownloader.instance,
+                Localization.DEFAULT,
+                ContentCountry.DEFAULT,
+            )
             initialized = true
         }
     }
@@ -38,58 +44,104 @@ object NewPipeStreamExtractor {
         val url = "https://www.youtube.com/watch?v=$videoId"
         android.util.Log.d("NewPipeStream", "Extracting: $url")
 
-        val extractor: StreamExtractor = try {
-            ServiceList.YouTube.getStreamExtractor(url)
+        val streamInfo = try {
+            StreamInfo.getInfo(ServiceList.YouTube, url)
         } catch (e: Exception) {
-            throw Exception("No se pudo crear el extractor: ${e.message}", e)
+            throw Exception("No se pudo obtener el vídeo: ${e.message}", e)
         }
 
-        try {
-            extractor.fetchPage()
-        } catch (e: Exception) {
-            throw Exception("Error al obtener la página del vídeo: ${e.message}", e)
+        val audioStreams = streamInfo.audioStreams.orEmpty()
+        val videoStreams = streamInfo.videoStreams.orEmpty()
+        val videoOnlyStreams = streamInfo.videoOnlyStreams.orEmpty()
+
+        android.util.Log.d(
+            "NewPipeStream",
+            "Streams: audio=${audioStreams.size} muxedVideo=${videoStreams.count { !it.isVideoOnly }} " +
+                "videoOnly=${videoOnlyStreams.size}",
+        )
+
+        pickFromAudioStreams(audioStreams)?.let { return it }
+
+        pickFromMuxedVideo(videoStreams)?.let {
+            android.util.Log.d("NewPipeStream", "Using muxed progressive stream (audio+video)")
+            return it
         }
 
-        android.util.Log.d("NewPipeStream", "Page fetched, getting audio streams")
-
-        val audioStreams: List<AudioStream> = try {
-            extractor.audioStreams
-        } catch (e: Exception) {
-            throw Exception("Error al obtener streams de audio: ${e.message}", e)
+        // Algunos vídeos solo exponen audio en la lista de "video" sin flag videoOnly
+        pickFromMuxedVideo(videoStreams.filter { it.content.isNotBlank() })?.let {
+            android.util.Log.d("NewPipeStream", "Using fallback video stream")
+            return it
         }
 
-        android.util.Log.d("NewPipeStream", "Audio streams found: ${audioStreams.size}")
-        if (audioStreams.isEmpty()) throw Exception("No se encontraron streams de audio para $videoId")
+        throw Exception(
+            "No se encontraron streams de audio para $videoId " +
+                "(audio=0, video=${videoStreams.size}, videoOnly=${videoOnlyStreams.size})",
+        )
+    }
 
-        val best = audioStreams
+    private fun pickFromAudioStreams(streams: List<AudioStream>): AudioStreamInfo? {
+        if (streams.isEmpty()) return null
+        val best = streams
             .filter { it.content.isNotBlank() }
             .maxWithOrNull(
-                compareBy(
+                compareBy<AudioStream>(
                     { if (it.format == MediaFormat.M4A || it.format == MediaFormat.MPEG_4) 1 else 0 },
-                    { it.averageBitrate }
-                )
-            ) ?: audioStreams.first()
+                    { it.averageBitrate },
+                ),
+            ) ?: streams.firstOrNull { it.content.isNotBlank() } ?: return null
 
-        val mimeType = when (best.format) {
-            MediaFormat.M4A, MediaFormat.MPEG_4 -> "audio/mp4"
-            MediaFormat.WEBMA, MediaFormat.WEBMA_OPUS -> "audio/webm"
-            MediaFormat.MP3 -> "audio/mpeg"
-            else -> "audio/mp4"
-        }
-
-        android.util.Log.d("NewPipeStream", "Best stream: format=${best.format} bitrate=${best.averageBitrate} mime=$mimeType")
-
+        android.util.Log.d(
+            "NewPipeStream",
+            "Best audio stream: format=${best.format} bitrate=${best.averageBitrate}",
+        )
         return AudioStreamInfo(
             url = best.content,
-            mimeType = mimeType,
+            mimeType = mimeFromFormat(best.format, audio = true),
             averageBitrate = best.averageBitrate,
         )
     }
+
+    /** Vídeo progresivo con pista de audio embebida (FFmpeg extrae el audio después). */
+    private fun pickFromMuxedVideo(streams: List<VideoStream>): AudioStreamInfo? {
+        val muxed = streams.filter { !it.isVideoOnly && it.content.isNotBlank() }
+        if (muxed.isEmpty()) return null
+
+        val best = muxed.maxWithOrNull(
+            compareBy<VideoStream>(
+                { if (it.format == MediaFormat.M4A || it.format == MediaFormat.MPEG_4) 1 else 0 },
+                { it.bitrate },
+            ),
+        ) ?: return null
+
+        android.util.Log.d(
+            "NewPipeStream",
+            "Best muxed stream: format=${best.format} bitrate=${best.bitrate} res=${best.resolution}",
+        )
+        return AudioStreamInfo(
+            url = best.content,
+            mimeType = mimeFromFormat(best.format, audio = false),
+            averageBitrate = best.bitrate,
+        )
+    }
+
+    private fun mimeFromFormat(format: MediaFormat?, audio: Boolean): String = when (format) {
+        null -> if (audio) "audio/mp4" else "video/mp4"
+        MediaFormat.M4A, MediaFormat.MPEG_4 ->
+            if (audio) "audio/mp4" else "video/mp4"
+        MediaFormat.WEBMA, MediaFormat.WEBMA_OPUS ->
+            if (audio) "audio/webm" else "video/webm"
+        MediaFormat.MP3 -> "audio/mpeg"
+        else -> if (audio) "audio/mp4" else "video/mp4"
+    }
 }
 
-object OkHttpDownloader : Downloader() {
+object OkHttpDownloader : org.schabi.newpipe.extractor.downloader.Downloader() {
 
     val instance: OkHttpDownloader = this
+
+    /** Same strategy as NewPipe app — YouTube rejects custom/bot user agents on HTML pages. */
+    private const val USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -101,7 +153,9 @@ object OkHttpDownloader : Downloader() {
     override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): org.schabi.newpipe.extractor.downloader.Response {
         val okRequest = Request.Builder().apply {
             url(request.url())
+            addHeader("User-Agent", USER_AGENT)
             request.headers().forEach { (key, values) ->
+                removeHeader(key)
                 values.forEach { value -> addHeader(key, value) }
             }
             when (request.httpMethod()) {
@@ -116,6 +170,9 @@ object OkHttpDownloader : Downloader() {
 
         val okResponse: Response = client.newCall(okRequest).execute()
         val responseBody = okResponse.body?.string() ?: ""
+        if (okResponse.code == 429) {
+            android.util.Log.w("NewPipeStream", "YouTube rate limit (429) for ${request.url()}")
+        }
         val headers = mutableMapOf<String, List<String>>()
         okResponse.headers.names().forEach { name ->
             headers[name] = okResponse.headers.values(name)

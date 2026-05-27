@@ -141,6 +141,8 @@ import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
+import com.imontalvodev.beatmybeat.ui.network.LrcLine
+import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.network.MiddlewareApi
@@ -1750,11 +1752,16 @@ fun PlayerScreen(
                     !lyricsDownloading &&
                         currentTrack != null &&
                         lyricsState is LyricsUiState.Empty
+                val lyricsPositionMs = remember(sliderDragPos, playbackPositionMs, playbackDurationMs) {
+                    sliderDragPos?.let { (it.coerceIn(0f, 1f) * playbackDurationMs).toLong() }
+                        ?: playbackPositionMs
+                }
                 ExpandedPlayerOverlay(
                     modifier = Modifier.fillMaxSize(),
                     track = currentTrack,
                     artwork = currentArtwork,
                     lyricsState = lyricsState,
+                    lyricsPositionMs = lyricsPositionMs,
                     isPlaying = isPlaying,
                     position = sliderPosition,
                     onClose = { isExpanded = false },
@@ -1775,6 +1782,10 @@ fun PlayerScreen(
                         if (playbackDurationMs > 0) {
                             boundService?.seekTo((playbackDurationMs * finalPos).toLong())
                         }
+                        sliderDragPos = null
+                    },
+                    onSeekToLyricsPosition = { ms ->
+                        boundService?.seekTo(ms)
                         sliderDragPos = null
                     },
                     shuffleOn = shuffleOn,
@@ -3470,6 +3481,7 @@ private fun ExpandedPlayerOverlay(
     track: DeviceTrack?,
     artwork: Bitmap?,
     lyricsState: LyricsUiState,
+    lyricsPositionMs: Long,
     isPlaying: Boolean,
     position: Float,
     onClose: () -> Unit,
@@ -3478,6 +3490,7 @@ private fun ExpandedPlayerOverlay(
     onNext: () -> Unit,
     onSeekPreview: (Float) -> Unit,
     onSeekCommit: (Float) -> Unit,
+    onSeekToLyricsPosition: (Long) -> Unit,
     shuffleOn: Boolean,
     repeatMode: RepeatMode,
     onToggleShuffle: () -> Unit,
@@ -3564,7 +3577,13 @@ private fun ExpandedPlayerOverlay(
                 }
             }
 
-            val scroll = rememberScrollState()
+            val plainScroll = rememberScrollState()
+            val readySyncedLrc = (lyricsState as? LyricsUiState.Ready)?.syncedLrc
+            val syncedLines = remember(readySyncedLrc) {
+                readySyncedLrc?.let { LrcParser.parse(it) }.orEmpty()
+            }
+            val hasSyncedLyrics = syncedLines.isNotEmpty()
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3616,27 +3635,52 @@ private fun ExpandedPlayerOverlay(
                         .fillMaxWidth()
                         .weight(1f, fill = true)
                         .clickable(
-                            enabled = canDownloadLyrics,
+                            enabled = canDownloadLyrics && !hasSyncedLyrics,
                             onClick = onRequestLyricsDownload,
                         ),
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.30f)),
                 ) {
-                    val bodyText = when (lyricsState) {
-                        LyricsUiState.Idle -> "Pulsa para cargar letra"
-                        LyricsUiState.Loading -> "Cargando letra..."
-                        is LyricsUiState.Ready -> lyricsState.lyrics
-                        is LyricsUiState.Empty -> lyricsState.message
+                    when {
+                        hasSyncedLyrics -> {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Text(
+                                    text = stringResource(R.string.player_lyrics_synced_mode),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                    textAlign = TextAlign.Center,
+                                )
+                                SyncedLyricsView(
+                                    lines = syncedLines,
+                                    positionMs = lyricsPositionMs,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f),
+                                    onLineClick = onSeekToLyricsPosition,
+                                )
+                            }
+                        }
+                        else -> {
+                            val bodyText = when (lyricsState) {
+                                LyricsUiState.Idle -> stringResource(R.string.player_lyrics_tap_load)
+                                LyricsUiState.Loading -> stringResource(R.string.player_lyrics_loading)
+                                is LyricsUiState.Ready -> lyricsState.lyrics
+                                is LyricsUiState.Empty -> lyricsState.message
+                            }
+                            Text(
+                                text = bodyText,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(plainScroll)
+                                    .padding(16.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                            )
+                        }
                     }
-                    Text(
-                        text = bodyText,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(scroll)
-                            .padding(16.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                    )
                 }
             }
 
