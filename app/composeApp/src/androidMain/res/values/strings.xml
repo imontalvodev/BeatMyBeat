@@ -73,7 +73,7 @@
     <string name="player_slider_a11y">Posición de reproducción: %1$s de %2$s</string>
 
     <string name="download_song_title">Descargando canción</string>
-    <string name="download_processing">Procesando...</string>
+    <string name="download_processing">Procesando…</string>
     <string name="download_song_error">Error descargando canción.</string>
     <string name="download_song_success">Descargada (%1$s): %2$s</string>
     <string name="download_song_failed">No se pudo descargar la canción.</string>
@@ -106,7 +106,7 @@
     <string name="analyze_album_placeholder">Álbum (opcional)</string>
     <string name="analyze_download_format">Formato de descarga</string>
     <string name="analyze_cta_song">ANALIZAR CANCIÓN</string>
-    <string name="analyze_cta_downloading">DESCARGANDO...</string>
+    <string name="analyze_cta_downloading">DESCARGANDO…</string>
     <string name="analyze_cta_url">ANALIZAR URL</string>
     <string name="analyze_url_resolving">Resolviendo contenido…</string>
     <string name="analyze_url_preview_single">Canción encontrada</string>
@@ -149,7 +149,7 @@
     <string name="playlist_error_cannot_connect">No se pudo conectar con el servidor de playlists.</string>
     <string name="playlist_error_cannot_load">No se pudo cargar la playlist</string>
     <string name="playlist_default_title">Playlist</string>
-    <string name="playlist_loading">Cargando...</string>
+    <string name="playlist_loading">Cargando…</string>
     <string name="playlist_tracks_found">tracks encontradas</string>
     <string name="playlist_download_all">DOWNLOAD ALL TRACKS (ZIP)</string>
 
@@ -167,7 +167,7 @@
     <string name="analyze_download_dialog_title">Descargar canción</string>
     <string name="analyze_download_dialog_message">¿Quieres descargar «%1$s» de %2$s?</string>
     <string name="analyze_download_confirm">Sí, descargar</string>
-    <string name="analyze_downloading_button">Descargando...</string>
+    <string name="analyze_downloading_button">Descargando…</string>
     <string name="analyze_download_error">Error: %1$s</string>
 
     <string name="player_no_song">Sin canción</string>

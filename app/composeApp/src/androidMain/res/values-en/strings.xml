@@ -29,7 +29,7 @@
     <string name="player_song_deleted">Song deleted.</string>
     <string name="player_delete_cancelled">Deletion cancelled.</string>
     <string name="download_song_title">Downloading song</string>
-    <string name="download_processing">Processing...</string>
+    <string name="download_processing">Processing…</string>
     <string name="download_song_error">Error downloading song.</string>
     <string name="download_song_success">Downloaded (%1$s): %2$s</string>
     <string name="download_song_failed">Could not download the song.</string>
@@ -43,7 +43,7 @@
     <string name="analyze_album_placeholder">Album (optional)</string>
     <string name="analyze_download_format">Download format</string>
     <string name="analyze_cta_song">ANALYZE SONG</string>
-    <string name="analyze_cta_downloading">DOWNLOADING...</string>
+    <string name="analyze_cta_downloading">DOWNLOADING…</string>
     <string name="analyze_cta_url">ANALYZE URL</string>
     <string name="theme_tab_background">Background</string>
     <string name="theme_tab_text">Text</string>
@@ -81,7 +81,7 @@
     <string name="playlist_error_cannot_connect">Could not connect to playlist server.</string>
     <string name="playlist_error_cannot_load">Could not load playlist</string>
     <string name="playlist_default_title">Playlist</string>
-    <string name="playlist_loading">Loading...</string>
+    <string name="playlist_loading">Loading…</string>
     <string name="playlist_tracks_found">tracks found</string>
     <string name="playlist_download_all">DOWNLOAD ALL TRACKS (ZIP)</string>
 
@@ -156,7 +156,7 @@
     <string name="analyze_download_dialog_title">Download song</string>
     <string name="analyze_download_dialog_message">Download «%1$s» by %2$s?</string>
     <string name="analyze_download_confirm">Yes, download</string>
-    <string name="analyze_downloading_button">Downloading...</string>
+    <string name="analyze_downloading_button">Downloading…</string>
     <string name="analyze_download_error">Error: %1$s</string>
 
     <string name="player_no_song">No track</string>
@@ -207,4 +207,13 @@
     <string name="player_edit_playlist_menu">Edit name</string>
     <string name="player_delete_playlist_menu">Delete playlist</string>
     <string name="player_default_playlist_name">My playlist</string>
+
+    <string name="analyze_url_resolving">Resolving content…</string>
+    <string name="analyze_url_preview_single">Song found</string>
+    <string name="analyze_url_preview_playlist">%1$d songs found</string>
+    <string name="analyze_url_download_all">DOWNLOAD ALL (%1$d)</string>
+    <string name="analyze_url_download_single">DOWNLOAD</string>
+    <string name="player_lyrics_synced_mode">Synced lyrics</string>
+    <string name="player_lyrics_tap_load">Tap to load lyrics</string>
+    <string name="player_lyrics_loading">Loading lyrics…</string>
 </resources>
