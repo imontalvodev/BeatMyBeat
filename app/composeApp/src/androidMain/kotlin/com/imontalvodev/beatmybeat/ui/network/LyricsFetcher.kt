@@ -14,16 +14,21 @@ object LyricsFetcher {
         val durationMs: Long = 0L,
         /** Variantes de título a probar (p. ej. título sanitizado). */
         val titleCandidates: List<String> = emptyList(),
+        /** Variantes de artista (p. ej. nombre sin limpiar). */
+        val artistCandidates: List<String> = emptyList(),
     )
 
     fun fetch(context: Context, request: Request): LyricsResponse {
-        val artist = cleanArtistForLyrics(request.artist).trim()
         val titles = (listOf(request.title.trim()) + request.titleCandidates)
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
+        val artists = (listOf(request.artist.trim()) + request.artistCandidates)
+            .map { cleanArtistForLyrics(it).trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
 
-        if (artist.isBlank() || titles.isEmpty()) {
+        if (artists.isEmpty() || titles.isEmpty()) {
             return LyricsResponse(
                 success = false,
                 lyrics = "",
@@ -37,9 +42,11 @@ object LyricsFetcher {
         }
 
         for (title in titles) {
-            LyricsCache.getEntry(context, title, artist)?.let { cached ->
-                if (cached.hasAnyLyrics()) {
-                    return cached.toResponse()
+            for (artist in artists) {
+                LyricsCache.getEntry(context, title, artist)?.let { cached ->
+                    if (cached.hasAnyLyrics()) {
+                        return cached.toResponse()
+                    }
                 }
             }
         }
@@ -48,23 +55,29 @@ object LyricsFetcher {
         val album = request.album.trim()
 
         for (title in titles) {
-            val lrc = LrcLibApi.fetchLyrics(
-                trackName = title,
-                artistName = artist,
-                albumName = album,
-                durationSeconds = durationSec,
-            )
-            if (lrc.success && lrc.lyrics.isNotBlank()) {
-                LyricsCache.putFromResponse(context, title, artist, lrc)
-                return lrc
+            for (artist in artists) {
+                val lrc = LrcLibApi.fetchLyrics(
+                    trackName = title,
+                    artistName = artist,
+                    albumName = album,
+                    durationSeconds = durationSec,
+                    titleCandidates = titles.filter { it != title },
+                    artistCandidates = artists.filter { it != artist },
+                )
+                if (lrc.success && lrc.lyrics.isNotBlank()) {
+                    LyricsCache.putFromResponse(context, title, artist, lrc)
+                    return lrc
+                }
             }
         }
 
         for (title in titles) {
-            val ovh = MiddlewareApi.fetchLyricsDirect(title = title, artist = artist)
-            if (ovh.success && ovh.lyrics.isNotBlank()) {
-                LyricsCache.putFromResponse(context, title, artist, ovh)
-                return ovh
+            for (artist in artists) {
+                val ovh = MiddlewareApi.fetchLyricsDirect(title = title, artist = artist)
+                if (ovh.success && ovh.lyrics.isNotBlank()) {
+                    LyricsCache.putFromResponse(context, title, artist, ovh)
+                    return ovh
+                }
             }
         }
 

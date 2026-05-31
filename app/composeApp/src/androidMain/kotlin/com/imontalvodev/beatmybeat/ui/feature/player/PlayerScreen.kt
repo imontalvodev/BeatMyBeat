@@ -244,6 +244,7 @@ fun PlayerScreen(
         val startIndex: Int,
         val positionMs: Long,
         val shuffleOn: Boolean,
+        val autoPlay: Boolean,
     )
     var pendingRestore by remember { mutableStateOf<PendingRestore?>(null) }
 
@@ -267,7 +268,7 @@ fun PlayerScreen(
             queueJson = restore.queueJson,
             startIndex = restore.startIndex,
             startPositionMs = restore.positionMs,
-            autoPlay = false,
+            autoPlay = restore.autoPlay,
             shuffleEnabled = restore.shuffleOn,
         )
         pendingRestore = null
@@ -313,10 +314,7 @@ fun PlayerScreen(
     var queueRepeatIndex by remember { mutableStateOf(-1) }
     var shuffleOrder by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
     var shuffleIndex by remember { mutableStateOf(-1) }
-    /**
-     * Evita persistir la cola vacía antes de restaurar desde el JSON unificado.
-     */
-    var queueSnapshotHydrated by remember { mutableStateOf(false) }
+    val queueSnapshotHydrated by viewModel.queueUiHydrated.collectAsState()
 
     fun syncQueueToServiceOnly() {
         val svc = boundService ?: return
@@ -658,10 +656,21 @@ fun PlayerScreen(
 
                 val uriTitle = titleFromUri(track.uri)
                 val titleCandidates = listOf(
+                    meta.title.trim(),
                     sanitizeTitle(meta.title),
                     uriTitle,
                     sanitizeTitle(uriTitle),
-                )
+                ).distinct().filter { it.isNotBlank() }
+                val artistCandidates = listOf(
+                    track.artist.trim(),
+                    meta.artist.trim(),
+                ).distinct().filter { it.isNotBlank() }
+
+                val effectiveDurationMs = when {
+                    meta.durationMs > 0L -> meta.durationMs
+                    currentTrack?.uri == track.uri && playbackDurationMs > 0L -> playbackDurationMs
+                    else -> 0L
+                }
 
                 val res = withContext(Dispatchers.IO) {
                     LyricsFetcher.fetch(
@@ -670,8 +679,9 @@ fun PlayerScreen(
                             title = meta.title,
                             artist = meta.artist,
                             album = meta.album,
-                            durationMs = meta.durationMs,
+                            durationMs = effectiveDurationMs,
                             titleCandidates = titleCandidates,
+                            artistCandidates = artistCandidates,
                         ),
                     )
                 }
@@ -875,18 +885,62 @@ fun PlayerScreen(
         }
     }
 
-    // Restaurar cola unificada al reentrar en el reproductor (remember se reinicia).
-    LaunchedEffect(deviceTracks, librarySyncing) {
+    // Restaurar cola al reentrar en el reproductor sin interrumpir lo que ya suena en el servicio.
+    LaunchedEffect(deviceTracks, librarySyncing, boundService) {
+        val svc = boundService ?: return@LaunchedEffect
         if (deviceTracks.isEmpty()) return@LaunchedEffect
+
+        val player = svc.player
+        val serviceMediaId = player.currentMediaItem?.mediaId
+            ?.takeIf { it.isNotBlank() }
+            ?: PlaybackService.state.value.currentMediaId
+        val serviceHasQueue = player.mediaItemCount > 0 && serviceMediaId.isNotBlank()
+        val uiQueueEmpty = shuffleOrder.isEmpty() && queue.isEmpty()
+
+        fun hydrateUiFromSnapshot(): Boolean {
+            val snapshot = viewModel.loadPlaybackQueueSnapshot() ?: return false
+            val resolved = resolvePlaybackQueueSnapshot(
+                snapshot,
+                deviceTracks.associateBy { it.uri },
+            ) ?: return false
+            applyResolvedPlaybackQueue(resolved)
+            syncQueueToService(persist = false)
+            return true
+        }
+
+        // Reentrar en la pestaña: remember se reinicia pero el servicio sigue sonando.
+        if (queueSnapshotHydrated && serviceHasQueue && uiQueueEmpty) {
+            if (!hydrateUiFromSnapshot()) {
+                resolveTrackFromPlaybackMediaId(serviceMediaId, deviceTracks)?.let { track ->
+                    currentTrack = track
+                    currentIndex = deviceTracks.indexOfFirst { it.uri == track.uri }.takeIf { it >= 0 }
+                        ?: deviceTracks.indexOfFirst { it.id == track.id }
+                }
+            }
+            return@LaunchedEffect
+        }
+
         if (queueSnapshotHydrated) return@LaunchedEffect
-        if (shuffleOrder.isNotEmpty() || queue.isNotEmpty()) {
-            queueSnapshotHydrated = true
+        if (!uiQueueEmpty) {
+            viewModel.setQueueUiHydrated(true)
+            return@LaunchedEffect
+        }
+
+        if (serviceHasQueue) {
+            if (!hydrateUiFromSnapshot()) {
+                resolveTrackFromPlaybackMediaId(serviceMediaId, deviceTracks)?.let { track ->
+                    currentTrack = track
+                    currentIndex = deviceTracks.indexOfFirst { it.uri == track.uri }.takeIf { it >= 0 }
+                        ?: deviceTracks.indexOfFirst { it.id == track.id }
+                }
+            }
+            viewModel.setQueueUiHydrated(true)
             return@LaunchedEffect
         }
 
         val snapshot = viewModel.loadPlaybackQueueSnapshot()
         if (snapshot == null) {
-            queueSnapshotHydrated = true
+            viewModel.setQueueUiHydrated(true)
             return@LaunchedEffect
         }
 
@@ -897,7 +951,7 @@ fun PlayerScreen(
         if (resolved == null) {
             if (librarySyncing) return@LaunchedEffect
             viewModel.clearPlaybackQueueSnapshot()
-            queueSnapshotHydrated = true
+            viewModel.setQueueUiHydrated(true)
             return@LaunchedEffect
         }
 
@@ -905,18 +959,17 @@ fun PlayerScreen(
         syncQueueToService(persist = false)
 
         val current = resolved.tracks.getOrNull(resolved.currentIndex)
-        val alreadyInPlayer = current != null &&
-            playbackMediaId == current.uri &&
-            playbackDurationMs > 0L
-        if (current != null && !alreadyInPlayer) {
+        if (current != null) {
+            val shouldAutoPlay = player.playWhenReady || PlaybackService.state.value.isPlaying
             pendingRestore = PendingRestore(
                 queueJson = resolved.tracks.toQueueJsonArray().toString(),
                 startIndex = resolved.currentIndex,
                 positionMs = resolved.positionMs,
                 shuffleOn = resolved.shuffleOn,
+                autoPlay = shouldAutoPlay,
             )
         }
-        queueSnapshotHydrated = true
+        viewModel.setQueueUiHydrated(true)
     }
 
     val playbackPersistenceKey = buildString {

@@ -27,6 +27,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val _librarySyncing = MutableStateFlow(true)
     val librarySyncing: StateFlow<Boolean> = _librarySyncing.asStateFlow()
 
+    /** Evita re-restaurar la cola al reentrar en PlayerScreen (remember se reinicia; el servicio no). */
+    private val _queueUiHydrated = MutableStateFlow(false)
+    val queueUiHydrated: StateFlow<Boolean> = _queueUiHydrated.asStateFlow()
+
+    fun setQueueUiHydrated(hydrated: Boolean) {
+        _queueUiHydrated.value = hydrated
+    }
+
     // ids de favoritos persistidos
     private val _favoriteIds = MutableStateFlow<Set<Long>>(loadIdSet(PREF_FAVORITES))
     val favoriteIds: StateFlow<Set<Long>> = _favoriteIds.asStateFlow()
