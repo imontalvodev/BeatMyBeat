@@ -151,6 +151,8 @@
     <string name="analyze_url_host_not_allowed">Only YouTube or YouTube Music links are allowed.</string>
     <string name="analyze_url_invalid_generic">Invalid URL. Enter a playlist/album or song link from YouTube/YT Music.</string>
     <string name="analyze_results_title">Results</string>
+    <string name="analyze_search_source_ytmusic">YT Music</string>
+    <string name="analyze_search_source_youtube">YouTube</string>
     <string name="analyze_no_title">No title</string>
     <string name="analyze_unknown_artist">Unknown artist</string>
     <string name="analyze_download_dialog_title">Download song</string>

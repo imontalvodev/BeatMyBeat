@@ -55,6 +55,7 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.SongSuggestion
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchClient
+import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchSource
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSongMetadata
 import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
 import com.imontalvodev.beatmybeat.service.SongDownloadService
@@ -285,13 +286,19 @@ fun AnalyzeScreen(
                                             }
                                             if (results.isNotEmpty()) {
                                                 suggestions = results.map { r ->
-                                                    val (parsedTitle, parsedArtist) = parseYouTubeTitle(r.title, r.channel)
+                                                    val (parsedTitle, parsedArtist) = when (r.source) {
+                                                        YouTubeSearchSource.YOUTUBE_MUSIC ->
+                                                            r.title to r.channel
+                                                        YouTubeSearchSource.YOUTUBE ->
+                                                            parseYouTubeTitle(r.title, r.channel)
+                                                    }
                                                     SongSuggestion(
                                                         title = parsedTitle,
                                                         artist = parsedArtist,
                                                         videoId = r.videoId,
                                                         thumbnailUrl = r.thumbnailUrl,
                                                         durationText = r.durationText,
+                                                        source = r.source,
                                                     )
                                                 }
                                             } else {
@@ -529,7 +536,15 @@ fun AnalyzeScreen(
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                                         )
+                                                        if (suggestion.durationText.isNotBlank()) {
+                                                            Text(
+                                                                text = suggestion.durationText,
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                                            )
+                                                        }
                                                     }
+                                                    SearchSourceBadge(source = suggestion.source)
                                                 }
                                             }
                                         }
@@ -781,6 +796,30 @@ private fun UrlPreviewSection(
             }
         }
     }
+}
+
+@Composable
+private fun SearchSourceBadge(source: YouTubeSearchSource) {
+    val label = when (source) {
+        YouTubeSearchSource.YOUTUBE_MUSIC -> stringResource(R.string.analyze_search_source_ytmusic)
+        YouTubeSearchSource.YOUTUBE -> stringResource(R.string.analyze_search_source_youtube)
+    }
+    val (backgroundColor, textColor) = when (source) {
+        YouTubeSearchSource.YOUTUBE_MUSIC ->
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) to MaterialTheme.colorScheme.primary
+        YouTubeSearchSource.YOUTUBE ->
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f) to
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+    }
+    Text(
+        text = label,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(backgroundColor)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = textColor,
+    )
 }
 
 @Composable

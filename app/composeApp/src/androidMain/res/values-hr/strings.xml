@@ -155,6 +155,8 @@
     <string name="analyze_url_host_not_allowed">Dopušteni su samo YouTube ili YouTube Music linkovi.</string>
     <string name="analyze_url_invalid_generic">Nevažeći URL. Unesi link playliste/albuma ili pjesme s YouTube/YT Music.</string>
     <string name="analyze_results_title">Rezultati</string>
+    <string name="analyze_search_source_ytmusic">YT Music</string>
+    <string name="analyze_search_source_youtube">YouTube</string>
     <string name="analyze_no_title">Bez naslova</string>
     <string name="analyze_unknown_artist">Nepoznati izvođač</string>
     <string name="analyze_download_dialog_title">Preuzmi pjesmu</string>

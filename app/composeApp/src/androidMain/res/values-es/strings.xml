@@ -94,6 +94,8 @@
     <string name="analyze_url_host_not_allowed">Solo se admiten enlaces de YouTube o YouTube Music.</string>
     <string name="analyze_url_invalid_generic">URL no válida. Introduce un enlace de playlist/álbum o de canción de YouTube/YT Music.</string>
     <string name="analyze_results_title">Resultados</string>
+    <string name="analyze_search_source_ytmusic">YT Music</string>
+    <string name="analyze_search_source_youtube">YouTube</string>
     <string name="analyze_no_title">Sin título</string>
     <string name="analyze_unknown_artist">Artista desconocido</string>
     <string name="analyze_download_dialog_title">Descargar canción</string>

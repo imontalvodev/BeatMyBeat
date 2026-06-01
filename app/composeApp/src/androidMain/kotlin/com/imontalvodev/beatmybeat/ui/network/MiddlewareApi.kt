@@ -50,6 +50,7 @@ data class SongSuggestion(
     val videoId: String = "",
     val thumbnailUrl: String = "",
     val durationText: String = "",
+    val source: YouTubeSearchSource = YouTubeSearchSource.YOUTUBE,
 )
 
 data class SongSuggestionsResponse(
