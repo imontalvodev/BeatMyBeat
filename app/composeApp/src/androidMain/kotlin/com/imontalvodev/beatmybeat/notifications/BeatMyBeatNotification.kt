@@ -89,7 +89,7 @@ object BeatMyBeatNotification {
         title: String,
         subtitle: String,
     ) = NotificationCompat.Builder(context, CHANNEL_DOWNLOAD)
-        .setSmallIcon(R.drawable.ic_launcher_foreground)
+        .setSmallIcon(R.drawable.logo)
         .setContentTitle(title)
         .setContentText(subtitle)
         .setContentIntent(baseContentIntent(context))
@@ -109,7 +109,7 @@ object BeatMyBeatNotification {
         val nm = NotificationManagerCompat.from(context)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_DOWNLOAD)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.logo)
             .setContentTitle(title)
             .setContentText(subtitle)
             .setContentIntent(baseContentIntent(context))
@@ -133,7 +133,7 @@ object BeatMyBeatNotification {
         val nm = NotificationManagerCompat.from(context)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_DOWNLOAD)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.logo)
             .setContentTitle(title)
             .setContentText(subtitle)
             .setContentIntent(baseContentIntent(context))
@@ -170,7 +170,7 @@ object BeatMyBeatNotification {
         title: String,
         subtitle: String,
     ) = NotificationCompat.Builder(context, CHANNEL_PLAYBACK)
-        .setSmallIcon(R.drawable.ic_launcher_foreground)
+        .setSmallIcon(R.drawable.logo)
         .setContentTitle(title)
         .setContentText(subtitle)
         .setContentIntent(baseContentIntent(context))

@@ -2711,7 +2711,7 @@ private fun ArtworkThumbnail(
     if (isPlaceholderOnly) {
         Box(modifier = Modifier.size(sizeDp.dp))
     } else {
-        val fallback = R.drawable.ic_launcher_foreground
+        val fallback = R.drawable.logo
         Crossfade(
             targetState = imageData,
             animationSpec = tween(200),

@@ -347,7 +347,7 @@ class PlaybackService : Service() {
         }
 
         val builder = NotificationCompat.Builder(this, "beatmybeat_playback")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.logo)
             .setContentTitle(title)
             .setContentText(artist)
             .setContentIntent(buildContentIntent())

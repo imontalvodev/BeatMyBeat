@@ -1,11 +1,13 @@
 package com.imontalvodev.beatmybeat.ui.feature.profile
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,7 +20,6 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -39,6 +40,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -97,11 +100,13 @@ fun ProfileScreen(
                     .clickable { /* TODO: cambiar foto */ },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Person,
+                Image(
+                    painter = painterResource(R.drawable.logo),
                     contentDescription = stringResource(R.string.profile_avatar_cd),
-                    modifier = Modifier.size(56.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth(0.88f)
+                        .aspectRatio(728f / 641f),
+                    contentScale = ContentScale.Fit,
                 )
             }
 

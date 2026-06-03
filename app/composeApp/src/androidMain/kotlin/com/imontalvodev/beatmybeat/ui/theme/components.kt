@@ -1,7 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.theme
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
@@ -20,12 +18,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.imontalvodev.beatmybeat.R
 
 @Composable
 fun AppMiniBrand(modifier: Modifier = Modifier) {
@@ -33,22 +35,12 @@ fun AppMiniBrand(modifier: Modifier = Modifier) {
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(26.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
-                    shape = RoundedCornerShape(999.dp),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.MusicNote,
-                contentDescription = "Logo BeatMyBeat",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(15.dp),
-            )
-        }
+        Image(
+            painter = painterResource(R.drawable.logo),
+            contentDescription = stringResource(R.string.app_name),
+            modifier = Modifier.size(28.dp),
+            contentScale = ContentScale.Fit,
+        )
         Spacer(modifier = Modifier.size(8.dp))
         Text(
             text = "BeatMyBeat",
