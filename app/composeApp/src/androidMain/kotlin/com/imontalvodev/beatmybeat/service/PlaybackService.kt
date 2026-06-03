@@ -67,6 +67,7 @@ class PlaybackService : Service() {
     private val artworkExecutor = Executors.newSingleThreadExecutor()
     private var notificationArtwork: Bitmap? = null
     private var notificationArtworkMediaId: String? = null
+    private var appLogoBitmap: Bitmap? = null
     private var lastStatePushElapsed = 0L
 
     private val positionTick = object : Runnable {
@@ -101,6 +102,8 @@ class PlaybackService : Service() {
         mediaSession = MediaSession.Builder(this, exoPlayer)
             .setSessionActivity(buildContentIntent())
             .build()
+
+        artworkExecutor.execute { appLogoBitmap() }
 
         exoPlayer.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -278,6 +281,19 @@ class PlaybackService : Service() {
         notificationArtworkMediaId = null
     }
 
+    private fun appLogoBitmap(): Bitmap? {
+        val cached = appLogoBitmap
+        if (cached != null && !cached.isRecycled) return cached
+        val decoded = BitmapDecoding.decodeResource(resources, R.drawable.logo, NOTIFICATION_ARTWORK_PX)
+        appLogoBitmap = decoded
+        return decoded
+    }
+
+    private fun recycleAppLogoBitmap() {
+        appLogoBitmap?.recycle()
+        appLogoBitmap = null
+    }
+
     /**
      * Seek directo. Sin intents, sin delays, sin posibilidad de que Android lo descarte.
      * Preserva el estado play/pause: si estaba reproduciendo, sigue reproduciendo.
@@ -347,7 +363,7 @@ class PlaybackService : Service() {
         }
 
         val builder = NotificationCompat.Builder(this, "beatmybeat_playback")
-            .setSmallIcon(R.drawable.logo)
+            .setSmallIcon(R.drawable.ic_stat_logo)
             .setContentTitle(title)
             .setContentText(artist)
             .setContentIntent(buildContentIntent())
@@ -366,9 +382,10 @@ class PlaybackService : Service() {
                     .setShowActionsInCompactView(0, 1, 2),
             )
 
-        val art = notificationArtwork
-        if (art != null && !art.isRecycled) {
-            builder.setLargeIcon(art)
+        val albumArt = notificationArtwork?.takeIf { !it.isRecycled }
+        val largeIcon = albumArt ?: appLogoBitmap()
+        if (largeIcon != null && !largeIcon.isRecycled) {
+            builder.setLargeIcon(largeIcon)
         }
 
         return builder.build()
@@ -406,6 +423,7 @@ class PlaybackService : Service() {
         mainHandler.removeCallbacks(positionTick)
         artworkExecutor.shutdownNow()
         recycleNotificationArtwork()
+        recycleAppLogoBitmap()
         mediaSession.release()
         exoPlayer.release()
         _state.value = PlaybackState()

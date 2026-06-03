@@ -34,32 +34,34 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.beatmybeat.R
 
-private val LogoCircleBackground = Color(0xFF191A1C)
-
 /** Logo de la app en círculo (mismo estilo en splash, cabecera y perfil). */
 @Composable
 fun AppLogo(
     size: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val circleBackground = currentBeatMyBeatThemeProfile().backgroundTop
     Image(
         painter = painterResource(R.drawable.logo),
         contentDescription = stringResource(R.string.app_name),
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .background(LogoCircleBackground),
-        contentScale = ContentScale.Crop,
+            .background(circleBackground),
+        contentScale = ContentScale.Fit,
     )
 }
 
 @Composable
-fun AppMiniBrand(modifier: Modifier = Modifier) {
+fun AppMiniBrand(
+    modifier: Modifier = Modifier,
+    logoSize: Dp = 56.dp,
+) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AppLogo(size = 42.dp)
+        AppLogo(size = logoSize)
         Spacer(modifier = Modifier.size(10.dp))
         Text(
             text = "BeatMyBeat",

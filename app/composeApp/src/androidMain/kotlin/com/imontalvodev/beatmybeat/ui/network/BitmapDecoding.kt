@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 
@@ -22,6 +23,18 @@ object BitmapDecoding {
     }
 
     fun byteCount(bitmap: Bitmap): Int = bitmap.byteCount
+
+    fun decodeResource(resources: Resources, resId: Int, maxEdgePx: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeResource(resources, resId, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, maxEdgePx)
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return BitmapFactory.decodeResource(resources, resId, opts)
+    }
 
     private fun calculateInSampleSize(width: Int, height: Int, maxEdgePx: Int): Int {
         var inSampleSize = 1

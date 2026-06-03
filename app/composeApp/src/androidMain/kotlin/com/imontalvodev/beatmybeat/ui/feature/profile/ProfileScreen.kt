@@ -88,7 +88,7 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             AppLogo(
-                size = 120.dp,
+                size = 140.dp,
                 modifier = Modifier.clickable { /* TODO: cambiar foto */ },
             )
 
