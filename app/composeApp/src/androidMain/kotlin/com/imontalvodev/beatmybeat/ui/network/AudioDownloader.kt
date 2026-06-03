@@ -8,13 +8,10 @@ import kotlinx.coroutines.withContext
 import com.imontalvodev.beatmybeat.download.DownloadProgressUpdate
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
-import java.util.zip.ZipInputStream
 import java.util.concurrent.TimeUnit
 
 object AudioDownloader {
@@ -38,15 +35,8 @@ object AudioDownloader {
         val error: String? = null,
     )
 
-    data class ZipDownloadResult(
-        val success: Boolean,
-        val extractedFiles: Int,
-        val error: String? = null,
-    )
-
     suspend fun downloadAutoToAppMusic(
         context: Context,
-        middlewareBaseUrl: String,
         title: String,
         artist: String,
         album: String,
@@ -316,193 +306,6 @@ object AudioDownloader {
             BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "Error crítico: ${t.javaClass.simpleName}")
             return@withContext DownloadResult(false, null, "${t.javaClass.simpleName}: ${t.message}")
         }
-    }
-
-    suspend fun downloadYoutubeAlbumZipToAppMusic(
-        context: Context,
-        middlewareBaseUrl: String,
-        playlistUrl: String,
-    ): ZipDownloadResult = withContext(Dispatchers.IO) {
-        val notifTitle = "Descargando playlist de YouTube"
-        BeatMyBeatNotification.showDownloadInProgress(
-            context = context,
-            title = notifTitle,
-            subtitle = playlistUrl.take(40),
-        )
-        try {
-            fun buildUrl(baseUrl: String) =
-                "${baseUrl.trimEnd('/')}/api/download-youtube-album"
-                    .toHttpUrlOrNull()
-                    ?.newBuilder()
-                    ?.apply { addQueryParameter("playlistUrl", playlistUrl) }
-                    ?.build()
-
-            val baseCandidates = getMiddlewareBaseCandidates(middlewareBaseUrl)
-
-            val client = OkHttpClient.Builder()
-                .connectTimeout(20, TimeUnit.SECONDS)
-                .readTimeout(8, TimeUnit.MINUTES)
-                .writeTimeout(2, TimeUnit.MINUTES)
-                .callTimeout(10, TimeUnit.MINUTES)
-                .build()
-
-            fun extractZipFromResponse(res: Response): ZipDownloadResult {
-                val contentType = (res.header("Content-Type") ?: "").lowercase()
-                if (contentType.contains("application/json") || contentType.contains("text/html")) {
-                    val body = res.body?.string().orEmpty()
-                    return ZipDownloadResult(false, 0, body.ifBlank { "ServerErrorContentType:$contentType" })
-                }
-
-                val body = res.body ?: return ZipDownloadResult(false, 0, "EmptyBody")
-                var extracted = 0
-                ZipInputStream(body.byteStream()).use { zis ->
-                    var entry = zis.nextEntry
-                    val buffer = ByteArray(8 * 1024)
-                    val allowedExt = setOf("mp3", "m4a", "aac", "wav", "ogg", "flac", "opus", "webm")
-                    while (entry != null) {
-                        if (!entry.isDirectory) {
-                            val rawName = File(entry.name).name
-                            val ext = rawName.substringAfterLast('.', "").lowercase()
-                            if (ext in allowedExt) {
-                                val safeName = rawName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                val tmp = File.createTempFile("zip_track_", ".$ext", context.cacheDir)
-                                FileOutputStream(tmp).use { output ->
-                                    var read = zis.read(buffer)
-                                    while (read > 0) {
-                                        output.write(buffer, 0, read)
-                                        read = zis.read(buffer)
-                                    }
-                                    output.flush()
-                                }
-                                val saved = StorageSettings.saveAudioFromFile(context, tmp, safeName)
-                                tmp.delete()
-                                if (saved != null) extracted++
-                            }
-                        }
-                        zis.closeEntry()
-                        entry = zis.nextEntry
-                    }
-                }
-
-                if (extracted <= 0) return ZipDownloadResult(false, 0, "ZipWithoutAudio")
-                // El ZIP puede cambiar las carátulas embebidas de los MP3 existentes
-                // (mismos nombres -> misma id -> cache vieja).
-                ArtworkCache.clear()
-                return ZipDownloadResult(true, extracted, null)
-            }
-
-            var lastError: String = "No se pudo completar la descarga. Inténtalo de nuevo."
-
-            for (base in baseCandidates) {
-                val url = buildUrl(base) ?: continue
-                val fallbackBackendUrl = buildUrl(guessPythonBackendBaseUrl(base))
-                try {
-                    client.newCall(Request.Builder().url(url).get().build()).execute().use { res ->
-                        if (res.isSuccessful) {
-                            val out = extractZipFromResponse(res)
-                            if (out.success) {
-                                BeatMyBeatNotification.showDownloadCompleted(
-                                    context = context,
-                                    title = "Playlist descargada",
-                                    subtitle = "${out.extractedFiles} pistas",
-                                )
-                            } else {
-                                BeatMyBeatNotification.showDownloadFailed(
-                                    context = context,
-                                    title = "Error en la descarga",
-                                    subtitle = out.error ?: "Reintenta más tarde",
-                                )
-                            }
-                            return@withContext out
-                        }
-
-                        val firstContentType = (res.header("Content-Type") ?: "").lowercase()
-                        val firstBody = res.body?.string().orEmpty()
-                        lastError = if (firstBody.isNotBlank()) "HTTP_${res.code}: $firstBody" else "HTTP_${res.code}"
-                        val isHtml404 = res.code == 404 && firstContentType.contains("text/html")
-
-                        // Fallback pragmático: middleware sin ruta nueva o no reiniciado.
-                        if (isHtml404 && fallbackBackendUrl != null) {
-                            client.newCall(Request.Builder().url(fallbackBackendUrl).get().build()).execute().use { res2 ->
-                                if (!res2.isSuccessful) {
-                                    val body2 = res2.body?.string().orEmpty()
-                                    lastError = if (body2.isNotBlank()) "HTTP_${res2.code}: $body2" else "HTTP_${res2.code}"
-                                    return@use
-                                }
-                                val out = extractZipFromResponse(res2)
-                                if (out.success) {
-                                    BeatMyBeatNotification.showDownloadCompleted(
-                                        context = context,
-                                        title = "Playlist descargada",
-                                        subtitle = "${out.extractedFiles} pistas",
-                                    )
-                                } else {
-                                    BeatMyBeatNotification.showDownloadFailed(
-                                        context = context,
-                                        title = "Error en la descarga",
-                                        subtitle = out.error ?: "Reintenta más tarde",
-                                    )
-                                }
-                                return@withContext out
-                            }
-                        }
-                    }
-                } catch (_: Exception) {
-                    lastError = "No se pudo conectar al servidor (${base.removePrefix("http://").removePrefix("https://")})."
-                }
-            }
-
-            BeatMyBeatNotification.showDownloadFailed(
-                context = context,
-                title = "Error en la descarga",
-                subtitle = lastError,
-            )
-            return@withContext ZipDownloadResult(false, 0, lastError)
-        } finally {
-            // no-op: dejamos que la notificación en curso sea reemplazada por completada/error.
-        }
-    }
-
-    private fun guessPythonBackendBaseUrl(middlewareBaseUrl: String): String {
-        val m = middlewareBaseUrl.trimEnd('/')
-        return when {
-            m.endsWith(":3000") -> m.removeSuffix(":3000") + ":4000"
-            else -> "http://10.0.2.2:4000"
-        }
-    }
-
-    private fun handleResponse(context: Context, res: Response, title: String): DownloadResult {
-        if (!res.isSuccessful) {
-            return DownloadResult(false, null, "HTTP_${res.code}")
-        }
-
-        val contentType = res.header("Content-Type") ?: ""
-        if (contentType.contains("application/json")) {
-            return DownloadResult(false, null, "ServerErrorJson")
-        }
-
-        val body = res.body ?: return DownloadResult(false, null, "EmptyBody")
-        val inputStream = body.byteStream()
-
-        val fileNameFromHeader =
-            res.header("Content-Disposition")
-                ?.substringAfter("filename=\"")
-                ?.substringBeforeLast("\"")
-        val safeName = fileNameFromHeader?.takeIf { it.isNotBlank() }
-            ?: (title.ifBlank { "track" } + ".mp3")
-        val saved = StorageSettings.saveRawAudioFromStream(
-            context = context,
-            input = inputStream,
-            displayName = safeName,
-            mimeType = "audio/mpeg",
-            title = title,
-        )
-        if (!saved) return DownloadResult(false, null, "SaveFailed")
-
-        // Si el usuario descarga otro álbum/canciones, las IDs pueden repetirse
-        // y ArtworkCache puede devolver una carátula vieja.
-        ArtworkCache.clear()
-        return DownloadResult(true, safeName, null)
     }
 
     private fun embedMetadata(

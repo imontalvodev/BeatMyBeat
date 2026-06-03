@@ -14,7 +14,6 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
-import com.imontalvodev.beatmybeat.ui.network.MIDDLEWARE_BASE_URL
 import com.imontalvodev.beatmybeat.ui.network.fetchYouTubeSongMetadata
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -69,7 +68,6 @@ class SongDownloadService : Service() {
             val result = runCatching {
                 AudioDownloader.downloadAutoToAppMusic(
                     context = this@SongDownloadService,
-                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
                     title = title,
                     artist = artist,
                     album = album,
@@ -138,7 +136,6 @@ class SongDownloadService : Service() {
 
                 val single = AudioDownloader.downloadAutoToAppMusic(
                     context = this@SongDownloadService,
-                    middlewareBaseUrl = MIDDLEWARE_BASE_URL,
                     title = metadata.title,
                     artist = metadata.artist,
                     album = "",

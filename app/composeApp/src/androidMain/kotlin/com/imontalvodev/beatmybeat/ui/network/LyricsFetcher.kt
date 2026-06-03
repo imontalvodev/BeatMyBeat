@@ -73,7 +73,7 @@ object LyricsFetcher {
 
         for (title in titles) {
             for (artist in artists) {
-                val ovh = MiddlewareApi.fetchLyricsDirect(title = title, artist = artist)
+                val ovh = LyricsOvhApi.fetch(title = title, artist = artist)
                 if (ovh.success && ovh.lyrics.isNotBlank()) {
                     LyricsCache.putFromResponse(context, title, artist, ovh)
                     return ovh

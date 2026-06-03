@@ -688,7 +688,7 @@ private fun buildCanonicalPlaylistUrl(url: HttpUrl, listId: String): String {
         .addPathSegment("playlist")
         .addQueryParameter("list", listId)
 
-    // Para casos como youtu.be/<videoId>?list=... preservamos v para mejorar compatibilidad backend.
+    // Para casos como youtu.be/<videoId>?list=... preservamos v para resolver la canción concreta.
     val v = extractYouTubeVideoId(url)
     if (!v.isNullOrBlank()) builder.addQueryParameter("v", v)
     return builder.build().toString()

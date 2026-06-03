@@ -42,19 +42,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import com.imontalvodev.beatmybeat.playback.PlaybackServiceBinding
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
-import com.imontalvodev.beatmybeat.ui.feature.playlist.PlaylistScreen
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
 import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
 import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
@@ -233,21 +230,6 @@ class MainActivity : AppCompatActivity() {
                             }
                             composable("analyze") {
                                 AnalyzeScreen()
-                            }
-                            composable(
-                                route = "playlist?url={url}",
-                                arguments = listOf(
-                                    navArgument("url") {
-                                        type = NavType.StringType
-                                        defaultValue = ""
-                                    },
-                                ),
-                            ) { backStackEntry ->
-                                val url = backStackEntry.arguments?.getString("url").orEmpty()
-                                PlaylistScreen(
-                                    onOpenPlayer = { navController.navigate("player") },
-                                    playlistUrl = url,
-                                )
                             }
                             composable("player") {
                                 PlayerScreen(
