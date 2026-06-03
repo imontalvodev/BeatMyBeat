@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -314,41 +315,44 @@ private fun ColorWheelPicker(
     initialColor: Color,
     onColorChanged: (Color) -> Unit,
 ) {
-    var hue by remember(initialColor) { mutableStateOf(colorToHsv(initialColor).first) }
-    var saturation by remember(initialColor) { mutableStateOf(colorToHsv(initialColor).second) }
-    var value by remember(initialColor) { mutableStateOf(colorToHsv(initialColor).third) }
+    // Solo al abrir el diálogo: si usamos initialColor como key, cada cambio del padre resetea HSV y bloquea sliders.
+    val startHsv = remember { colorToHsv(initialColor) }
+    var hue by remember { mutableStateOf(startHsv.first) }
+    var saturation by remember { mutableStateOf(startHsv.second) }
+    var value by remember { mutableStateOf(startHsv.third) }
+    val onColorChangedState = rememberUpdatedState(onColorChanged)
+
+    fun pushColor() {
+        onColorChangedState.value(hsvToColor(hue, saturation, value))
+    }
+
+    fun applyHueFromPoint(point: Offset, center: Offset) {
+        val angle = Math.toDegrees(
+            atan2((point.y - center.y).toDouble(), (point.x - center.x).toDouble()),
+        ).toFloat()
+        hue = (angle + 360f) % 360f
+        // Grises (S≈0): al elegir matiz, activar saturación para no quedar “pegado”.
+        if (saturation < 0.05f) saturation = 0.5f
+        pushColor()
+    }
 
     val selectedColor = hsvToColor(hue, saturation, value)
-
-    LaunchedEffect(hue, saturation, value) {
-        onColorChanged(selectedColor)
-    }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Canvas(
             modifier = Modifier
                 .size(220.dp)
                 .pointerInput(Unit) {
-                    fun updateHue(point: Offset, sizePx: Float) {
-                        val center = Offset(sizePx / 2f, sizePx / 2f)
-                        val angle = Math.toDegrees(
-                            atan2((point.y - center.y).toDouble(), (point.x - center.x).toDouble()),
-                        ).toFloat()
-                        hue = (angle + 360f) % 360f
-                    }
                     detectTapGestures { point ->
-                        updateHue(point, min(size.width, size.height).toFloat())
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        applyHueFromPoint(point, center)
                     }
                 }
                 .pointerInput(Unit) {
                     detectDragGestures { change, _ ->
                         change.consume()
-                        val p = change.position
                         val center = Offset(size.width / 2f, size.height / 2f)
-                        val angle = Math.toDegrees(
-                            atan2((p.y - center.y).toDouble(), (p.x - center.x).toDouble()),
-                        ).toFloat()
-                        hue = (angle + 360f) % 360f
+                        applyHueFromPoint(change.position, center)
                     }
                 },
         ) {
@@ -387,10 +391,18 @@ private fun ColorWheelPicker(
         }
 
         Text(stringResource(R.string.theme_saturation), style = MaterialTheme.typography.bodySmall)
-        Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..1f)
+        Slider(
+            value = saturation,
+            onValueChange = { saturation = it; pushColor() },
+            valueRange = 0f..1f,
+        )
 
         Text(stringResource(R.string.theme_brightness), style = MaterialTheme.typography.bodySmall)
-        Slider(value = value, onValueChange = { value = it }, valueRange = 0f..1f)
+        Slider(
+            value = value,
+            onValueChange = { value = it; pushColor() },
+            valueRange = 0f..1f,
+        )
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
