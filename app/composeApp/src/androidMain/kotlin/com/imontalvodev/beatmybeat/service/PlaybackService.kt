@@ -284,7 +284,11 @@ class PlaybackService : Service() {
     private fun appLogoBitmap(): Bitmap? {
         val cached = appLogoBitmap
         if (cached != null && !cached.isRecycled) return cached
-        val decoded = BitmapDecoding.decodeResource(resources, R.drawable.logo, NOTIFICATION_ARTWORK_PX)
+        val decoded = BitmapDecoding.decodeResource(
+            resources,
+            R.drawable.ic_launcher_foreground,
+            NOTIFICATION_ARTWORK_PX,
+        )
         appLogoBitmap = decoded
         return decoded
     }

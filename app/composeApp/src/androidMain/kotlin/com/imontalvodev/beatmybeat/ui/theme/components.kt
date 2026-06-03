@@ -2,9 +2,12 @@ package com.imontalvodev.beatmybeat.ui.theme
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,7 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.painterResource
@@ -34,28 +36,37 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.beatmybeat.R
 
-/** Logo de la app en círculo (mismo estilo en splash, cabecera y perfil). */
+/**
+ * Logo en la UI: PNG con fondo transparente para que se vea el tema del usuario.
+ * (El icono del launcher usa [R.drawable.ic_launcher_foreground], con fondo propio.)
+ */
 @Composable
 fun AppLogo(
     size: Dp,
     modifier: Modifier = Modifier,
+    innerPaddingFraction: Float = 0.06f,
 ) {
-    val circleBackground = currentBeatMyBeatThemeProfile().backgroundTop
-    Image(
-        painter = painterResource(R.drawable.logo),
-        contentDescription = stringResource(R.string.app_name),
+    Box(
         modifier = modifier
             .size(size)
-            .clip(CircleShape)
-            .background(circleBackground),
-        contentScale = ContentScale.Fit,
-    )
+            .clip(CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.logo),
+            contentDescription = stringResource(R.string.app_name),
+            modifier = Modifier
+                .padding(size * innerPaddingFraction)
+                .fillMaxSize(),
+            contentScale = ContentScale.Fit,
+        )
+    }
 }
 
 @Composable
 fun AppMiniBrand(
     modifier: Modifier = Modifier,
-    logoSize: Dp = 56.dp,
+    logoSize: Dp = 52.dp,
 ) {
     Row(
         modifier = modifier,

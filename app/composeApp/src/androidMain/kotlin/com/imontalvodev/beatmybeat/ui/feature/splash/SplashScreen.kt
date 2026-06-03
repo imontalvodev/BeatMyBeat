@@ -73,7 +73,7 @@ fun SplashScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AppLogo(size = 220.dp)
+            AppLogo(size = 248.dp, innerPaddingFraction = 0.06f)
 
             Spacer(modifier = Modifier.height(32.dp))
 
