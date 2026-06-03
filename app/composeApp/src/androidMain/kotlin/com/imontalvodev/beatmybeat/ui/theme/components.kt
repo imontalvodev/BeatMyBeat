@@ -1,10 +1,12 @@
 package com.imontalvodev.beatmybeat.ui.theme
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -18,7 +20,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -29,19 +34,33 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.beatmybeat.R
 
+private val LogoCircleBackground = Color(0xFF191A1C)
+
+/** Logo de la app en círculo (mismo estilo en splash, cabecera y perfil). */
+@Composable
+fun AppLogo(
+    size: Dp,
+    modifier: Modifier = Modifier,
+) {
+    Image(
+        painter = painterResource(R.drawable.logo),
+        contentDescription = stringResource(R.string.app_name),
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(LogoCircleBackground),
+        contentScale = ContentScale.Crop,
+    )
+}
+
 @Composable
 fun AppMiniBrand(modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(
-            painter = painterResource(R.drawable.logo),
-            contentDescription = stringResource(R.string.app_name),
-            modifier = Modifier.size(28.dp),
-            contentScale = ContentScale.Fit,
-        )
-        Spacer(modifier = Modifier.size(8.dp))
+        AppLogo(size = 42.dp)
+        Spacer(modifier = Modifier.size(10.dp))
         Text(
             text = "BeatMyBeat",
             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
