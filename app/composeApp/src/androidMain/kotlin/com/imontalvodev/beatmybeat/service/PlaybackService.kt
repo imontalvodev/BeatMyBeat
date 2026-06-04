@@ -114,9 +114,13 @@ class PlaybackService : Service() {
                     mainHandler.removeCallbacks(positionTick)
                 }
                 pushState(force = true)
+                updateNotification()
             }
 
-            override fun onPlaybackStateChanged(state: Int) = pushState(force = true)
+            override fun onPlaybackStateChanged(state: Int) {
+                pushState(force = true)
+                updateNotification()
+            }
 
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 pushState(force = true)
@@ -141,8 +145,14 @@ class PlaybackService : Service() {
             promoteToForegroundIfAllowed()
         }
         when (intent?.action) {
-            ACTION_PLAY -> exoPlayer.play()
-            ACTION_PAUSE -> exoPlayer.pause()
+            ACTION_PLAY -> {
+                exoPlayer.play()
+                updateNotification()
+            }
+            ACTION_PAUSE -> {
+                exoPlayer.pause()
+                updateNotification()
+            }
             ACTION_NEXT -> skipToNextSafe()
             ACTION_PREV -> skipToPreviousSafe()
             ACTION_STOP -> {
