@@ -647,13 +647,13 @@ private data class PreviewTrack(
     val thumbnailUrl: String,
 )
 
-private sealed interface ParsedYouTubeInput {
+internal sealed interface ParsedYouTubeInput {
     data class PlaylistOrAlbum(val url: String, val listId: String) : ParsedYouTubeInput
     data class SingleSong(val videoId: String) : ParsedYouTubeInput
     data class Invalid(@StringRes val reasonRes: Int) : ParsedYouTubeInput
 }
 
-private fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
+internal fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
     val url = raw.toHttpUrlOrNull()
         ?: return ParsedYouTubeInput.Invalid(R.string.analyze_url_invalid_format)
 
@@ -690,7 +690,7 @@ private fun buildCanonicalPlaylistUrl(url: HttpUrl, listId: String): String {
     return builder.build().toString()
 }
 
-private fun extractYouTubeVideoId(url: HttpUrl): String? {
+internal fun extractYouTubeVideoId(url: HttpUrl): String? {
     val host = url.host.lowercase().removePrefix("www.")
     if (host == "youtu.be") {
         val shortId = url.pathSegments.firstOrNull().orEmpty()

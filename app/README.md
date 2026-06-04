@@ -41,3 +41,23 @@ En Windows: `.\gradlew.bat :composeApp:assembleDebug`.
 ## Tecnologías clave
 
 Jetpack Compose · Material 3 · Media3/ExoPlayer · NewPipe Extractor · ffmpeg-kit · Coil · OkHttp.
+
+## Licencia
+
+Distribuido bajo **GNU General Public License v3.0** (ver [`LICENSE`](./LICENSE)). Se elige GPL-3.0
+por compatibilidad con **NewPipe Extractor** (GPL-3.0), del que depende la app.
+
+## Distribución y uso responsable
+
+> BeatMyBeat es un proyecto **gratuito y open source**, sin anuncios ni monetización. Permite buscar
+> y descargar audio desde YouTube y YouTube Music en el dispositivo del usuario.
+>
+> La descarga de contenido de terceros puede **infringir los términos de servicio de YouTube** y la
+> **legislación de propiedad intelectual** aplicable. Los desarrolladores **no alojan contenido
+> protegido**; solo distribuyen el software.
+>
+> El **usuario es responsable** del uso que haga de la aplicación conforme a la ley y a las
+> condiciones de las plataformas de origen.
+
+Consideraciones de distribución por canal (web, GitHub, F-Droid/IzzyOnDroid, Google Play) en
+[`docs/riesgos-legales.md`](./docs/riesgos-legales.md).
