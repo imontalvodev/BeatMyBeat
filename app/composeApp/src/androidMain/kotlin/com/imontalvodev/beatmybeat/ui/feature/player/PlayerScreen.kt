@@ -825,6 +825,45 @@ fun PlayerScreen(
         if (persist) persistPlaybackSnapshot()
     }
 
+    /**
+     * Inserta tras la pista actual (índice current+1 en el fichero de cola).
+     * Con shuffle: muta [shuffleOrder]; si no: cabeza de [queue] (espejo de lo pendiente).
+     */
+    fun insertTracksPlayNext(tracks: List<DeviceTrack>) {
+        if (tracks.isEmpty()) return
+        val shuffleActive = viewModel.shuffleEnabled.value
+        if (shuffleActive && shuffleOrder.isNotEmpty() && shuffleIndex >= 0) {
+            val mutable = shuffleOrder.toMutableList()
+            var insertAt = (shuffleIndex + 1).coerceAtMost(mutable.size)
+            tracks.forEach { t ->
+                mutable.add(insertAt, t)
+                insertAt++
+            }
+            shuffleOrder = mutable
+            refreshShuffleQueueMirror()
+        } else {
+            tracks.reversed().forEach { queue.add(0, it) }
+        }
+        if (!shuffleActive && repeatMode == RepeatMode.LIST) {
+            val ct = currentTrack
+            if (ct != null) {
+                if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
+                    queueRepeatSnapshot = listOf(ct) + queue.toList()
+                    queueRepeatIndex = 0
+                } else {
+                    val mutable = queueRepeatSnapshot.toMutableList()
+                    var insertAt = (queueRepeatIndex + 1).coerceAtMost(mutable.size)
+                    tracks.forEach { t ->
+                        mutable.add(insertAt, t)
+                        insertAt++
+                    }
+                    queueRepeatSnapshot = mutable
+                }
+            }
+        }
+        syncQueueToService()
+    }
+
     fun applyResolvedPlaybackQueue(resolved: ResolvedPlaybackQueue) {
         viewModel.setShuffleEnabled(resolved.shuffleOn)
         if (resolved.shuffleOn) {
@@ -1640,22 +1679,7 @@ fun PlayerScreen(
                                 showSnack(queueAddedText)
                             },
                             onPlayNext = {
-                                queue.add(0, track)
-                                syncQueueToService()
-                                if (!shuffleOn && repeatMode == RepeatMode.LIST) {
-                                    val ct = currentTrack
-                                    if (ct != null) {
-                                        if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
-                                            queueRepeatSnapshot = listOf(ct) + queue.toList()
-                                            queueRepeatIndex = 0
-                                        } else {
-                                            val insertAt = (queueRepeatIndex + 1).coerceAtMost(queueRepeatSnapshot.size)
-                                            val mutable = queueRepeatSnapshot.toMutableList()
-                                            mutable.add(insertAt, track)
-                                            queueRepeatSnapshot = mutable
-                                        }
-                                    }
-                                }
+                                insertTracksPlayNext(listOf(track))
                                 showSnack(playNextAddedText)
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(track) },
@@ -1684,8 +1708,7 @@ fun PlayerScreen(
                             },
                             onBulkPlayNext = {
                                 if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                selectedTracksOrdered.reversed().forEach { queue.add(0, it) }
-                                syncQueueToService()
+                                insertTracksPlayNext(selectedTracksOrdered)
                                 showSnack(
                                     if (selectedTracksOrdered.size == 1) {
                                         playNextAddedText
