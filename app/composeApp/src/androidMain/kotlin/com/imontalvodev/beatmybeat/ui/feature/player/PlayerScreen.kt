@@ -84,7 +84,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -136,7 +135,6 @@ import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.palette.graphics.Palette
 import coil.compose.AsyncImage
-import com.imontalvodev.beatmybeat.LocalSnackbarHostState
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
@@ -145,6 +143,7 @@ import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
+import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
@@ -186,17 +185,12 @@ fun PlayerScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val uiScope = rememberCoroutineScope()
-    val snackbarHostState = LocalSnackbarHostState.current
-    fun showSnack(message: String, long: Boolean = false) {
-        uiScope.launch {
-            snackbarHostState.showSnackbar(
-                message = message,
-                duration = if (long) SnackbarDuration.Long else SnackbarDuration.Short,
-            )
-        }
-    }
-    fun showToast(message: String) {
-        Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
+    fun showToast(message: String, long: Boolean = false) {
+        Toast.makeText(
+            context.applicationContext,
+            message,
+            if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
+        ).show()
     }
     val audioPermission = remember {
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
@@ -214,7 +208,7 @@ fun PlayerScreen(
             if (granted) {
                 viewModel.syncLibrary(auto = true)
             } else {
-                showSnack(
+                showToast(
                     resources.getString(R.string.player_audio_permission_denied_snack),
                     long = true,
                 )
@@ -1189,7 +1183,7 @@ fun PlayerScreen(
             }
             persistPlaybackSnapshot()
         } catch (e: Exception) {
-            showSnack(cannotPlayFileText)
+            showToast(cannotPlayFileText)
         }
     }
 
@@ -1351,7 +1345,7 @@ fun PlayerScreen(
             BeatMyBeatForegroundService.stopPlayback(context)
         }
         viewModel.syncLibrary(auto = true)
-        if (showToast) showSnack(songDeletedText)
+        if (showToast) showToast(songDeletedText)
     }
 
     val deletionApprovalLauncher = rememberLauncherForActivityResult(
@@ -1361,7 +1355,7 @@ fun PlayerScreen(
             if (result.resultCode == Activity.RESULT_OK) {
                 finishDeletion(track)
             } else {
-                showSnack(deleteCancelledText)
+                showToast(deleteCancelledText)
             }
             pendingDeleteTrack = null
         },
@@ -1392,7 +1386,7 @@ fun PlayerScreen(
                 val path = uri.path
                 val deleted = if (path.isNullOrBlank()) false else File(path).delete()
                 if (deleted) finishDeletion(track, showToast)
-                else if (showToast) showSnack(resources.getString(R.string.player_delete_failed))
+                else if (showToast) showToast(resources.getString(R.string.player_delete_failed))
             }
             "content" -> {
                 if (isSafUri(uri)) {
@@ -1401,7 +1395,7 @@ fun PlayerScreen(
                         DocumentFile.fromSingleUri(context, uri)?.delete() == true
                     }.getOrDefault(false)
                     if (deleted) finishDeletion(track, showToast)
-                    else if (showToast) showSnack(resources.getString(R.string.player_delete_failed_saf))
+                    else if (showToast) showToast(resources.getString(R.string.player_delete_failed_saf))
                 } else {
                     // URI de MediaStore: intentar borrado directo y si falla pedir permiso al usuario
                     val directResult = runCatching {
@@ -1419,16 +1413,16 @@ fun PlayerScreen(
                         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && ex is RecoverableSecurityException) {
                             ex.userAction.actionIntent.intentSender
                         } else {
-                            if (showToast) showSnack(resources.getString(R.string.player_delete_failed))
+                            if (showToast) showToast(resources.getString(R.string.player_delete_failed))
                             return
                         }
                         pendingDeleteTrack = track
                         deletionApprovalLauncher.launch(
                             IntentSenderRequest.Builder(sender).build()
                         )
-                        if (showToast) showSnack(resources.getString(R.string.player_delete_confirm_system))
+                        if (showToast) showToast(resources.getString(R.string.player_delete_confirm_system))
                     } catch (_: Exception) {
-                        if (showToast) showSnack(resources.getString(R.string.player_delete_permission_error))
+                        if (showToast) showToast(resources.getString(R.string.player_delete_permission_error))
                     }
                 }
             }
@@ -1436,7 +1430,7 @@ fun PlayerScreen(
                 val path = uri.path
                 val deleted = if (path.isNullOrBlank()) false else File(path).delete()
                 if (deleted) finishDeletion(track, showToast)
-                else if (showToast) showSnack(resources.getString(R.string.player_delete_failed))
+                else if (showToast) showToast(resources.getString(R.string.player_delete_failed))
             }
         }
     }
@@ -1666,7 +1660,7 @@ fun PlayerScreen(
                             showSelectedActionsMenu = selectionMode && selectedTrackUris.contains(track.uri),
                             onEnterSelectionMode = {
                                 enterSelectionMode(track.uri)
-                                showSnack(selectionModeEnabledText)
+                                showToast(selectionModeEnabledText)
                             },
                             onToggleSelection = { toggleTrackSelection(track.uri) },
                             onPlayTrack = { startPlaybackFromCollection(track) },
@@ -1758,7 +1752,7 @@ fun PlayerScreen(
                                         removeAllOccurrences = true,
                                     )
                                 }
-                                showSnack(
+                                showToast(
                                     if (selectedTracksOrdered.size == 1) {
                                         resources.getString(R.string.player_playlist_removed_one)
                                     } else {
@@ -2209,12 +2203,12 @@ fun PlayerScreen(
                                     when (res) {
                                         is PlayerViewModel.CreatePlaylistResult.Created -> {
                                             selectedPlaylistId = res.id
-                                            showSnack(resources.getString(R.string.player_playlist_created, newName))
+                                            showToast(resources.getString(R.string.player_playlist_created, newName))
                                             res.id
                                         }
 
                                         is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
-                                            showSnack(resources.getString(R.string.player_playlist_name_exists))
+                                            showToast(resources.getString(R.string.player_playlist_name_exists))
                                             selectedPlaylistId = res.id
                                             res.id
                                         }
@@ -2228,7 +2222,7 @@ fun PlayerScreen(
                                         )) {
                                             is PlayerViewModel.CreatePlaylistResult.Created -> {
                                                 selectedPlaylistId = created.id
-                                                showSnack(resources.getString(R.string.player_playlist_default_created))
+                                                showToast(resources.getString(R.string.player_playlist_default_created))
                                                 created.id
                                             }
                                             is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
@@ -2271,7 +2265,7 @@ fun PlayerScreen(
                                         playlistId = targetPlaylistId,
                                     )
                                 } else if (anyAdded) {
-                                    showSnack(
+                                    showToast(
                                         if (tracksToAdd.size == 1) {
                                             resources.getString(R.string.player_track_added_playlist)
                                         } else {
@@ -2314,7 +2308,7 @@ fun PlayerScreen(
                                     deleteTrackFromDevice(track, syncAfter = false, showToast = false)
                                 }
                                 viewModel.syncLibrary(auto = true)
-                                showSnack(
+                                showToast(
                                     if (batch.size == 1) {
                                         songDeletedText
                                     } else {
@@ -2361,7 +2355,7 @@ fun PlayerScreen(
                                         allowDuplicate = true,
                                     )
                                 }
-                                showSnack(resources.getString(R.string.player_duplicates_added))
+                                showToast(resources.getString(R.string.player_duplicates_added))
                                 duplicateDialog = null
                                 clearTrackSelection()
                             },
@@ -2373,7 +2367,7 @@ fun PlayerScreen(
                         TextButton(
                             onClick = {
                                 duplicateDialog = null
-                                showSnack(resources.getString(R.string.player_skip_duplicates_snack))
+                                showToast(resources.getString(R.string.player_skip_duplicates_snack))
                                 clearTrackSelection()
                             },
                         ) {
@@ -2401,7 +2395,7 @@ fun PlayerScreen(
                                     selectedPlaylistId = playlists.firstOrNull { it.id != id }?.id
                                 }
                                 if (!ok) {
-                                    showSnack(resources.getString(R.string.player_delete_playlist_failed))
+                                    showToast(resources.getString(R.string.player_delete_playlist_failed))
                                 }
                             },
                         ) {
@@ -2436,7 +2430,7 @@ fun PlayerScreen(
                             onClick = {
                                 val newName = playlistRenameNewName.trim()
                                 if (newName.isBlank()) {
-                                    showSnack(resources.getString(R.string.player_edit_playlist_invalid_name))
+                                    showToast(resources.getString(R.string.player_edit_playlist_invalid_name))
                                     return@TextButton
                                 }
 
@@ -2446,7 +2440,7 @@ fun PlayerScreen(
                                     }
 
                                     is PlayerViewModel.RenamePlaylistResult.AlreadyExists -> {
-                                        showSnack("Ya existe una playlist con ese nombre.")
+                                        showToast("Ya existe una playlist con ese nombre.")
                                     }
                                 }
                             },
@@ -2727,13 +2721,19 @@ private fun ArtworkThumbnail(
         if (imageData != null) return@LaunchedEffect
         val bytes = withContext(Dispatchers.IO) {
             PlaybackArtworkHelper.resolveArtworkBytes(context, track.uri)
-        } ?: return@LaunchedEffect
+        }
+        if (bytes == null || bytes.isEmpty()) {
+            imageData = R.drawable.logo
+            return@LaunchedEffect
+        }
         val decoded = withContext(Dispatchers.IO) {
             BitmapDecoding.decodeSampled(bytes, LIST_ARTWORK_MAX_PX)
         }
         if (decoded != null) {
             ArtworkCache.putUri(track.uri, decoded)
             imageData = decoded
+        } else {
+            imageData = R.drawable.logo
         }
     }
 
@@ -3454,6 +3454,11 @@ private fun MiniPlayerBar(
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
                                 )
+                            } else {
+                                AppLogo(
+                                    size = 40.dp,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
                             }
                         }
                     }
@@ -3689,7 +3694,12 @@ private fun ExpandedPlayerOverlay(
                             contentScale = ContentScale.Crop,
                         )
                     } else {
-                        Box(modifier = Modifier.fillMaxSize())
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AppLogo(size = 200.dp)
+                        }
                     }
                 }
 

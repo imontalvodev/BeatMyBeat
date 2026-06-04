@@ -4,16 +4,22 @@
     android:height="24dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M32,38m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M76,38m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M26,56 Q54,80 82,56 L82,60 Q54,84 26,60 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M50,60c0,-2 2,-4 4,-4s4,2 4,4v14c0,6 -8,10 -8,4c0,-4 0,-10 0,-14z" />
+    <!-- Rotado 180°: en notificación el sistema mostraba el icono del revés -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="180">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M32,38m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M76,38m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M26,56 Q54,80 82,56 L82,60 Q54,84 26,60 Z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M50,60c0,-2 2,-4 4,-4s4,2 4,4v14c0,6 -8,10 -8,4c0,-4 0,-10 0,-14z" />
+    </group>
 </vector>
