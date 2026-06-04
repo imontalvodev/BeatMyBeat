@@ -11,6 +11,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -193,6 +194,9 @@ fun PlayerScreen(
                 duration = if (long) SnackbarDuration.Long else SnackbarDuration.Short,
             )
         }
+    }
+    fun showToast(message: String) {
+        Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
     }
     val audioPermission = remember {
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
@@ -1063,9 +1067,8 @@ fun PlayerScreen(
         }
     }
 
-    // Cambio de sección/playlist: vaciar cola manual; si shuffle ON, nueva permutación del pool actual.
-    // No reaccionar al primer composition (reentrar en el reproductor reinicia [remember]) ni al
-    // primer id de playlist resuelto desde null (evita reconstruir antes de restaurar shuffle desde prefs).
+    // Cambio de sección/playlist: solo afecta la lista visible, no lo que ya suena.
+    // Si hay reproducción activa, conservamos cola + snapshot; nueva cola al pulsar Play en otra sección.
     var previousSectionPlaylistKey by remember { mutableStateOf<Pair<PlayerSection, Long?>?>(null) }
     LaunchedEffect(selectedSection, selectedPlaylistId) {
         val key = selectedSection to selectedPlaylistId
@@ -1078,12 +1081,17 @@ fun PlayerScreen(
         ) {
             return@LaunchedEffect
         }
-        viewModel.clearPlaybackQueueSnapshot()
-        queue.clear()
-        if (shuffleOn) rebuildShuffleOrderFromPool()
-        else syncQueueToService()
-        queueRepeatSnapshot = emptyList()
-        queueRepeatIndex = -1
+        val playbackActive = currentTrack != null ||
+            playbackState.currentMediaId.isNotBlank() ||
+            (boundService?.player?.mediaItemCount ?: 0) > 0
+        if (!playbackActive) {
+            viewModel.clearPlaybackQueueSnapshot()
+            queue.clear()
+            if (shuffleOn) rebuildShuffleOrderFromPool()
+            else syncQueueToService()
+            queueRepeatSnapshot = emptyList()
+            queueRepeatIndex = -1
+        }
         clearTrackSelection()
     }
 
@@ -1676,11 +1684,11 @@ fun PlayerScreen(
                                         }
                                     }
                                 }
-                                showSnack(queueAddedText)
+                                showToast(queueAddedText)
                             },
                             onPlayNext = {
                                 insertTracksPlayNext(listOf(track))
-                                showSnack(playNextAddedText)
+                                showToast(playNextAddedText)
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(track) },
                             onAddToPlaylist = {
@@ -1694,7 +1702,7 @@ fun PlayerScreen(
                                 if (selectedTracksOrdered.isEmpty()) return@TrackRow
                                 queue.addAll(selectedTracksOrdered)
                                 syncQueueToService()
-                                showSnack(
+                                showToast(
                                     if (selectedTracksOrdered.size == 1) {
                                         queueAddedText
                                     } else {
@@ -1709,7 +1717,7 @@ fun PlayerScreen(
                             onBulkPlayNext = {
                                 if (selectedTracksOrdered.isEmpty()) return@TrackRow
                                 insertTracksPlayNext(selectedTracksOrdered)
-                                showSnack(
+                                showToast(
                                     if (selectedTracksOrdered.size == 1) {
                                         playNextAddedText
                                     } else {
