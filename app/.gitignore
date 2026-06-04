@@ -17,4 +17,12 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
-docs/**
+
+# Salida de assembleRelease / APK local
+composeApp/release/
+
+# Firma release (nunca subir)
+*.jks
+*.keystore
+signing.properties
+keystore.properties
