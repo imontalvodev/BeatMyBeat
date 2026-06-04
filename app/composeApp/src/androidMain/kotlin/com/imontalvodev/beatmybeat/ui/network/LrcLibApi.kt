@@ -1,11 +1,9 @@
 package com.imontalvodev.beatmybeat.ui.network
 
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 /**
@@ -19,11 +17,11 @@ object LrcLibApi {
     private const val TIMEOUT_SEC = 20L
     private const val DURATION_TOLERANCE_SEC = 5
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
-        .readTimeout(TIMEOUT_SEC, TimeUnit.SECONDS)
-        .callTimeout(25, TimeUnit.SECONDS)
-        .build()
+    private val client = AppHttpClient.withTimeouts(
+        connectSeconds = TIMEOUT_SEC,
+        readSeconds = TIMEOUT_SEC,
+        callSeconds = 25,
+    )
 
     fun fetchLyrics(
         trackName: String,

@@ -1,7 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.network
 
 import com.imontalvodev.beatmybeat.core.Logger
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
@@ -13,7 +12,6 @@ import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.VideoStream
-import java.util.concurrent.TimeUnit
 
 data class AudioStreamInfo(
     val url: String,
@@ -144,12 +142,12 @@ object OkHttpDownloader : org.schabi.newpipe.extractor.downloader.Downloader() {
     private const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .callTimeout(45, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val client = AppHttpClient.withTimeouts(
+        connectSeconds = 20,
+        readSeconds = 30,
+        callSeconds = 45,
+        followRedirects = true,
+    )
 
     override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): org.schabi.newpipe.extractor.downloader.Response {
         val okRequest = Request.Builder().apply {

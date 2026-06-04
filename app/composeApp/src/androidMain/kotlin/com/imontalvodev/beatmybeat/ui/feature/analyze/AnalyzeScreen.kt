@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.feature.analyze
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,8 +75,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import com.imontalvodev.beatmybeat.LocalSnackbarHostState
-
 @Composable
 fun AnalyzeScreen(
     modifier: Modifier = Modifier,
@@ -117,11 +115,8 @@ fun AnalyzeScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
-    val snackbarHostState = LocalSnackbarHostState.current
     fun showSnack(message: String) {
-        scope.launch {
-            snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
-        }
+        Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
     }
 
     Box(

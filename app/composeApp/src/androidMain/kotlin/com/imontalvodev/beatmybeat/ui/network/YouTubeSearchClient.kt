@@ -1,12 +1,10 @@
 package com.imontalvodev.beatmybeat.ui.network
 
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 enum class YouTubeSearchSource {
     YOUTUBE_MUSIC,
@@ -24,11 +22,11 @@ data class YouTubeSearchResult(
 
 object YouTubeSearchClient {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .callTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val client = AppHttpClient.withTimeouts(
+        connectSeconds = 15,
+        readSeconds = 20,
+        callSeconds = 30,
+    )
 
     private const val INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
     private const val YOUTUBE_SEARCH_URL =

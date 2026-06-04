@@ -13,7 +13,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
-import java.util.concurrent.TimeUnit
 
 object AudioDownloader {
     enum class DownloadFormat(val id: String, val extension: String, val label: String) {
@@ -105,10 +104,10 @@ object AudioDownloader {
 
             Logger.d("NewPipeStream", "Downloading: ${streamInfo.url.take(100)} mimeType=${streamInfo.mimeType}")
 
-            val downloadClient = OkHttpClient.Builder()
-                .connectTimeout(20, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .build()
+            val downloadClient = AppHttpClient.withTimeouts(
+                connectSeconds = 20,
+                readSeconds = 30,
+            )
 
             // Obtener tamaño total
             val totalBytes = try {

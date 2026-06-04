@@ -1,18 +1,16 @@
 package com.imontalvodev.beatmybeat.ui.network
 
 import android.net.Uri
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 object LyricsOvhApi {
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .callTimeout(90, TimeUnit.SECONDS)
-        .build()
+    private val client = AppHttpClient.withTimeouts(
+        connectSeconds = 20,
+        readSeconds = 60,
+        writeSeconds = 60,
+        callSeconds = 90,
+    )
 
     fun fetch(title: String, artist: String): LyricsResponse {
         val safeArtist = cleanArtistForLyrics(artist)

@@ -1,6 +1,5 @@
 package com.imontalvodev.beatmybeat.ui.network
 
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 
@@ -21,7 +20,7 @@ fun fetchYouTubeSongMetadata(videoId: String): YouTubeSongMetadata {
         val targetUrl = "https://www.youtube.com/watch?v=$videoId"
         val oEmbed = "https://www.youtube.com/oembed?url=$targetUrl&format=json"
         val req = Request.Builder().url(oEmbed).get().build()
-        OkHttpClient().newCall(req).execute().use { res ->
+        AppHttpClient.instance.newCall(req).execute().use { res ->
             if (!res.isSuccessful) return fallback
             val body = res.body.string()
             val json = JSONObject(body)
