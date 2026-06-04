@@ -373,45 +373,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             .apply()
     }
 
-    @Deprecated("Usar loadPlaybackQueueSnapshot", ReplaceWith("loadPlaybackQueueSnapshot()"))
-    fun loadShufflePersistedOrder(): List<String> =
-        loadPlaybackQueueSnapshot()?.orderUris ?: emptyList()
-
-    @Deprecated("Usar loadPlaybackQueueSnapshot", ReplaceWith("loadPlaybackQueueSnapshot()?.currentIndex ?: 0"))
-    fun loadShuffleIndex(): Int =
-        loadPlaybackQueueSnapshot()?.currentIndex ?: 0
-
-    @Deprecated("Usar savePlaybackQueueSnapshot")
-    fun persistShuffleState(enabled: Boolean, orderUris: List<String>, index: Int) {
-        val current = loadPlaybackQueueSnapshot()
-        savePlaybackQueueSnapshot(
-            PlaybackQueueSnapshot(
-                orderUris = orderUris,
-                currentIndex = index,
-                positionMs = current?.positionMs ?: 0L,
-                shuffleOn = enabled,
-            ),
-        )
-    }
-
-    @Deprecated("Usar loadPlaybackQueueSnapshot")
-    fun loadManualQueueUris(): List<String> = emptyList()
-
-    @Deprecated("Usar savePlaybackQueueSnapshot")
-    fun persistManualQueueUris(@Suppress("UNUSED_PARAMETER") uris: List<String>) = Unit
-
-    @Deprecated("Usar clearPlaybackQueueSnapshot")
-    fun clearManualQueuePersistence() = Unit
-
-    @Deprecated("Usar loadPlaybackQueueSnapshot")
-    fun loadLastPendingQueueUris(): List<String> = emptyList()
-
-    @Deprecated("Usar savePlaybackQueueSnapshot")
-    fun persistLastPendingQueue(@Suppress("UNUSED_PARAMETER") uris: List<String>) = Unit
-
-    @Deprecated("Usar clearPlaybackQueueSnapshot")
-    fun clearLastPendingQueuePersistence() = Unit
-
     private fun loadUriListFromPrefs(key: String): List<String> {
         val raw = prefs.getString(key, null) ?: return emptyList()
         return runCatching {

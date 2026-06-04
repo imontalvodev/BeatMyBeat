@@ -52,6 +52,7 @@ import androidx.annotation.StringRes
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.imontalvodev.beatmybeat.R
+import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.SongSuggestion
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchClient
@@ -612,7 +613,7 @@ fun AnalyzeScreen(
                                 selectedSuggestion = null
                                 songDownloadInfo = resources.getString(R.string.download_started_background)
                             } catch (e: Exception) {
-                                android.util.Log.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
+                                Logger.e("AnalyzeScreen", "Download crash: ${e.javaClass.simpleName}: ${e.message}", e)
                                 downloadError = resources.getString(
                                     R.string.analyze_download_error,
                                     e.javaClass.simpleName,

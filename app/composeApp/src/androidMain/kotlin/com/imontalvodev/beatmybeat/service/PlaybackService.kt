@@ -23,6 +23,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.imontalvodev.beatmybeat.MainActivity
 import com.imontalvodev.beatmybeat.R
+import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -306,7 +307,7 @@ class PlaybackService : Service() {
         val dur = exoPlayer.duration.let { if (it == C.TIME_UNSET) 0L else it }
         if (dur <= 0L) return
         val safe = positionMs.coerceIn(0L, (dur - 500L).coerceAtLeast(0L))
-        android.util.Log.d("BeatMyBeatSeek", "seekTo target=${positionMs}ms safe=${safe}ms dur=${dur}ms")
+        Logger.d("BeatMyBeatSeek", "seekTo target=${positionMs}ms safe=${safe}ms dur=${dur}ms")
         val wasPlaying = exoPlayer.isPlaying || exoPlayer.playWhenReady
         exoPlayer.seekTo(safe)
         // Garantizar que sigue reproduciendo si lo estaba antes del seek.

@@ -150,7 +150,6 @@ import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
-import com.imontalvodev.beatmybeat.service.BeatMyBeatForegroundService
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1342,7 +1341,7 @@ fun PlayerScreen(
             lyricsState = LyricsUiState.Empty(
                 resources.getString(R.string.player_lyrics_select_song),
             )
-            BeatMyBeatForegroundService.stopPlayback(context)
+            context.sendPlaybackForegroundAction(PlaybackService.ACTION_STOP)
         }
         viewModel.syncLibrary(auto = true)
         if (showToast) showToast(songDeletedText)
@@ -2440,7 +2439,7 @@ fun PlayerScreen(
                                     }
 
                                     is PlayerViewModel.RenamePlaylistResult.AlreadyExists -> {
-                                        showToast("Ya existe una playlist con ese nombre.")
+                                        showToast(resources.getString(R.string.player_playlist_name_exists))
                                     }
                                 }
                             },

@@ -145,14 +145,6 @@
     <string name="splash_tagline">Tu música, a tu ritmo</string>
     <string name="splash_download_music">Descargar música</string>
     <string name="splash_go_to_player">Ir al reproductor</string>
-
-    <string name="playlist_error_cannot_connect">No se pudo conectar con el servidor de playlists.</string>
-    <string name="playlist_error_cannot_load">No se pudo cargar la playlist</string>
-    <string name="playlist_default_title">Playlist</string>
-    <string name="playlist_loading">Cargando…</string>
-    <string name="playlist_tracks_found">tracks encontradas</string>
-    <string name="playlist_download_all">DOWNLOAD ALL TRACKS (ZIP)</string>
-
     <string name="analyze_no_results">No se encontraron resultados para esa búsqueda.</string>
     <string name="analyze_connection_error">Error de conexión. Comprueba tu internet e inténtalo de nuevo.</string>
     <string name="analyze_playlist_url_required">Introduce una URL de YouTube o YouTube Music.</string>

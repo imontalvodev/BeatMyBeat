@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import com.imontalvodev.beatmybeat.core.Logger
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -42,7 +43,7 @@ object NewPipeStreamExtractor {
     fun extractBestAudioStream(videoId: String): AudioStreamInfo {
         init()
         val url = "https://www.youtube.com/watch?v=$videoId"
-        android.util.Log.d("NewPipeStream", "Extracting: $url")
+        Logger.d("NewPipeStream", "Extracting: $url")
 
         val streamInfo = try {
             StreamInfo.getInfo(ServiceList.YouTube, url)
@@ -54,7 +55,7 @@ object NewPipeStreamExtractor {
         val videoStreams = streamInfo.videoStreams.orEmpty()
         val videoOnlyStreams = streamInfo.videoOnlyStreams.orEmpty()
 
-        android.util.Log.d(
+        Logger.d(
             "NewPipeStream",
             "Streams: audio=${audioStreams.size} muxedVideo=${videoStreams.count { !it.isVideoOnly }} " +
                 "videoOnly=${videoOnlyStreams.size}",
@@ -63,13 +64,13 @@ object NewPipeStreamExtractor {
         pickFromAudioStreams(audioStreams)?.let { return it }
 
         pickFromMuxedVideo(videoStreams)?.let {
-            android.util.Log.d("NewPipeStream", "Using muxed progressive stream (audio+video)")
+            Logger.d("NewPipeStream", "Using muxed progressive stream (audio+video)")
             return it
         }
 
         // Algunos vídeos solo exponen audio en la lista de "video" sin flag videoOnly
         pickFromMuxedVideo(videoStreams.filter { it.content.isNotBlank() })?.let {
-            android.util.Log.d("NewPipeStream", "Using fallback video stream")
+            Logger.d("NewPipeStream", "Using fallback video stream")
             return it
         }
 
@@ -90,7 +91,7 @@ object NewPipeStreamExtractor {
                 ),
             ) ?: streams.firstOrNull { it.content.isNotBlank() } ?: return null
 
-        android.util.Log.d(
+        Logger.d(
             "NewPipeStream",
             "Best audio stream: format=${best.format} bitrate=${best.averageBitrate}",
         )
@@ -113,7 +114,7 @@ object NewPipeStreamExtractor {
             ),
         ) ?: return null
 
-        android.util.Log.d(
+        Logger.d(
             "NewPipeStream",
             "Best muxed stream: format=${best.format} bitrate=${best.bitrate} res=${best.resolution}",
         )
@@ -171,7 +172,7 @@ object OkHttpDownloader : org.schabi.newpipe.extractor.downloader.Downloader() {
         val okResponse: Response = client.newCall(okRequest).execute()
         val responseBody = okResponse.body?.string() ?: ""
         if (okResponse.code == 429) {
-            android.util.Log.w("NewPipeStream", "YouTube rate limit (429) for ${request.url()}")
+            Logger.w("NewPipeStream", "YouTube rate limit (429) for ${request.url()}")
         }
         val headers = mutableMapOf<String, List<String>>()
         okResponse.headers.names().forEach { name ->

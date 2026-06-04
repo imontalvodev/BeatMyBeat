@@ -5,6 +5,7 @@ import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.download.DownloadProgressUpdate
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
@@ -75,14 +76,14 @@ object AudioDownloader {
             // Construir siempre la URL de maxresdefault basada en el videoId real
             resolvedThumbnail = "https://i.ytimg.com/vi/$resolvedVideoId/maxresdefault.jpg"
 
-            android.util.Log.d("NewPipeStream", "title='$safeTitle' artist='$safeArtist' thumbnail='$resolvedThumbnail'")
+            Logger.d("NewPipeStream", "title='$safeTitle' artist='$safeArtist' thumbnail='$resolvedThumbnail'")
 
             // --- Paso 2: extraer URL de stream con NewPipe ---
             report("Obteniendo enlace de audio…")
             val streamInfo = try {
                 NewPipeStreamExtractor.extractBestAudioStream(resolvedVideoId)
             } catch (e: Exception) {
-                android.util.Log.e("NewPipeStream", "extractBestAudioStream failed: ${e.javaClass.simpleName}: ${e.message}", e)
+                Logger.e("NewPipeStream", "extractBestAudioStream failed: ${e.javaClass.simpleName}: ${e.message}", e)
                 BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
                 return@withContext DownloadResult(false, null, e.message)
             }
@@ -102,7 +103,7 @@ object AudioDownloader {
             val outFile = File(dir, fileName)
             val masterMp3 = File(dir, "${baseName}.master.mp3")
 
-            android.util.Log.d("NewPipeStream", "Downloading: ${streamInfo.url.take(100)} mimeType=${streamInfo.mimeType}")
+            Logger.d("NewPipeStream", "Downloading: ${streamInfo.url.take(100)} mimeType=${streamInfo.mimeType}")
 
             val downloadClient = OkHttpClient.Builder()
                 .connectTimeout(20, TimeUnit.SECONDS)
@@ -121,7 +122,7 @@ object AudioDownloader {
                 }
             } catch (e: Exception) { -1L }
 
-            android.util.Log.d("NewPipeStream", "Total bytes: $totalBytes, writing to $fileName")
+            Logger.d("NewPipeStream", "Total bytes: $totalBytes, writing to $fileName")
 
             val chunkSize = 1_048_576L
             var offset = 0L
@@ -140,7 +141,7 @@ object AudioDownloader {
 
                     val chunkBody = chunkResp.body
                     if (!chunkResp.isSuccessful || chunkBody == null) {
-                        android.util.Log.e("NewPipeStream", "Chunk HTTP ${chunkResp.code}")
+                        Logger.e("NewPipeStream", "Chunk HTTP ${chunkResp.code}")
                         chunkResp.close()
                         break
                     }
@@ -159,7 +160,7 @@ object AudioDownloader {
                 out.flush()
             }
 
-            android.util.Log.d("NewPipeStream", "Download complete: ${totalWritten}B")
+            Logger.d("NewPipeStream", "Download complete: ${totalWritten}B")
 
             if (totalWritten == 0L) {
                 tempFile.delete()
@@ -203,7 +204,7 @@ object AudioDownloader {
             // Reutilizamos la lógica existente para sidecar/artwork metadata.
             runCatching {
                 embedMetadata(masterMp3, safeTitle, safeArtist, album.trim(), resolvedThumbnail, downloadClient)
-            }.onFailure { android.util.Log.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
+            }.onFailure { Logger.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
 
             // --- Paso 5: si no es MP3, convertir desde master al formato final ---
             report("Convirtiendo a ${format.label}…", fraction = 1f)
@@ -297,12 +298,12 @@ object AudioDownloader {
             return@withContext DownloadResult(true, savedName, null)
 
         } catch (e: Exception) {
-            android.util.Log.e("NewPipeStream", "Download exception: ${e.javaClass.simpleName}: ${e.message}", e)
+            Logger.e("NewPipeStream", "Download exception: ${e.javaClass.simpleName}: ${e.message}", e)
             BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
             return@withContext DownloadResult(false, null, "${e.javaClass.simpleName}: ${e.message}")
         } catch (t: Throwable) {
             // Captura también Error (NoSuchMethodError, OutOfMemoryError, etc.)
-            android.util.Log.e("NewPipeStream", "Download fatal: ${t.javaClass.simpleName}: ${t.message}", t)
+            Logger.e("NewPipeStream", "Download fatal: ${t.javaClass.simpleName}: ${t.message}", t)
             BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "Error crítico: ${t.javaClass.simpleName}")
             return@withContext DownloadResult(false, null, "${t.javaClass.simpleName}: ${t.message}")
         }
@@ -316,7 +317,7 @@ object AudioDownloader {
         thumbnailUrl: String,
         httpClient: OkHttpClient,
     ) {
-        android.util.Log.d("NewPipeStream", "embedMetadata: title='$title' artist='$artist' ext=${file.extension}")
+        Logger.d("NewPipeStream", "embedMetadata: title='$title' artist='$artist' ext=${file.extension}")
 
         // 1. Descargar la carátula (maxresdefault → hqdefault → mqdefault)
         val artworkBytes: ByteArray? = if (thumbnailUrl.isNotBlank()) {
@@ -338,7 +339,7 @@ object AudioDownloader {
                     }
                     if (bytes != null) break
                 }
-                android.util.Log.d("NewPipeStream", "Artwork: ${bytes?.size ?: 0} bytes")
+                Logger.d("NewPipeStream", "Artwork: ${bytes?.size ?: 0} bytes")
                 bytes
             }.getOrNull()
         } else null
@@ -355,8 +356,8 @@ object AudioDownloader {
                     put("artworkBase64", android.util.Base64.encodeToString(artworkBytes, android.util.Base64.NO_WRAP))
                 }
             }.also { metaFile.writeText(it.toString()) }
-            android.util.Log.d("NewPipeStream", "meta.json saved: ${metaFile.name}")
-        }.onFailure { android.util.Log.w("NewPipeStream", "meta.json failed: ${it.message}") }
+            Logger.d("NewPipeStream", "meta.json saved: ${metaFile.name}")
+        }.onFailure { Logger.w("NewPipeStream", "meta.json failed: ${it.message}") }
 
         // 3. Intentar también embeber tags MP4 en el contenedor (best-effort)
         if (file.extension.lowercase() == "m4a") {
@@ -370,11 +371,11 @@ object AudioDownloader {
                 )
                 if (tmp.exists() && tmp.length() > 0) {
                     file.delete(); tmp.renameTo(file)
-                    android.util.Log.d("NewPipeStream", "MP4 tags embedded OK")
+                    Logger.d("NewPipeStream", "MP4 tags embedded OK")
                 } else { tmp.delete() }
             }.onFailure {
                 tmp.delete()
-                android.util.Log.w("NewPipeStream", "MP4 tags failed (meta.json fallback active): ${it.message}")
+                Logger.w("NewPipeStream", "MP4 tags failed (meta.json fallback active): ${it.message}")
             }
         }
     }

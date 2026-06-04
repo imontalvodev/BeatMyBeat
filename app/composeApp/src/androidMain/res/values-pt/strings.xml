@@ -78,13 +78,6 @@
     <string name="splash_tagline">Sua música, no seu ritmo</string>
     <string name="splash_download_music">Baixar música</string>
     <string name="splash_go_to_player">Ir para o player</string>
-    <string name="playlist_error_cannot_connect">Não foi possível conectar ao servidor de playlists.</string>
-    <string name="playlist_error_cannot_load">Não foi possível carregar a playlist</string>
-    <string name="playlist_default_title">Playlist</string>
-    <string name="playlist_loading">Carregando…</string>
-    <string name="playlist_tracks_found">faixas encontradas</string>
-    <string name="playlist_download_all">BAIXAR TODAS AS FAIXAS (ZIP)</string>
-
     <string name="player_selection_count">%1$d selecionada(s)</string>
     <string name="player_select_all">Todas</string>
     <string name="player_selection_actions_cd">Ações da seleção</string>

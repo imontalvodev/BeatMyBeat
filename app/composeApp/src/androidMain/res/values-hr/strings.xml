@@ -78,13 +78,6 @@
     <string name="splash_tagline">Tvoja glazba, tvoj ritam</string>
     <string name="splash_download_music">Preuzmi glazbu</string>
     <string name="splash_go_to_player">Idi na reproduktor</string>
-    <string name="playlist_error_cannot_connect">Nije moguće povezivanje sa serverom playlista.</string>
-    <string name="playlist_error_cannot_load">Nije moguće učitati playlistu</string>
-    <string name="playlist_default_title">Playlist</string>
-    <string name="playlist_loading">Učitavanje…</string>
-    <string name="playlist_tracks_found">pronađenih pjesama</string>
-    <string name="playlist_download_all">PREUZMI SVE PJESME (ZIP)</string>
-
     <string name="player_selection_count">%1$d odabrano</string>
     <string name="player_select_all">Sve</string>
     <string name="player_selection_actions_cd">Radnje nad odabirom</string>

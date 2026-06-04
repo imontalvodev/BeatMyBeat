@@ -78,13 +78,6 @@
     <string name="splash_tagline">Deine Musik, dein Rhythmus</string>
     <string name="splash_download_music">Musik herunterladen</string>
     <string name="splash_go_to_player">Zum Player</string>
-    <string name="playlist_error_cannot_connect">Verbindung zum Playlist-Server fehlgeschlagen.</string>
-    <string name="playlist_error_cannot_load">Playlist konnte nicht geladen werden</string>
-    <string name="playlist_default_title">Playlist</string>
-    <string name="playlist_loading">Wird geladen…</string>
-    <string name="playlist_tracks_found">Tracks gefunden</string>
-    <string name="playlist_download_all">ALLE TRACKS HERUNTERLADEN (ZIP)</string>
-
     <string name="player_selection_count">%1$d ausgewählt</string>
     <string name="player_select_all">Alle</string>
     <string name="player_selection_actions_cd">Aktionen für Auswahl</string>
