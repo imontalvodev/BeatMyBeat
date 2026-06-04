@@ -1,34 +1,57 @@
 package com.imontalvodev.beatmybeat
 
 import android.Manifest
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.provider.DocumentsContract
-import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import androidx.navigation.NavType
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
+import com.imontalvodev.beatmybeat.playback.PlaybackServiceBinding
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
-import com.imontalvodev.beatmybeat.ui.feature.playlist.PlaylistScreen
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
 import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
 import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
@@ -37,8 +60,15 @@ import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerSection
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatTheme
 import com.imontalvodev.beatmybeat.ui.theme.ThemeProfilesStore
+import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
+    private fun applyLanguage(languageTag: String) {
+        if (languageTag.isBlank()) return
+        val locales = LocaleListCompat.forLanguageTags(languageTag)
+        AppCompatDelegate.setApplicationLocales(locales)
+    }
+
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             // No hacemos nada: si deniega, simplemente no se verán notificaciones.
@@ -56,12 +86,19 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
+            var localeCompositionEpoch by remember { mutableIntStateOf(0) }
+            @Suppress("UNUSED_VARIABLE")
+            val localeTick = localeCompositionEpoch
+
             val store = remember { ThemeProfilesStore(this) }
-            var storageLabel by remember { mutableStateOf(StorageSettings.getLocationLabel(this)) }
-            var profiles by remember { mutableStateOf(store.loadProfiles()) }
-            var activeProfileId by remember {
-                mutableStateOf(store.loadActiveProfileId() ?: profiles.first().id)
+            val themeBootstrap = remember(store) {
+                val loaded = store.loadProfiles()
+                val active = store.coerceActiveProfileId(loaded.map { it.id }, loaded.first().id)
+                loaded to active
             }
+            var storageLabel by remember { mutableStateOf(StorageSettings.getLocationLabel(this)) }
+            var profiles by remember { mutableStateOf(themeBootstrap.first) }
+            var activeProfileId by remember { mutableStateOf(themeBootstrap.second) }
             val activeProfile = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.first()
 
             val storagePicker = rememberLauncherForActivityResult(
@@ -77,158 +114,247 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            BeatMyBeatTheme(themeProfile = activeProfile) {
-                val navController = rememberNavController()
-                Box(modifier = Modifier.fillMaxSize()) {
-                    NavHost(navController = navController, startDestination = "splash") {
-                        composable("splash") {
-                            SplashScreen(
-                                onGoToDownloader = {
-                                    navController.navigate("analyze") {
-                                        popUpTo("splash") { inclusive = true }
-                                    }
-                                },
-                                onGoToPlayer = {
-                                    navController.navigate("player") {
-                                        popUpTo("splash") { inclusive = true }
-                                    }
-                                },
-                            )
-                        }
-                        composable("analyze") {
-                            AnalyzeScreen(
-                                themeName = activeProfile.name,
-                                onOpenPlayer = { navController.navigate("player") },
-                            )
-                        }
-                        composable(
-                            route = "playlist?url={url}",
-                            arguments = listOf(
-                                navArgument("url") {
-                                    type = NavType.StringType
-                                    defaultValue = ""
-                                }
-                            ),
-                        ) { backStackEntry ->
-                            val url = backStackEntry.arguments?.getString("url").orEmpty()
-                            PlaylistScreen(
-                                onOpenPlayer = { navController.navigate("player") },
-                                playlistUrl = url,
-                            )
-                        }
-                        composable("player") {
-                            PlayerScreen(
-                                onOpenProfile = { navController.navigate("profile") },
-                                onOpenDownloader = { navController.navigate("analyze") },
-                            )
-                        }
-                        composable("profile") {
-                            ProfileScreen(
-                                storageLocationLabel = storageLabel,
-                                onPickStorageLocation = { storagePicker.launch(null) },
-                                onOpenStorageFolder = {
-                                    val customTree = StorageSettings.getCustomTreeUri(this@MainActivity)
-                                    val targetTreeUri = customTree
-                                        ?: Uri.parse("content://com.android.externalstorage.documents/tree/primary%3AMusic%2FBeatMyBeat")
-                                    val targetDocUri = runCatching {
-                                        val treeId = DocumentsContract.getTreeDocumentId(targetTreeUri)
-                                        DocumentsContract.buildDocumentUriUsingTree(targetTreeUri, treeId)
-                                    }.getOrDefault(targetTreeUri)
+            val snackbarHostState = remember { SnackbarHostState() }
+            val scope = rememberCoroutineScope()
 
-                                    val opened = runCatching {
-                                        startActivity(
-                                            Intent(Intent.ACTION_VIEW).apply {
-                                                setDataAndType(targetDocUri, DocumentsContract.Document.MIME_TYPE_DIR)
-                                                addFlags(
-                                                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                                                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                                                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
+            BeatMyBeatTheme(themeProfile = activeProfile) {
+                CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
+                    PlaybackServiceBinding {
+                        key(localeTick) {
+                        val navController = rememberNavController()
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentRoute = navBackStackEntry?.destination?.route
+                    val showBottomBar = currentRoute in setOf("analyze", "player", "profile")
+
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        bottomBar = {
+                            if (showBottomBar) {
+                                NavigationBar {
+                                    NavigationBarItem(
+                                        selected = currentRoute == "analyze",
+                                        onClick = {
+                                            navController.navigate("analyze") { launchSingleTop = true }
+                                        },
+                                        icon = {
+                                            Icon(
+                                                Icons.Filled.Download,
+                                                contentDescription = stringResource(R.string.nav_download),
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = stringResource(R.string.nav_download),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            )
+                                        },
+                                    )
+                                    NavigationBarItem(
+                                        selected = currentRoute == "player",
+                                        onClick = {
+                                            navController.navigate("player") { launchSingleTop = true }
+                                        },
+                                        icon = {
+                                            Icon(
+                                                Icons.Filled.MusicNote,
+                                                contentDescription = stringResource(R.string.nav_player),
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = stringResource(R.string.nav_player),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                textAlign = TextAlign.Center,
+                                            )
+                                        },
+                                    )
+                                    NavigationBarItem(
+                                        selected = currentRoute == "profile",
+                                        onClick = {
+                                            navController.navigate("profile") { launchSingleTop = true }
+                                        },
+                                        icon = {
+                                            Icon(
+                                                Icons.Filled.Person,
+                                                contentDescription = stringResource(R.string.nav_profile),
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = stringResource(R.string.nav_profile),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                textAlign = TextAlign.Center,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        },
+                    ) { innerPadding ->
+                        NavHost(
+                            navController = navController,
+                            startDestination = "splash",
+                            modifier = Modifier.padding(innerPadding),
+                            enterTransition = {
+                                fadeIn(animationSpec = tween(280)) +
+                                    slideInHorizontally(animationSpec = tween(280)) { it / 10 }
+                            },
+                            exitTransition = {
+                                fadeOut(animationSpec = tween(220)) +
+                                    slideOutHorizontally(animationSpec = tween(240)) { -it / 10 }
+                            },
+                            popEnterTransition = {
+                                fadeIn(animationSpec = tween(280)) +
+                                    slideInHorizontally(animationSpec = tween(280)) { -it / 10 }
+                            },
+                            popExitTransition = {
+                                fadeOut(animationSpec = tween(220)) +
+                                    slideOutHorizontally(animationSpec = tween(240)) { it / 10 }
+                            },
+                        ) {
+                            composable("splash") {
+                                SplashScreen(
+                                    onGoToDownloader = {
+                                        navController.navigate("analyze") {
+                                            popUpTo("splash") { inclusive = true }
+                                        }
+                                    },
+                                    onGoToPlayer = {
+                                        navController.navigate("player") {
+                                            popUpTo("splash") { inclusive = true }
+                                        }
+                                    },
+                                )
+                            }
+                            composable("analyze") {
+                                AnalyzeScreen()
+                            }
+                            composable("player") {
+                                PlayerScreen(
+                                    onNavigateToDownloader = {
+                                        navController.navigate("analyze") {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                )
+                            }
+                            composable("profile") {
+                                ProfileScreen(
+                                    onChangeLanguage = { languageTag ->
+                                        applyLanguage(languageTag)
+                                        localeCompositionEpoch++
+                                    },
+                                    storageLocationLabel = storageLabel,
+                                    onPickStorageLocation = { storagePicker.launch(null) },
+                                    onOpenStorageFolder = {
+                                        val customTree = StorageSettings.getCustomTreeUri(this@MainActivity)
+                                        val targetTreeUri = customTree
+                                            ?: Uri.parse("content://com.android.externalstorage.documents/tree/primary%3AMusic%2FBeatMyBeat")
+                                        val targetDocUri = runCatching {
+                                            val treeId = DocumentsContract.getTreeDocumentId(targetTreeUri)
+                                            DocumentsContract.buildDocumentUriUsingTree(targetTreeUri, treeId)
+                                        }.getOrDefault(targetTreeUri)
+
+                                        val opened = runCatching {
+                                            startActivity(
+                                                Intent(Intent.ACTION_VIEW).apply {
+                                                    setDataAndType(targetDocUri, DocumentsContract.Document.MIME_TYPE_DIR)
+                                                    addFlags(
+                                                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                                                            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
+                                                    )
+                                                },
+                                            )
+                                            true
+                                        }.recoverCatching {
+                                            startActivity(
+                                                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                                                    putExtra(DocumentsContract.EXTRA_INITIAL_URI, targetTreeUri)
+                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                },
+                                            )
+                                            true
+                                        }.getOrDefault(false)
+                                        if (!opened) {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    message = this@MainActivity.getString(R.string.profile_folder_open_failed),
+                                                    duration = SnackbarDuration.Short,
                                                 )
-                                            },
-                                        )
-                                        true
-                                    }.recoverCatching {
-                                        startActivity(
-                                            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                                                putExtra(DocumentsContract.EXTRA_INITIAL_URI, targetTreeUri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            },
-                                        )
-                                        true
-                                    }.getOrDefault(false)
-                                    if (!opened) {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            "No se pudo abrir la carpeta en este dispositivo.",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                    }
-                                },
-                                onCustomizeBackground = { navController.navigate("theme-customizer/background") },
-                                onCustomizeText = { navController.navigate("theme-customizer/text") },
-                            )
-                        }
-                        composable("theme-customizer/background") {
-                            ThemeCustomizerScreen(
-                                section = ThemeCustomizerSection.Background,
-                                profiles = profiles,
-                                activeProfileId = activeProfileId,
-                                onApplyProfile = { id ->
-                                    activeProfileId = id
-                                    store.saveActiveProfileId(id)
-                                },
-                                onDeleteProfile = { id ->
-                                    profiles = profiles.filterNot { it.id == id }.ifEmpty { store.defaultProfiles() }
-                                    if (activeProfileId == id) {
-                                        activeProfileId = profiles.first().id
-                                        store.saveActiveProfileId(activeProfileId)
-                                    }
-                                    store.saveProfiles(profiles)
-                                },
-                                onSaveProfile = { profile ->
-                                    profiles = if (profiles.any { it.id == profile.id }) {
-                                        profiles.map { existing -> if (existing.id == profile.id) profile else existing }
-                                    } else {
-                                        profiles + profile
-                                    }
-                                    store.saveProfiles(profiles)
-                                    activeProfileId = profile.id
-                                    store.saveActiveProfileId(profile.id)
-                                },
-                            )
-                        }
-                        composable("theme-customizer/text") {
-                            ThemeCustomizerScreen(
-                                section = ThemeCustomizerSection.Text,
-                                profiles = profiles,
-                                activeProfileId = activeProfileId,
-                                onApplyProfile = { id ->
-                                    activeProfileId = id
-                                    store.saveActiveProfileId(id)
-                                },
-                                onDeleteProfile = { id ->
-                                    profiles = profiles.filterNot { it.id == id }.ifEmpty { store.defaultProfiles() }
-                                    if (activeProfileId == id) {
-                                        activeProfileId = profiles.first().id
-                                        store.saveActiveProfileId(activeProfileId)
-                                    }
-                                    store.saveProfiles(profiles)
-                                },
-                                onSaveProfile = { profile ->
-                                    profiles = if (profiles.any { it.id == profile.id }) {
-                                        profiles.map { existing -> if (existing.id == profile.id) profile else existing }
-                                    } else {
-                                        profiles + profile
-                                    }
-                                    store.saveProfiles(profiles)
-                                    activeProfileId = profile.id
-                                    store.saveActiveProfileId(profile.id)
-                                },
-                            )
+                                            }
+                                        }
+                                    },
+                                    onCustomizeBackground = { navController.navigate("theme-customizer/background") },
+                                    onCustomizeText = { navController.navigate("theme-customizer/text") },
+                                )
+                            }
+                            composable("theme-customizer/background") {
+                                ThemeCustomizerScreen(
+                                    section = ThemeCustomizerSection.Background,
+                                    profiles = profiles,
+                                    activeProfileId = activeProfileId,
+                                    onApplyProfile = { id ->
+                                        activeProfileId = id
+                                        store.saveActiveProfileId(id)
+                                    },
+                                    onDeleteProfile = { id ->
+                                        profiles = profiles.filterNot { it.id == id }.ifEmpty { store.defaultProfiles() }
+                                        if (activeProfileId == id) {
+                                            activeProfileId = profiles.first().id
+                                            store.saveActiveProfileId(activeProfileId)
+                                        }
+                                        store.saveProfiles(profiles)
+                                    },
+                                    onSaveProfile = { profile ->
+                                        profiles = if (profiles.any { it.id == profile.id }) {
+                                            profiles.map { existing -> if (existing.id == profile.id) profile else existing }
+                                        } else {
+                                            profiles + profile
+                                        }
+                                        store.saveProfiles(profiles)
+                                        activeProfileId = profile.id
+                                        store.saveActiveProfileId(profile.id)
+                                    },
+                                )
+                            }
+                            composable("theme-customizer/text") {
+                                ThemeCustomizerScreen(
+                                    section = ThemeCustomizerSection.Text,
+                                    profiles = profiles,
+                                    activeProfileId = activeProfileId,
+                                    onApplyProfile = { id ->
+                                        activeProfileId = id
+                                        store.saveActiveProfileId(id)
+                                    },
+                                    onDeleteProfile = { id ->
+                                        profiles = profiles.filterNot { it.id == id }.ifEmpty { store.defaultProfiles() }
+                                        if (activeProfileId == id) {
+                                            activeProfileId = profiles.first().id
+                                            store.saveActiveProfileId(activeProfileId)
+                                        }
+                                        store.saveProfiles(profiles)
+                                    },
+                                    onSaveProfile = { profile ->
+                                        profiles = if (profiles.any { it.id == profile.id }) {
+                                            profiles.map { existing -> if (existing.id == profile.id) profile else existing }
+                                        } else {
+                                            profiles + profile
+                                        }
+                                        store.saveProfiles(profiles)
+                                        activeProfileId = profile.id
+                                        store.saveActiveProfileId(profile.id)
+                                    },
+                                )
+                            }
                         }
                     }
-                }
-            }
-        }
-    }
+                        } // localeTick
+                    } // PlaybackServiceBinding
+                } // CompositionLocalProvider
+            } // BeatMyBeatTheme
+        } // setContent
+    } // onCreate
 }

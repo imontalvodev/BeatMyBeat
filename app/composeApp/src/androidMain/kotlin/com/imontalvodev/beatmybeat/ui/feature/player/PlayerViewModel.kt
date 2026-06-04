@@ -24,6 +24,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val _tracks = MutableStateFlow<List<DeviceTrack>>(emptyList())
     val tracks: StateFlow<List<DeviceTrack>> = _tracks.asStateFlow()
 
+    private val _librarySyncing = MutableStateFlow(true)
+    val librarySyncing: StateFlow<Boolean> = _librarySyncing.asStateFlow()
+
+    /** Evita re-restaurar la cola al reentrar en PlayerScreen (remember se reinicia; el servicio no). */
+    private val _queueUiHydrated = MutableStateFlow(false)
+    val queueUiHydrated: StateFlow<Boolean> = _queueUiHydrated.asStateFlow()
+
+    fun setQueueUiHydrated(hydrated: Boolean) {
+        _queueUiHydrated.value = hydrated
+    }
+
     // ids de favoritos persistidos
     private val _favoriteIds = MutableStateFlow<Set<Long>>(loadIdSet(PREF_FAVORITES))
     val favoriteIds: StateFlow<Set<Long>> = _favoriteIds.asStateFlow()
@@ -54,12 +65,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun syncLibrary(auto: Boolean) {
         viewModelScope.launch {
-            val scanned = withContext(Dispatchers.IO) { scanner.scanAudio() }
-            _tracks.value = scanned
+            _librarySyncing.value = true
+            try {
+                val scanned = withContext(Dispatchers.IO) { scanner.scanAudio() }
+                _tracks.value = scanned
 
-            // Mantener playlists coherentes con el contenido real del teléfono
-            val validIds = scanned.map { it.id }.toSet()
-            cleanupPlaylists(validIds)
+                // Mantener playlists coherentes con el contenido real del teléfono
+                val validIds = scanned.map { it.id }.toSet()
+                cleanupPlaylists(validIds)
+            } finally {
+                _librarySyncing.value = false
+            }
         }
     }
 
@@ -293,6 +309,92 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadSortOption(): String = prefs.getString(PREF_SORT, "name_asc") ?: "name_asc"
 
+    private val _shuffleEnabled = MutableStateFlow(false)
+    val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled.asStateFlow()
+
+    fun setShuffleEnabled(enabled: Boolean) {
+        _shuffleEnabled.value = enabled
+    }
+
+    // ── Cola de reproducción unificada (JSON) ───────────────────────────────
+
+    fun loadPlaybackQueueSnapshot(): PlaybackQueueSnapshot? {
+        val raw = prefs.getString(PREF_PLAYBACK_QUEUE_JSON, null)
+        if (!raw.isNullOrBlank()) {
+            return PlaybackQueueSnapshot.fromJson(raw)
+        }
+        return migrateLegacyQueueSnapshot()
+    }
+
+    fun savePlaybackQueueSnapshot(snapshot: PlaybackQueueSnapshot) {
+        if (snapshot.isEmpty) {
+            clearPlaybackQueueSnapshot()
+            return
+        }
+        prefs.edit()
+            .putString(PREF_PLAYBACK_QUEUE_JSON, snapshot.toJson().toString())
+            .apply()
+        removeLegacyQueueKeys()
+    }
+
+    fun clearPlaybackQueueSnapshot() {
+        prefs.edit().remove(PREF_PLAYBACK_QUEUE_JSON).apply()
+        removeLegacyQueueKeys()
+    }
+
+    /** Migra claves antiguas (pending/manual/shuffle) al modelo unificado si existían. */
+    private fun migrateLegacyQueueSnapshot(): PlaybackQueueSnapshot? {
+        val shuffleUris = loadUriListFromPrefs(PREF_SHUFFLE_ORDER_JSON)
+        val shuffleIdx = prefs.getInt(PREF_SHUFFLE_INDEX, 0)
+        val shuffleOn = prefs.getBoolean(PREF_SHUFFLE_ON, false)
+        val pending = loadUriListFromPrefs(PREF_LAST_PENDING_QUEUE_URIS_JSON)
+            .ifEmpty { loadUriListFromPrefs(PREF_MANUAL_QUEUE_URIS_JSON) }
+
+        val orderUris = when {
+            shuffleUris.isNotEmpty() -> shuffleUris
+            pending.isNotEmpty() -> pending
+            else -> return null
+        }
+        return PlaybackQueueSnapshot(
+            orderUris = orderUris,
+            currentIndex = if (shuffleUris.isNotEmpty()) shuffleIdx else 0,
+            positionMs = 0L,
+            shuffleOn = shuffleOn && shuffleUris.isNotEmpty(),
+        ).also { savePlaybackQueueSnapshot(it) }
+    }
+
+    private fun removeLegacyQueueKeys() {
+        prefs.edit()
+            .remove(PREF_SHUFFLE_ON)
+            .remove(PREF_SHUFFLE_ORDER_JSON)
+            .remove(PREF_SHUFFLE_INDEX)
+            .remove(PREF_MANUAL_QUEUE_URIS_JSON)
+            .remove(PREF_LAST_PENDING_QUEUE_URIS_JSON)
+            .apply()
+    }
+
+    private fun loadUriListFromPrefs(key: String): List<String> {
+        val raw = prefs.getString(key, null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optString(i).takeIf { it.isNotBlank() }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun persistUriListToPrefs(key: String, uris: List<String>) {
+        val ed = prefs.edit()
+        if (uris.isEmpty()) {
+            ed.remove(key)
+        } else {
+            val arr = JSONArray()
+            uris.forEach { arr.put(it) }
+            ed.putString(key, arr.toString())
+        }
+        ed.apply()
+    }
+
     companion object {
         private const val PREF_FAVORITES = "favorites_ids"
         // Legacy (migración)
@@ -300,6 +402,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_PLAYLISTS_JSON = "playlists_json"
         private const val PREF_SECTION = "player_section"
         private const val PREF_SORT = "player_sort"
+        private const val PREF_PLAYBACK_QUEUE_JSON = "player_playback_queue_json"
+        // Legacy (migración)
+        private const val PREF_SHUFFLE_ON = "player_shuffle_on"
+        private const val PREF_SHUFFLE_ORDER_JSON = "player_shuffle_order_uris"
+        private const val PREF_SHUFFLE_INDEX = "player_shuffle_index"
+        private const val PREF_MANUAL_QUEUE_URIS_JSON = "player_manual_queue_uris"
+        private const val PREF_LAST_PENDING_QUEUE_URIS_JSON = "player_last_pending_queue_uris"
     }
 }
 

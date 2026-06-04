@@ -1,35 +1,63 @@
-This is a Kotlin Multiplatform project targeting Android, iOS.
+# BeatMyBeat
 
-* [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-    folder is the appropriate location.
+Aplicación **Android** de descarga y reproducción de música, construida con **Jetpack Compose** y
+**Material 3**. Permite buscar/descargar audio (NewPipe Extractor + transcodificado con `ffmpeg-kit`),
+gestionar la biblioteca local (MediaStore), reproducir con **Media3/ExoPlayer** en un servicio en
+primer plano y mostrar letras sincronizadas (LRCLIB / lyrics.ovh).
 
-* [/iosApp](./iosApp/iosApp) contains iOS applications. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+> **Sobre el origen "Kotlin Multiplatform":** el proyecto nació de un template KMP, pero **iOS se
+> descartó** y el target junto con el módulo `iosApp/` y el `commonMain` del template se eliminaron
+> (ver Fase A en [`docs/optimizacion-limpieza.md`](./docs/optimizacion-limpieza.md)). Toda la app vive
+> hoy en `composeApp/src/androidMain`. El plugin de Compose Multiplatform se conserva por comodidad,
+> pero **no hay otros targets activos**.
 
-### Build and Run Android Application
+## Estructura
 
-To build and run the development version of the Android app, use the run configuration from the run widget
-in your IDE’s toolbar or build it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :composeApp:assembleDebug
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :composeApp:assembleDebug
-  ```
+- [`composeApp/src/androidMain`](./composeApp/src/androidMain/kotlin/com/imontalvodev/beatmybeat) — todo el código de la app:
+  - `ui/feature/` — pantallas (reproductor, analizar/descargar, perfil, tema, splash).
+  - `ui/network/` — clientes HTTP (unificados en `AppHttpClient`), NewPipe, letras, descarga de audio.
+  - `service/`, `playback/`, `notifications/` — reproducción Media3, descargas y notificaciones.
+  - `ui/data/`, `ui/storage/`, `ui/theme/`, `core/` — biblioteca, preferencias, tema y utilidades.
 
-### Build and Run iOS Application
+## Compilar y ejecutar
 
-To build and run the development version of the iOS app, use the run configuration from the run widget
-in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+Genera e instala la versión de depuración del APK:
 
----
+```shell
+./gradlew :composeApp:assembleDebug
+```
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+En Windows: `.\gradlew.bat :composeApp:assembleDebug`.
+
+## Documentación
+
+| Documento | Contenido |
+|---|---|
+| [`docs/optimizacion-limpieza.md`](./docs/optimizacion-limpieza.md) | Plan e historial de limpieza/optimización del código (Fases A–D). |
+| [`docs/cambios.md`](./docs/cambios.md) | Histórico de features y mejoras de rendimiento implementadas. |
+| [`docs/mejoras.md`](./docs/mejoras.md) | Ideas de mejora de UI (parcialmente histórico; ver banner del propio documento). |
+| [`docs/riesgos-legales.md`](./docs/riesgos-legales.md) | Consideraciones de distribución (APK, F-Droid, GitHub). |
+
+## Tecnologías clave
+
+Jetpack Compose · Material 3 · Media3/ExoPlayer · NewPipe Extractor · ffmpeg-kit · Coil · OkHttp.
+
+## Licencia
+
+Distribuido bajo **GNU General Public License v3.0** (ver [`LICENSE`](./LICENSE)). Se elige GPL-3.0
+por compatibilidad con **NewPipe Extractor** (GPL-3.0), del que depende la app.
+
+## Distribución y uso responsable
+
+> BeatMyBeat es un proyecto **gratuito y open source**, sin anuncios ni monetización. Permite buscar
+> y descargar audio desde YouTube y YouTube Music en el dispositivo del usuario.
+>
+> La descarga de contenido de terceros puede **infringir los términos de servicio de YouTube** y la
+> **legislación de propiedad intelectual** aplicable. Los desarrolladores **no alojan contenido
+> protegido**; solo distribuyen el software.
+>
+> El **usuario es responsable** del uso que haga de la aplicación conforme a la ley y a las
+> condiciones de las plataformas de origen.
+
+Consideraciones de distribución por canal (web, GitHub, F-Droid/IzzyOnDroid, Google Play) en
+[`docs/riesgos-legales.md`](./docs/riesgos-legales.md).

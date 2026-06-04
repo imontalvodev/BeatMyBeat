@@ -1,26 +1,39 @@
+@file:OptIn(UnstableApi::class)
+
 package com.imontalvodev.beatmybeat.service
 
 import android.app.Notification
+import android.app.PendingIntent
 import android.app.Service
+import android.annotation.SuppressLint
+import android.graphics.Bitmap
+import android.os.Build
 import android.content.Intent
 import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.imontalvodev.beatmybeat.MainActivity
 import com.imontalvodev.beatmybeat.R
+import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
+import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
+import kotlin.OptIn
+import androidx.annotation.OptIn as AndroidOptIn
 import androidx.core.app.NotificationCompat
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
@@ -28,10 +41,11 @@ import androidx.media3.session.MediaStyleNotificationHelper
 /**
  * Servicio de reproducción basado en Media3 ExoPlayer.
  *
- * Expone un [Binder] para que [PlayerScreen] acceda al [ExoPlayer] directamente.
+ * Expone un [Binder] para que la UI del reproductor acceda al [ExoPlayer] directamente.
  * Esto garantiza que player.seekTo(ms) sea una llamada síncrona al reproductor,
  * sin pasar por el sistema de intents (que era la causa del bug de seek).
  */
+@AndroidOptIn(markerClass = [UnstableApi::class])
 class PlaybackService : Service() {
 
     inner class LocalBinder : Binder() {
@@ -52,6 +66,20 @@ class PlaybackService : Service() {
     private lateinit var mediaSession: MediaSession
     private val mainHandler = Handler(Looper.getMainLooper())
     private val artworkExecutor = Executors.newSingleThreadExecutor()
+    private var notificationArtwork: Bitmap? = null
+    private var notificationArtworkMediaId: String? = null
+    private var appLogoBitmap: Bitmap? = null
+    private var lastStatePushElapsed = 0L
+
+    private val positionTick = object : Runnable {
+        override fun run() {
+            if (!::exoPlayer.isInitialized) return
+            if (exoPlayer.isPlaying) {
+                pushState(force = false)
+                mainHandler.postDelayed(this, POSITION_TICK_MS)
+            }
+        }
+    }
 
     /** Referencia pública al player para seek directo desde la UI. */
     val player: ExoPlayer get() = exoPlayer
@@ -70,43 +98,61 @@ class PlaybackService : Service() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+        exoPlayer.setWakeMode(C.WAKE_MODE_LOCAL)
 
-        mediaSession = MediaSession.Builder(this, exoPlayer).build()
+        mediaSession = MediaSession.Builder(this, exoPlayer)
+            .setSessionActivity(buildContentIntent())
+            .build()
+
+        artworkExecutor.execute { appLogoBitmap() }
 
         exoPlayer.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) = pushState()
-            override fun onPlaybackStateChanged(state: Int) = pushState()
-            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                pushState()
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    mainHandler.post(positionTick)
+                } else {
+                    mainHandler.removeCallbacks(positionTick)
+                }
+                pushState(force = true)
                 updateNotification()
-                scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
-                scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
             }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                pushState(force = true)
+                updateNotification()
+            }
+
+            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                pushState(force = true)
+                recycleNotificationArtwork()
+                updateNotification()
+                scheduleNotificationArtwork()
+            }
+
             override fun onPositionDiscontinuity(
                 old: Player.PositionInfo,
                 new: Player.PositionInfo,
                 reason: Int,
-            ) = pushState()
+            ) = pushState(force = true)
         })
-
-        // Tick de posición mientras reproduce (solo actualiza posición, no causa recomposición total)
-        android.os.Handler(mainLooper).also { h ->
-            val tick = object : Runnable {
-                override fun run() {
-                    if (exoPlayer.isPlaying) pushState()
-                    h.postDelayed(this, 200)
-                }
-            }
-            h.post(tick)
-        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Notificación persistente si ya hay cola (p. ej. acciones desde segundo plano / notificación).
+        if (exoPlayer.mediaItemCount > 0) {
+            promoteToForegroundIfAllowed()
+        }
         when (intent?.action) {
-            ACTION_PLAY -> exoPlayer.play()
-            ACTION_PAUSE -> exoPlayer.pause()
+            ACTION_PLAY -> {
+                exoPlayer.play()
+                updateNotification()
+            }
+            ACTION_PAUSE -> {
+                exoPlayer.pause()
+                updateNotification()
+            }
             ACTION_NEXT -> skipToNextSafe()
             ACTION_PREV -> skipToPreviousSafe()
             ACTION_STOP -> {
@@ -128,7 +174,7 @@ class PlaybackService : Service() {
                 updateNotification()
             }
         }
-        pushState()
+        pushState(force = true)
         return START_STICKY
     }
 
@@ -163,17 +209,26 @@ class PlaybackService : Service() {
      * Activar [Player.shuffleModeEnabled] encima de esa cola hace que Media3 reordene de nuevo y rompe
      * [Player.hasNextMediaItem] / avance desde la notificación o el reproductor del sistema.
      */
-    fun loadQueue(queueJson: String, startIndex: Int, @Suppress("UNUSED_PARAMETER") shuffleEnabled: Boolean = false) {
+    fun loadQueue(
+        queueJson: String,
+        startIndex: Int,
+        startPositionMs: Long = 0L,
+        autoPlay: Boolean = true,
+        @Suppress("UNUSED_PARAMETER") shuffleEnabled: Boolean = false,
+    ) {
         val items = parseQueue(queueJson)
         if (items.isEmpty()) return
         exoPlayer.shuffleModeEnabled = false
-        exoPlayer.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
+        val idx = startIndex.coerceIn(0, items.lastIndex)
+        exoPlayer.setMediaItems(items, idx, startPositionMs.coerceAtLeast(0L))
         exoPlayer.prepare()
-        exoPlayer.play()
-        startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
-        pushState()
-        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
-        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
+        exoPlayer.playWhenReady = autoPlay
+        if (autoPlay) {
+            exoPlayer.play()
+            promoteToForegroundIfAllowed()
+        }
+        pushState(force = true)
+        scheduleNotificationArtwork()
     }
 
     /**
@@ -200,30 +255,58 @@ class PlaybackService : Service() {
             /* mediaItems= */ newItems,
         )
         updateNotification()
-        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex)
-        scheduleArtworkForIndex(exoPlayer.currentMediaItemIndex + 1)
     }
 
-    private fun scheduleArtworkForIndex(index: Int) {
-        if (index < 0 || index >= exoPlayer.mediaItemCount) return
-        val item = exoPlayer.getMediaItemAt(index)
+    /** Carátula solo para la notificación (no se duplica en cada MediaItem de la cola). */
+    private fun scheduleNotificationArtwork() {
+        val item = exoPlayer.currentMediaItem ?: return
         val uri = item.localConfiguration?.uri ?: return
-        if (item.mediaMetadata.artworkData != null) return
         val mediaId = item.mediaId
         val uriStr = uri.toString()
+        recycleNotificationArtwork()
         artworkExecutor.execute {
-            val bytes = PlaybackArtworkHelper.resolveArtworkBytes(this@PlaybackService, uriStr) ?: return@execute
+            val bytes = PlaybackArtworkHelper.resolveArtworkBytes(this@PlaybackService, uriStr)
             mainHandler.post {
-                if (index >= exoPlayer.mediaItemCount) return@post
-                val current = exoPlayer.getMediaItemAt(index)
-                if (current.mediaId != mediaId) return@post
-                if (current.mediaMetadata.artworkData != null) return@post
-                val newMeta = current.mediaMetadata.withArtworkBytes(bytes)
-                val updated = current.buildUpon().setMediaMetadata(newMeta).build()
-                exoPlayer.replaceMediaItem(index, updated)
-                if (index == exoPlayer.currentMediaItemIndex) updateNotification()
+                if (exoPlayer.currentMediaItem?.mediaId != mediaId) return@post
+                if (bytes == null || bytes.isEmpty()) {
+                    recycleNotificationArtwork()
+                    updateNotification()
+                    return@post
+                }
+                val bitmap = BitmapDecoding.decodeSampled(bytes, NOTIFICATION_ARTWORK_PX)
+                if (bitmap == null) {
+                    recycleNotificationArtwork()
+                    updateNotification()
+                    return@post
+                }
+                notificationArtwork = bitmap
+                notificationArtworkMediaId = mediaId
+                updateNotification()
             }
         }
+    }
+
+    private fun recycleNotificationArtwork() {
+        notificationArtwork?.recycle()
+        notificationArtwork = null
+        notificationArtworkMediaId = null
+    }
+
+    private fun appLogoBitmap(): Bitmap? {
+        val cached = appLogoBitmap
+        if (cached != null && !cached.isRecycled) return cached
+        val decoded = BitmapDecoding.decodeResource(
+            resources,
+            R.drawable.logo,
+            NOTIFICATION_ARTWORK_PX,
+        )
+        appLogoBitmap = decoded
+        return decoded
+    }
+
+    private fun recycleAppLogoBitmap() {
+        appLogoBitmap?.recycle()
+        appLogoBitmap = null
     }
 
     /**
@@ -234,15 +317,20 @@ class PlaybackService : Service() {
         val dur = exoPlayer.duration.let { if (it == C.TIME_UNSET) 0L else it }
         if (dur <= 0L) return
         val safe = positionMs.coerceIn(0L, (dur - 500L).coerceAtLeast(0L))
-        android.util.Log.d("BeatMyBeatSeek", "seekTo target=${positionMs}ms safe=${safe}ms dur=${dur}ms")
+        Logger.d("BeatMyBeatSeek", "seekTo target=${positionMs}ms safe=${safe}ms dur=${dur}ms")
         val wasPlaying = exoPlayer.isPlaying || exoPlayer.playWhenReady
         exoPlayer.seekTo(safe)
         // Garantizar que sigue reproduciendo si lo estaba antes del seek.
         if (wasPlaying) exoPlayer.play()
-        pushState()
+        pushState(force = true)
     }
 
-    private fun pushState() {
+    private fun pushState(force: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && exoPlayer.isPlaying) {
+            if (now - lastStatePushElapsed < STATE_PUSH_INTERVAL_MS) return
+        }
+        lastStatePushElapsed = now
         val dur = exoPlayer.duration.let { if (it == C.TIME_UNSET) 0L else it }
         val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
         val meta = exoPlayer.currentMediaItem?.mediaMetadata
@@ -256,9 +344,21 @@ class PlaybackService : Service() {
         )
     }
 
+    @SuppressLint("MissingPermission")
+    private fun promoteToForegroundIfAllowed() {
+        if (!BeatMyBeatNotification.canPostNotifications(this)) return
+        runCatching {
+            startForeground(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     private fun updateNotification() {
-        val nm = androidx.core.app.NotificationManagerCompat.from(this)
-        nm.notify(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+        if (!BeatMyBeatNotification.canPostNotifications(this)) return
+        runCatching {
+            androidx.core.app.NotificationManagerCompat.from(this)
+                .notify(BeatMyBeatNotification.PLAYBACK_NOTIFICATION_ID, buildNotification())
+        }
     }
 
     private fun buildNotification(): Notification {
@@ -267,16 +367,21 @@ class PlaybackService : Service() {
         val artist = meta?.artist?.toString() ?: ""
         val isPlaying = exoPlayer.isPlaying
 
-        val piFlags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        fun pi(action: String, reqCode: Int) = android.app.PendingIntent.getService(
-            this, reqCode,
-            Intent(this, PlaybackService::class.java).setAction(action), piFlags,
-        )
+        val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        fun pi(action: String, reqCode: Int): PendingIntent {
+            val i = Intent(this, PlaybackService::class.java).setAction(action)
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                PendingIntent.getForegroundService(this, reqCode, i, piFlags)
+            } else {
+                PendingIntent.getService(this, reqCode, i, piFlags)
+            }
+        }
 
-        return NotificationCompat.Builder(this, "beatmybeat_playback")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+        val builder = NotificationCompat.Builder(this, "beatmybeat_playback")
+            .setSmallIcon(R.drawable.ic_stat_logo)
             .setContentTitle(title)
             .setContentText(artist)
+            .setContentIntent(buildContentIntent())
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setOngoing(isPlaying)
@@ -291,7 +396,22 @@ class PlaybackService : Service() {
                 MediaStyleNotificationHelper.MediaStyle(mediaSession)
                     .setShowActionsInCompactView(0, 1, 2),
             )
-            .build()
+
+        val albumArt = notificationArtwork?.takeIf { !it.isRecycled }
+        val largeIcon = albumArt ?: appLogoBitmap()
+        if (largeIcon != null && !largeIcon.isRecycled) {
+            builder.setLargeIcon(largeIcon)
+        }
+
+        return builder.build()
+    }
+
+    private fun buildContentIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getActivity(this, 1000, intent, flags)
     }
 
     private fun parseQueue(json: String): List<MediaItem> {
@@ -315,7 +435,10 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(positionTick)
         artworkExecutor.shutdownNow()
+        recycleNotificationArtwork()
+        recycleAppLogoBitmap()
         mediaSession.release()
         exoPlayer.release()
         _state.value = PlaybackState()
@@ -331,17 +454,11 @@ class PlaybackService : Service() {
         const val ACTION_TOGGLE_SHUFFLE = "com.imontalvodev.beatmybeat.action.TOGGLE_SHUFFLE"
         const val ACTION_CYCLE_REPEAT   = "com.imontalvodev.beatmybeat.action.CYCLE_REPEAT"
 
+        private const val POSITION_TICK_MS = 500L
+        private const val STATE_PUSH_INTERVAL_MS = 500L
+        private const val NOTIFICATION_ARTWORK_PX = 256
+
         private val _state = MutableStateFlow(PlaybackState())
         val state: StateFlow<PlaybackState> = _state.asStateFlow()
     }
-}
-
-private fun MediaMetadata.withArtworkBytes(bytes: ByteArray): MediaMetadata {
-    val b = MediaMetadata.Builder()
-    title?.let { b.setTitle(it) }
-    artist?.let { b.setArtist(it) }
-    albumTitle?.let { b.setAlbumTitle(it) }
-    albumArtist?.let { b.setAlbumArtist(it) }
-    displayTitle?.let { b.setDisplayTitle(it) }
-    return b.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER).build()
 }

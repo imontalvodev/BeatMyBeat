@@ -215,7 +215,18 @@ object StorageSettings {
     fun listCustomAudioDocs(context: Context): List<DocumentFile> {
         val customTree = getCustomTreeUri(context) ?: return emptyList()
         val root = DocumentFile.fromTreeUri(context, customTree) ?: return emptyList()
-        return root.listFiles().filter { it.isFile && isAudioExtension(it.name.orEmpty()) }
+        return collectAudioFilesRecursive(root)
+    }
+
+    private fun collectAudioFilesRecursive(dir: DocumentFile): List<DocumentFile> {
+        val out = mutableListOf<DocumentFile>()
+        dir.listFiles().forEach { entry ->
+            when {
+                entry.isFile && isAudioExtension(entry.name.orEmpty()) -> out.add(entry)
+                entry.isDirectory -> out.addAll(collectAudioFilesRecursive(entry))
+            }
+        }
+        return out
     }
 
     fun listCustomAudioUris(context: Context): List<Uri> =
@@ -223,7 +234,7 @@ object StorageSettings {
 
     private fun isAudioExtension(name: String): Boolean {
         val ext = name.substringAfterLast('.', "").lowercase()
-        return ext in setOf("mp3", "m4a", "aac", "wav", "ogg", "flac", "webm", "opus")
+        return ext in setOf("mp3", "m4a", "m4b", "aac", "wav", "ogg", "flac", "webm", "opus", "wma", "mp4")
     }
 }
 

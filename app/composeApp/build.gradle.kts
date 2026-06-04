@@ -11,16 +11,7 @@ kotlin {
     androidTarget {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
-        }
-    }
-
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "ComposeApp"
-            isStatic = true
+            optIn.add("androidx.media3.common.util.UnstableApi")
         }
     }
 
@@ -28,6 +19,7 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.appcompat)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.compose.ui)
@@ -40,6 +32,9 @@ kotlin {
             implementation(libs.androidx.documentfile)
             implementation(compose.materialIconsExtended)
             implementation(libs.okhttp)
+            implementation(libs.coil.compose)
+            implementation(libs.androidx.palette.ktx)
+            implementation(libs.compose.shimmer)
             implementation(libs.newpipeextractor)
             implementation(libs.ffmpeg.kit)
         }
@@ -56,6 +51,9 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+        androidUnitTest.dependencies {
+            implementation(libs.kotlin.test)
+        }
     }
 }
 
@@ -70,6 +68,9 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    buildFeatures {
+        buildConfig = true
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -77,7 +78,12 @@ android {
     }
     buildTypes {
         getByName("release") {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
     compileOptions {

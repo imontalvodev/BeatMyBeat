@@ -25,7 +25,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,8 +43,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
@@ -106,11 +108,10 @@ fun ThemeCustomizerScreen(
         loadProfile(profile, keepId = !profile.id.startsWith("builtin-"))
     }
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgBrush),
-        color = Color.Transparent,
     ) {
         Column(
             modifier = Modifier
@@ -123,12 +124,12 @@ fun ThemeCustomizerScreen(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModeChip(
-                    text = "Fondo",
+                    text = stringResource(R.string.theme_tab_background),
                     selected = section == ThemeCustomizerSection.Background,
                     onClick = {},
                 )
                 ModeChip(
-                    text = "Texto",
+                    text = stringResource(R.string.theme_tab_text),
                     selected = section == ThemeCustomizerSection.Text,
                     onClick = {},
                 )
@@ -136,9 +137,9 @@ fun ThemeCustomizerScreen(
 
             Text(
                 text = if (section == ThemeCustomizerSection.Background) {
-                    "Personalizar fondo y acentos"
+                    stringResource(R.string.theme_customize_background)
                 } else {
-                    "Personalizar texto"
+                    stringResource(R.string.theme_customize_text)
                 },
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -152,7 +153,7 @@ fun ThemeCustomizerScreen(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Perfiles guardados", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.theme_saved_profiles), style = MaterialTheme.typography.titleMedium)
                     profiles.forEach { profile ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -164,9 +165,9 @@ fun ThemeCustomizerScreen(
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Row {
-                                TextButton(onClick = { onApplyProfile(profile.id) }) { Text("Aplicar") }
+                                TextButton(onClick = { onApplyProfile(profile.id) }) { Text(stringResource(R.string.common_apply)) }
                                 if (!profile.id.startsWith("builtin-")) {
-                                    TextButton(onClick = { onDeleteProfile(profile.id) }) { Text("Borrar") }
+                                    TextButton(onClick = { onDeleteProfile(profile.id) }) { Text(stringResource(R.string.common_delete)) }
                                 }
                             }
                         }
@@ -178,7 +179,7 @@ fun ThemeCustomizerScreen(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Nombre del perfil") },
+                label = { Text(stringResource(R.string.theme_profile_name)) },
                 singleLine = true,
             )
 
@@ -187,10 +188,10 @@ fun ThemeCustomizerScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 TextButton(onClick = { activeProfile?.let { loadProfile(it, keepId = !it.id.startsWith("builtin-")) } }) {
-                    Text("Cargar activo")
+                    Text(stringResource(R.string.theme_load_active))
                 }
                 TextButton(onClick = { editingProfileId = null; name = "Mi tema" }) {
-                    Text("Nuevo perfil")
+                    Text(stringResource(R.string.theme_new_profile))
                 }
             }
 
@@ -221,20 +222,37 @@ fun ThemeCustomizerScreen(
             }
 
             PrimaryButton(
-                text = if (editingProfileId == null) "Guardar como nuevo" else "Aplicar cambios",
+                text = if (editingProfileId == null) stringResource(R.string.theme_save_as_new) else stringResource(R.string.theme_apply_changes),
                 onClick = {
-                    val profile = BeatMyBeatThemeProfile(
-                        id = editingProfileId ?: UUID.randomUUID().toString(),
-                        name = name.ifBlank { "Tema custom" },
-                    backgroundTop = backgroundTop,
-                    backgroundBottom = backgroundBottom,
-                    primary = primary,
-                    primaryVariant = primaryVariant,
-                    secondary = secondary,
-                    surface = surface,
-                    onSurface = onSurface,
-                    onSurfaceMuted = onSurfaceMuted,
-                    )
+                    val mergeBase = editingProfileId?.let { pid -> profiles.firstOrNull { it.id == pid } }
+                        ?: profiles.firstOrNull { it.id == activeProfileId }
+                        ?: profiles.first()
+                    val profile = when (section) {
+                        ThemeCustomizerSection.Background -> BeatMyBeatThemeProfile(
+                            id = editingProfileId ?: UUID.randomUUID().toString(),
+                            name = name.ifBlank { "Tema custom" },
+                            backgroundTop = backgroundTop,
+                            backgroundBottom = backgroundBottom,
+                            primary = primary,
+                            primaryVariant = primaryVariant,
+                            secondary = secondary,
+                            surface = surface,
+                            onSurface = mergeBase.onSurface,
+                            onSurfaceMuted = mergeBase.onSurfaceMuted,
+                        )
+                        ThemeCustomizerSection.Text -> BeatMyBeatThemeProfile(
+                            id = editingProfileId ?: UUID.randomUUID().toString(),
+                            name = name.ifBlank { "Tema custom" },
+                            backgroundTop = mergeBase.backgroundTop,
+                            backgroundBottom = mergeBase.backgroundBottom,
+                            primary = mergeBase.primary,
+                            primaryVariant = mergeBase.primaryVariant,
+                            secondary = mergeBase.secondary,
+                            surface = mergeBase.surface,
+                            onSurface = onSurface,
+                            onSurfaceMuted = onSurfaceMuted,
+                        )
+                    }
                     validationError = null
                     onSaveProfile(profile)
                     onApplyProfile(profile.id)
@@ -267,7 +285,7 @@ private fun ColorField(
             ) {
                 BoxColorPreview(value)
                 TextButton(onClick = { pickerOpen = true }) {
-                    Text("Elegir")
+                    Text(stringResource(R.string.theme_choose))
                 }
             }
         }
@@ -276,7 +294,7 @@ private fun ColorField(
     if (pickerOpen) {
         AlertDialog(
             onDismissRequest = { pickerOpen = false },
-            title = { Text("Seleccionar color: $label") },
+            title = { Text(stringResource(R.string.theme_select_color, label)) },
             text = {
                 ColorWheelPicker(
                     initialColor = value,
@@ -285,7 +303,7 @@ private fun ColorField(
             },
             confirmButton = {
                 TextButton(onClick = { pickerOpen = false }) {
-                    Text("Listo")
+                    Text(stringResource(R.string.theme_done))
                 }
             },
         )
@@ -297,41 +315,44 @@ private fun ColorWheelPicker(
     initialColor: Color,
     onColorChanged: (Color) -> Unit,
 ) {
-    var hue by remember(initialColor) { mutableStateOf(colorToHsv(initialColor).first) }
-    var saturation by remember(initialColor) { mutableStateOf(colorToHsv(initialColor).second) }
-    var value by remember(initialColor) { mutableStateOf(colorToHsv(initialColor).third) }
+    // Solo al abrir el diálogo: si usamos initialColor como key, cada cambio del padre resetea HSV y bloquea sliders.
+    val startHsv = remember { colorToHsv(initialColor) }
+    var hue by remember { mutableStateOf(startHsv.first) }
+    var saturation by remember { mutableStateOf(startHsv.second) }
+    var value by remember { mutableStateOf(startHsv.third) }
+    val onColorChangedState = rememberUpdatedState(onColorChanged)
+
+    fun pushColor() {
+        onColorChangedState.value(hsvToColor(hue, saturation, value))
+    }
+
+    fun applyHueFromPoint(point: Offset, center: Offset) {
+        val angle = Math.toDegrees(
+            atan2((point.y - center.y).toDouble(), (point.x - center.x).toDouble()),
+        ).toFloat()
+        hue = (angle + 360f) % 360f
+        // Grises (S≈0): al elegir matiz, activar saturación para no quedar “pegado”.
+        if (saturation < 0.05f) saturation = 0.5f
+        pushColor()
+    }
 
     val selectedColor = hsvToColor(hue, saturation, value)
-
-    LaunchedEffect(hue, saturation, value) {
-        onColorChanged(selectedColor)
-    }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Canvas(
             modifier = Modifier
                 .size(220.dp)
                 .pointerInput(Unit) {
-                    fun updateHue(point: Offset, sizePx: Float) {
-                        val center = Offset(sizePx / 2f, sizePx / 2f)
-                        val angle = Math.toDegrees(
-                            atan2((point.y - center.y).toDouble(), (point.x - center.x).toDouble()),
-                        ).toFloat()
-                        hue = (angle + 360f) % 360f
-                    }
                     detectTapGestures { point ->
-                        updateHue(point, min(size.width, size.height).toFloat())
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        applyHueFromPoint(point, center)
                     }
                 }
                 .pointerInput(Unit) {
                     detectDragGestures { change, _ ->
                         change.consume()
-                        val p = change.position
                         val center = Offset(size.width / 2f, size.height / 2f)
-                        val angle = Math.toDegrees(
-                            atan2((p.y - center.y).toDouble(), (p.x - center.x).toDouble()),
-                        ).toFloat()
-                        hue = (angle + 360f) % 360f
+                        applyHueFromPoint(change.position, center)
                     }
                 },
         ) {
@@ -369,17 +390,25 @@ private fun ColorWheelPicker(
             )
         }
 
-        Text("Saturación", style = MaterialTheme.typography.bodySmall)
-        Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..1f)
+        Text(stringResource(R.string.theme_saturation), style = MaterialTheme.typography.bodySmall)
+        Slider(
+            value = saturation,
+            onValueChange = { saturation = it; pushColor() },
+            valueRange = 0f..1f,
+        )
 
-        Text("Brillo", style = MaterialTheme.typography.bodySmall)
-        Slider(value = value, onValueChange = { value = it }, valueRange = 0f..1f)
+        Text(stringResource(R.string.theme_brightness), style = MaterialTheme.typography.bodySmall)
+        Slider(
+            value = value,
+            onValueChange = { value = it; pushColor() },
+            valueRange = 0f..1f,
+        )
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Color actual:", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.theme_current_color), style = MaterialTheme.typography.bodySmall)
             BoxColorPreview(selectedColor)
         }
     }
@@ -437,7 +466,7 @@ private fun PreviewBlock(
                     .background(primary.copy(alpha = 0.22f), RoundedCornerShape(999.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
-                Text("Acento", color = primary, style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.theme_accent), color = primary, style = MaterialTheme.typography.labelSmall)
             }
         }
     }

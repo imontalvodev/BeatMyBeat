@@ -1,5 +1,23 @@
+# Monorepo: solo versionar la app Android (carpeta app/).
+# backend/ y middleware/ son legado y no deben volver al repo.
 *
+!.gitignore
+!README.md
+!README.en.md
+!README.es.md
 !app/
 !app/**
-!.gitignore
+
+# Legado explícito (por si se recrean carpetas locales)
+/backend/
+/middleware/
+
+# Artefactos y secretos (en cualquier ruta)
 *.apk
+*.aab
+*.jks
+*.keystore
+**/release/
+local.properties
+.env
+!.env.example

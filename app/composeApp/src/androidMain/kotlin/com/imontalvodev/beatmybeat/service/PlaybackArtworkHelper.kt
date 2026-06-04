@@ -12,7 +12,8 @@ import java.io.File
  */
 internal object PlaybackArtworkHelper {
 
-    private const val MAX_ARTWORK_BYTES = 512 * 1024
+    /** Límite para notificación / UI; evita retener varios cientos de KB por pista en RAM. */
+    private const val MAX_ARTWORK_BYTES = 256 * 1024
 
     fun resolveArtworkBytes(context: Context, uriString: String): ByteArray? {
         val embedded = readEmbeddedPicture(context, uriString)
