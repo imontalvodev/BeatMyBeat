@@ -3,6 +3,8 @@
 *
 !.gitignore
 !README.md
+!README.en.md
+!README.es.md
 !app/
 !app/**
 
