@@ -36,6 +36,25 @@
     <string name="analyze_go_to_player">Ir al reproductor</string>
     <string name="analyze_tab_url">URL</string>
     <string name="analyze_tab_song">Canción</string>
+    <string name="analyze_tab_lyrics">Letras</string>
+    <string name="analyze_lyrics_summary">%1$d canciones detectadas · %2$d con letra · %3$d pendientes</string>
+    <string name="analyze_lyrics_scanning">Analizando biblioteca…</string>
+    <string name="analyze_lyrics_no_tracks">No hay canciones en la biblioteca del reproductor.</string>
+    <string name="analyze_lyrics_cta">DESCARGAR TODAS LAS LETRAS</string>
+    <string name="analyze_lyrics_fetching">DESCARGANDO LETRAS…</string>
+    <string name="lyrics_batch_title">Descarga de letras</string>
+    <string name="lyrics_batch_notification_title">Descargando letras</string>
+    <string name="lyrics_batch_preparing">Preparando lote…</string>
+    <string name="lyrics_batch_fetching">Buscando letra…</string>
+    <string name="lyrics_batch_track_done">Pista procesada</string>
+    <string name="lyrics_batch_skipped_track">Ya en caché</string>
+    <string name="lyrics_batch_progress_count">%1$d / %2$d</string>
+    <string name="lyrics_batch_stats_line">Encontradas: %1$d · Sin letra: %2$d · Omitidas: %3$d</string>
+    <string name="lyrics_batch_complete">Letras descargadas: %1$d. Omitidas (ya en caché): %2$d.</string>
+    <string name="lyrics_batch_partial">Letras: %1$d de %2$d. Sin letra: %3$d. Omitidas: %4$d.</string>
+    <string name="lyrics_batch_none">No se encontraron letras nuevas.</string>
+    <string name="lyrics_batch_cancelled">Descarga de letras cancelada.</string>
+    <string name="lyrics_batch_started_background">Descarga de letras iniciada en segundo plano.</string>
     <string name="analyze_url_label">URL de YouTube o YouTube Music</string>
     <string name="analyze_url_placeholder">Pega aquí el enlace de playlist, álbum o canción</string>
     <string name="analyze_song_title_placeholder">Título de la canción</string>
@@ -56,6 +75,7 @@
     <string name="theme_save_as_new">Guardar como nuevo</string>
     <string name="theme_apply_changes">Aplicar cambios</string>
     <string name="player_queue_title">Cola de reproducción</string>
+    <string name="player_queue_total">%1$d pistas en cola</string>
     <string name="player_clear_queue">Limpiar</string>
     <string name="player_now_playing">Sonando ahora</string>
     <string name="player_queue_empty_hint">La cola está vacía.\nUsa los 3 puntos de una canción para añadirla.</string>
@@ -209,4 +229,9 @@
     <string name="player_lyrics_synced_mode">Letra sincronizada</string>
     <string name="player_lyrics_tap_load">Pulsa para cargar letra</string>
     <string name="player_lyrics_loading">Cargando letra…</string>
+    <string name="player_lyrics_refresh">Volver a buscar</string>
+    <string name="player_lyrics_delete">Eliminar letra</string>
+    <string name="player_lyrics_deleted">Letra eliminada</string>
+    <string name="player_lyrics_refresh_cd">Volver a buscar letra</string>
+    <string name="player_lyrics_delete_cd">Eliminar letra guardada</string>
 </resources>

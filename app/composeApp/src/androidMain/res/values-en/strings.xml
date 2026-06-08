@@ -36,6 +36,25 @@
     <string name="analyze_go_to_player">Go to player</string>
     <string name="analyze_tab_url">URL</string>
     <string name="analyze_tab_song">Song</string>
+    <string name="analyze_tab_lyrics">Lyrics</string>
+    <string name="analyze_lyrics_summary">%1$d songs detected · %2$d with lyrics · %3$d pending</string>
+    <string name="analyze_lyrics_scanning">Scanning library…</string>
+    <string name="analyze_lyrics_no_tracks">No songs in the player library.</string>
+    <string name="analyze_lyrics_cta">DOWNLOAD ALL LYRICS</string>
+    <string name="analyze_lyrics_fetching">DOWNLOADING LYRICS…</string>
+    <string name="lyrics_batch_title">Lyrics download</string>
+    <string name="lyrics_batch_notification_title">Downloading lyrics</string>
+    <string name="lyrics_batch_preparing">Preparing batch…</string>
+    <string name="lyrics_batch_fetching">Fetching lyrics…</string>
+    <string name="lyrics_batch_track_done">Track processed</string>
+    <string name="lyrics_batch_skipped_track">Already cached</string>
+    <string name="lyrics_batch_progress_count">%1$d / %2$d</string>
+    <string name="lyrics_batch_stats_line">Found: %1$d · Not found: %2$d · Skipped: %3$d</string>
+    <string name="lyrics_batch_complete">Lyrics downloaded: %1$d. Skipped (cached): %2$d.</string>
+    <string name="lyrics_batch_partial">Lyrics: %1$d of %2$d. Not found: %3$d. Skipped: %4$d.</string>
+    <string name="lyrics_batch_none">No new lyrics found.</string>
+    <string name="lyrics_batch_cancelled">Lyrics download cancelled.</string>
+    <string name="lyrics_batch_started_background">Lyrics download started in the background.</string>
     <string name="analyze_url_label">YouTube or YouTube Music URL</string>
     <string name="analyze_url_placeholder">Paste a playlist, album or song link here</string>
     <string name="analyze_song_title_placeholder">Song title</string>
@@ -56,6 +75,7 @@
     <string name="theme_save_as_new">Save as new</string>
     <string name="theme_apply_changes">Apply changes</string>
     <string name="player_queue_title">Playback queue</string>
+    <string name="player_queue_total">%1$d tracks in queue</string>
     <string name="player_clear_queue">Clear</string>
     <string name="player_now_playing">Now playing</string>
     <string name="player_queue_empty_hint">The queue is empty.\nUse the three-dot menu of a song to add it.</string>
@@ -211,4 +231,9 @@
     <string name="player_lyrics_synced_mode">Synced lyrics</string>
     <string name="player_lyrics_tap_load">Tap to load lyrics</string>
     <string name="player_lyrics_loading">Loading lyrics…</string>
+    <string name="player_lyrics_refresh">Search again</string>
+    <string name="player_lyrics_delete">Delete lyrics</string>
+    <string name="player_lyrics_deleted">Lyrics deleted</string>
+    <string name="player_lyrics_refresh_cd">Search for lyrics again</string>
+    <string name="player_lyrics_delete_cd">Delete saved lyrics</string>
 </resources>

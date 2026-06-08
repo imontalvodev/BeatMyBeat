@@ -260,14 +260,14 @@ internal fun resolveTrackMetadata(track: com.imontalvodev.beatmybeat.ui.data.Dev
             ?: track.durationMs
         TrackLyricsMetadata(
             title = t,
-            artist = com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics(rawArtist),
+            artist = com.imontalvodev.beatmybeat.ui.network.extractPrimaryArtistForLyrics(rawArtist),
             album = album,
             durationMs = durationMs,
         )
     }.getOrNull()?.let { return it }
     return TrackLyricsMetadata(
         title = track.title,
-        artist = com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics(track.artist),
+        artist = com.imontalvodev.beatmybeat.ui.network.extractPrimaryArtistForLyrics(track.artist),
         album = track.album.orEmpty(),
         durationMs = track.durationMs,
     )

@@ -75,7 +75,7 @@ fun GradientProgressTrack(
 }
 
 @Composable
-private fun DownloadProgressCardShell(
+internal fun DownloadProgressCardShell(
     icon: @Composable () -> Unit,
     headline: String,
     modifier: Modifier = Modifier,

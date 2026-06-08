@@ -1,26 +1,39 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import com.imontalvodev.beatmybeat.core.Logger
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.math.abs
 
 /**
  * Cliente para [LRCLIB](https://lrclib.net/docs).
  * Devuelve letra plana y/o LRC sincronizado para preparar karaoke futuro.
+ *
+ * Las búsquedas exigen **título + artista**; no se usa fallback solo por título (homónimos).
+ * Las variantes y peticiones HTTP están acotadas para no bloquear el dispositivo.
  */
 object LrcLibApi {
 
     private const val BASE_URL = "https://lrclib.net/api"
     private const val USER_AGENT = "BeatMyBeat/1.0 (Android; https://github.com/imontalvodev/beatmybeat)"
-    private const val TIMEOUT_SEC = 20L
-    private const val DURATION_TOLERANCE_SEC = 5
+    private const val STRONG_MATCH_SCORE = 75
+    private const val LOG_TAG = "LrcLibApi"
+    private const val MAX_TITLE_VARIANTS = 2
+    private const val MAX_ARTIST_VARIANTS = 2
 
-    private val client = AppHttpClient.withTimeouts(
-        connectSeconds = TIMEOUT_SEC,
-        readSeconds = TIMEOUT_SEC,
+    /** /api/get puede ir a fuentes externas: timeout largo pero acotado. */
+    private val getClient = AppHttpClient.withTimeouts(
+        connectSeconds = 15,
+        readSeconds = 20,
         callSeconds = 25,
+    )
+    /** Caché y búsqueda: fallar rápido si no hay match. */
+    private val fastClient = AppHttpClient.withTimeouts(
+        connectSeconds = 8,
+        readSeconds = 10,
+        callSeconds = 12,
     )
 
     fun fetchLyrics(
@@ -35,66 +48,44 @@ object LrcLibApi {
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-        val artists = (listOf(cleanArtistForLyrics(artistName).trim(), artistName.trim()) + artistCandidates)
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-        val albums = listOf(
-            albumName.trim(),
-            UNKNOWN_ALBUM,
-        ).filter { it.isNotBlank() }.distinct()
+            .take(MAX_TITLE_VARIANTS)
+        val artists = buildLyricsArtistCandidates(artistName, artistCandidates)
+            .take(MAX_ARTIST_VARIANTS)
+        val album = albumName.trim().ifBlank { UNKNOWN_ALBUM }
 
         if (titles.isEmpty() || artists.isEmpty()) {
             return failure("MissingFields", "Título o artista vacío")
         }
 
-        // 1) Rápido: solo caché interna de LRCLIB (sin fuentes externas).
-        for ((title, artist, album) in metadataCombos(titles, artists, albums)) {
-            fetchFromEndpoint("get-cached", title, artist, album, durationSeconds)
-                ?.let { return it }
-        }
+        Logger.d(LOG_TAG, "fetch title='${titles.first()}' artist='${artists.first()}' dur=${durationSeconds}s")
 
-        // 2) Búsqueda en base de datos (suele ser rápida).
-        for (title in titles) {
-            for (artist in artists) {
-                searchAndFetch(title, artist, durationSeconds)
-                    ?.let { return it }
-            }
-        }
-        for (title in titles) {
-            searchAndFetch(title, artistName = "", durationSeconds)
-                ?.let { return it }
-        }
-
-        // 3) Lento: /api/get puede ir a fuentes externas — una sola vez con los metadatos principales.
-        if (durationSeconds > 0) {
-            fetchFromEndpoint("get", titles.first(), artists.first(), albums.first(), durationSeconds)
-                ?.let { return it }
-        }
-
-        return failure("NotFound", null)
-    }
-
-    /** Prioriza la combinación principal antes de variantes de título/artista/álbum. */
-    private fun metadataCombos(
-        titles: List<String>,
-        artists: List<String>,
-        albums: List<String>,
-    ): Sequence<Triple<String, String, String>> = sequence {
-        val seen = mutableSetOf<String>()
-        for (title in titles) {
-            for (artist in artists) {
-                for (album in albums) {
-                    val key = "$title|$artist|$album"
-                    if (seen.add(key)) {
-                        yield(Triple(title, artist, album))
+        for ((titleIndex, title) in titles.withIndex()) {
+            for ((artistIndex, artist) in artists.withIndex()) {
+                if (durationSeconds > 0) {
+                    fetchFromEndpoint(fastClient, "get-cached", title, artist, album, durationSeconds)
+                        ?.let { return it }
+                    if (album != UNKNOWN_ALBUM) {
+                        fetchFromEndpoint(fastClient, "get-cached", title, artist, UNKNOWN_ALBUM, durationSeconds)
+                            ?.let { return it }
                     }
+                }
+
+                searchAndFetch(title, artist, durationSeconds)?.let { return it }
+
+                // /api/get es lento: solo una vez con la combinación principal.
+                if (titleIndex == 0 && artistIndex == 0 && durationSeconds > 0) {
+                    fetchFromEndpoint(getClient, "get", title, artist, album, durationSeconds)
+                        ?.let { return it }
                 }
             }
         }
+
+        Logger.d(LOG_TAG, "not found for '${titles.first()}' / '${artists.first()}'")
+        return failure("NotFound", null)
     }
 
     private fun fetchFromEndpoint(
+        client: OkHttpClient,
         path: String,
         trackName: String,
         artistName: String,
@@ -112,7 +103,7 @@ object LrcLibApi {
             }
             .build()
 
-        val json = executeGet(url.toString()) ?: return null
+        val json = executeGet(client, url.toString()) ?: return null
         return parseLyricsRecord(json, source = "lrclib", sourceUrl = url.toString())
     }
 
@@ -121,16 +112,12 @@ object LrcLibApi {
         artistName: String,
         durationSeconds: Int,
     ): LyricsResponse? {
-        val attempts = buildList {
-            if (artistName.isNotBlank()) {
-                add(mapOf("track_name" to trackName, "artist_name" to artistName))
-                add(mapOf("q" to "$artistName $trackName"))
-            }
-            add(mapOf("track_name" to trackName))
-            if (artistName.isNotBlank()) {
-                add(mapOf("q" to "$trackName $artistName"))
-            }
-        }
+        if (artistName.isBlank()) return null
+
+        val attempts = listOf(
+            mapOf("track_name" to trackName, "artist_name" to artistName),
+            mapOf("q" to "$artistName $trackName"),
+        )
 
         var bestRecord: JSONObject? = null
         var bestScore = Int.MIN_VALUE
@@ -141,7 +128,7 @@ object LrcLibApi {
                 params.forEach { (key, value) -> addQueryParameter(key, value) }
             }.build()
 
-            val body = executeGetRaw(url.toString()) ?: continue
+            val body = executeGetRaw(fastClient, url.toString()) ?: continue
             val arr = runCatching { JSONArray(body) }.getOrNull() ?: continue
             for (i in 0 until arr.length()) {
                 val item = arr.optJSONObject(i) ?: continue
@@ -152,77 +139,56 @@ object LrcLibApi {
                     bestUrl = url.toString()
                 }
             }
-            // Coincidencia clara: no seguir probando más búsquedas.
-            if (bestScore >= 75) break
+            if (bestScore >= STRONG_MATCH_SCORE) break
         }
 
         val record = bestRecord ?: return null
+        if (bestScore == Int.MIN_VALUE || !jsonMatchesSearchResult(record, trackName, artistName, durationSeconds)) {
+            return null
+        }
+
         val id = record.optLong("id", 0L)
         if (id > 0L) {
             val byIdUrl = "$BASE_URL/get/$id"
-            executeGet(byIdUrl)?.let { parsed ->
+            executeGet(fastClient, byIdUrl)?.let { parsed ->
+                if (!jsonMatchesSearchResult(parsed, trackName, artistName, durationSeconds)) return null
                 return parseLyricsRecord(parsed, source = "lrclib", sourceUrl = byIdUrl)
             }
         }
         return parseLyricsRecord(record, source = "lrclib", sourceUrl = bestUrl.orEmpty())
     }
 
+    private fun jsonMatchesSearchResult(
+        json: JSONObject,
+        trackName: String,
+        artistName: String,
+        durationSeconds: Int,
+    ): Boolean = isAcceptableLrcCandidate(
+        expectedTitle = trackName,
+        expectedArtist = artistName,
+        expectedDurationSec = durationSeconds,
+        candidate = json.toLyricsCandidate(),
+    )
+
     private fun scoreSearchResult(
         item: JSONObject,
         trackName: String,
         artistName: String,
         durationSeconds: Int,
-    ): Int {
-        val resultTrack = readField(item, "trackName", "track_name")
-        val resultArtist = readField(item, "artistName", "artist_name")
-        var score = 0
+    ): Int = scoreLrcCandidate(
+        expectedTitle = trackName,
+        expectedArtist = artistName,
+        expectedDurationSec = durationSeconds,
+        candidate = item.toLyricsCandidate(),
+    )
 
-        score += titleMatchScore(trackName, resultTrack) * 4
-        if (artistName.isNotBlank()) {
-            score += titleMatchScore(artistName, resultArtist) * 3
-        }
-
-        if (durationSeconds > 0) {
-            val dur = item.optInt("duration", -1)
-            if (dur > 0) {
-                val delta = abs(dur - durationSeconds)
-                score += when {
-                    delta <= 2 -> 40
-                    delta <= DURATION_TOLERANCE_SEC -> 25
-                    delta <= 12 -> 8
-                    else -> -20
-                }
-            }
-        }
-
-        val hasSynced = readField(item, "syncedLyrics", "synced_lyrics").isNotBlank()
-        val hasPlain = readField(item, "plainLyrics", "plain_lyrics").isNotBlank()
-        if (hasSynced) score += 15
-        if (hasPlain) score += 5
-
-        return score
-    }
-
-    private fun titleMatchScore(expected: String, actual: String): Int {
-        val a = normalizeForMatch(expected)
-        val b = normalizeForMatch(actual)
-        if (a.isBlank() || b.isBlank()) return 0
-        if (a == b) return 30
-        if (b.contains(a) || a.contains(b)) return 20
-        val aTokens = a.split(' ').filter { it.length > 2 }
-        val bTokens = b.split(' ').filter { it.length > 2 }
-        if (aTokens.isEmpty() || bTokens.isEmpty()) return 0
-        val overlap = aTokens.count { token -> bTokens.any { it.contains(token) || token.contains(it) } }
-        return (overlap * 10).coerceAtMost(25)
-    }
-
-    private fun normalizeForMatch(raw: String): String =
-        raw.lowercase()
-            .replace(Regex("\\(.*?\\)|\\[.*?\\]"), " ")
-            .replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring|remaster(ed)?|official|audio|video|live|lyrics|prod\\.?|produced)\\b"), " ")
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+    private fun JSONObject.toLyricsCandidate(): LrcLyricsCandidate = LrcLyricsCandidate(
+        trackName = readField(this, "trackName", "track_name"),
+        artistName = readField(this, "artistName", "artist_name"),
+        durationSeconds = optInt("duration", -1),
+        hasSyncedLyrics = readField(this, "syncedLyrics", "synced_lyrics").isNotBlank(),
+        hasPlainLyrics = readField(this, "plainLyrics", "plain_lyrics").isNotBlank(),
+    )
 
     private fun readField(json: JSONObject, vararg keys: String): String {
         for (key in keys) {
@@ -255,12 +221,12 @@ object LrcLibApi {
         )
     }
 
-    private fun executeGet(url: String): JSONObject? {
-        val body = executeGetRaw(url) ?: return null
+    private fun executeGet(client: OkHttpClient, url: String): JSONObject? {
+        val body = executeGetRaw(client, url) ?: return null
         return runCatching { JSONObject(body) }.getOrNull()
     }
 
-    private fun executeGetRaw(url: String): String? {
+    private fun executeGetRaw(client: OkHttpClient, url: String): String? {
         return try {
             val req = Request.Builder()
                 .url(url)

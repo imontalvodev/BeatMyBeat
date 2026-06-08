@@ -36,6 +36,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -300,20 +301,30 @@ internal fun MiniPlayerBar(
                         )
                     }
                     if (queueSize > 0) {
+                        val badgeFontSize = when {
+                            queueSize >= 1000 -> 5f
+                            queueSize >= 100 -> 6f
+                            else -> 7f
+                        }
                         Box(
                             modifier = Modifier
-                                .size(14.dp)
+                                .height(14.dp)
+                                .defaultMinSize(minWidth = 14.dp)
                                 .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(7.dp))
                                 .align(Alignment.TopEnd)
-                                .padding(1.dp),
+                                .padding(horizontal = 3.dp, vertical = 1.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                text = if (queueSize > 99) "99+" else queueSize.toString(),
+                                text = queueSize.toString(),
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = androidx.compose.ui.unit.TextUnit(7f, androidx.compose.ui.unit.TextUnitType.Sp),
+                                    fontSize = androidx.compose.ui.unit.TextUnit(
+                                        badgeFontSize,
+                                        androidx.compose.ui.unit.TextUnitType.Sp,
+                                    ),
                                 ),
                                 color = MaterialTheme.colorScheme.onPrimary,
+                                maxLines = 1,
                             )
                         }
                     }

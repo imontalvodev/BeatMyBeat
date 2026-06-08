@@ -138,6 +138,7 @@ import coil.compose.AsyncImage
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
+import com.imontalvodev.beatmybeat.ui.network.LyricsFetchCoordinator
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
 import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
@@ -562,8 +563,9 @@ fun PlayerScreen(
     }
 
     // Letras: solo caché local (offline-first). Se rellenan al descargar.
-    var lyricsDownloading by remember { mutableStateOf(false) }
-    LaunchedEffect(currentTrack?.id) {
+    /** URIs de pistas con descarga de letra en curso (independiente de la pista actual). */
+    var lyricsDownloadingUris by remember { mutableStateOf(setOf<String>()) }
+    LaunchedEffect(currentTrack?.id, lyricsDownloadingUris) {
         val t = currentTrack ?: run {
             lyricsState = LyricsUiState.Empty(
                 resources.getString(R.string.player_lyrics_select_song),
@@ -598,9 +600,13 @@ fun PlayerScreen(
             )
             return@LaunchedEffect
         }
-        lyricsState = LyricsUiState.Empty(
-            resources.getString(R.string.player_lyrics_tap_download),
-        )
+        lyricsState = if (t.uri in lyricsDownloadingUris) {
+            LyricsUiState.Loading
+        } else {
+            LyricsUiState.Empty(
+                resources.getString(R.string.player_lyrics_tap_download),
+            )
+        }
     }
 
     fun sanitizeTitle(input: String): String {
@@ -632,20 +638,51 @@ fun PlayerScreen(
             s.equals("unknown artist", ignoreCase = true) ||
             s.isBlank()
 
-    fun downloadLyricsIfNeeded(track: DeviceTrack) {
-        if (lyricsDownloading) return
+    fun lyricsSearchKeys(
+        track: DeviceTrack,
+        meta: TrackLyricsMetadata,
+    ): Pair<List<String>, List<String>> {
+        val uriTitle = titleFromUri(track.uri)
+        val metaPair = resolveTrackMeta(track)
+        val titles = listOf(
+            meta.title.trim(),
+            sanitizeTitle(meta.title),
+            metaPair.first.trim(),
+            uriTitle,
+            sanitizeTitle(uriTitle),
+            track.title.trim(),
+        ).distinct().filter { it.isNotBlank() }
+        val artists = com.imontalvodev.beatmybeat.ui.network.buildLyricsArtistCandidates(
+            meta.artist,
+            listOf(track.artist.trim(), metaPair.second.trim()),
+        )
+        return titles to artists
+    }
 
-        lyricsDownloading = true
-        lyricsState = LyricsUiState.Loading
+    suspend fun clearLyricsCacheForTrack(track: DeviceTrack) {
+        val meta = resolveTrackMetadata(track)
+        val (titles, artists) = lyricsSearchKeys(track, meta)
+        LyricsCache.removeAll(context, titles, artists)
+    }
+
+    fun downloadLyricsIfNeeded(track: DeviceTrack, forceRefresh: Boolean = false) {
+        if (track.uri in lyricsDownloadingUris) return
+
+        lyricsDownloadingUris = lyricsDownloadingUris + track.uri
+        if (currentTrack?.uri == track.uri) {
+            lyricsState = LyricsUiState.Loading
+        }
 
         uiScope.launch {
             try {
                 val meta = withContext(Dispatchers.IO) { resolveTrackMetadata(track) }
 
                 if (isUnknown(meta.title) || isUnknown(meta.artist)) {
-                    lyricsState = LyricsUiState.Empty(
-                        resources.getString(R.string.player_lyrics_unavailable),
-                    )
+                    if (currentTrack?.uri == track.uri) {
+                        lyricsState = LyricsUiState.Empty(
+                            resources.getString(R.string.player_lyrics_unavailable),
+                        )
+                    }
                     return@launch
                 }
 
@@ -667,33 +704,48 @@ fun PlayerScreen(
                     else -> 0L
                 }
 
-                val res = withContext(Dispatchers.IO) {
-                    LyricsFetcher.fetch(
-                        context,
-                        LyricsFetcher.Request(
-                            title = meta.title,
-                            artist = meta.artist,
-                            album = meta.album,
-                            durationMs = effectiveDurationMs,
-                            titleCandidates = titleCandidates,
-                            artistCandidates = artistCandidates,
-                        ),
-                    )
+                if (forceRefresh) {
+                    withContext(Dispatchers.IO) { clearLyricsCacheForTrack(track) }
                 }
+                val res = LyricsFetchCoordinator.fetch(
+                    context,
+                    LyricsFetcher.Request(
+                        title = meta.title,
+                        artist = meta.artist,
+                        album = meta.album,
+                        durationMs = effectiveDurationMs,
+                        titleCandidates = titleCandidates,
+                        artistCandidates = artistCandidates,
+                    ),
+                    skipCache = forceRefresh,
+                )
 
-                if (res.success && res.lyrics.isNotBlank()) {
-                    lyricsState = LyricsUiState.Ready(
-                        lyrics = res.lyrics,
-                        syncedLrc = res.syncedLrc,
-                    )
-                } else {
-                    lyricsState = LyricsUiState.Empty(
-                        resources.getString(R.string.player_lyrics_unavailable),
-                    )
+                if (currentTrack?.uri == track.uri) {
+                    if (res.success && res.lyrics.isNotBlank()) {
+                        lyricsState = LyricsUiState.Ready(
+                            lyrics = res.lyrics,
+                            syncedLrc = res.syncedLrc,
+                        )
+                    } else {
+                        lyricsState = LyricsUiState.Empty(
+                            resources.getString(R.string.player_lyrics_unavailable),
+                        )
+                    }
                 }
             } finally {
-                lyricsDownloading = false
+                lyricsDownloadingUris = lyricsDownloadingUris - track.uri
             }
+        }
+    }
+
+    fun deleteLyricsForTrack(track: DeviceTrack) {
+        if (track.uri in lyricsDownloadingUris) return
+        uiScope.launch {
+            withContext(Dispatchers.IO) { clearLyricsCacheForTrack(track) }
+            lyricsState = LyricsUiState.Empty(
+                resources.getString(R.string.player_lyrics_tap_download),
+            )
+            showToast(resources.getString(R.string.player_lyrics_deleted))
         }
     }
 
@@ -735,13 +787,21 @@ fun PlayerScreen(
         )
     }
 
-    /** Pool de shuffle: una entrada por fichero (evita colas incompletas por ids duplicados). */
-    val shufflePoolTracks = remember(visibleTracks) {
+    /**
+     * Pool de reproducción según el contexto actual: pestaña (canciones / favoritos / playlist),
+     * búsqueda y ordenación. Una entrada por URI.
+     */
+    val playbackPoolTracks = remember(visibleTracks) {
         visibleTracks.distinctBy { it.uri }
     }
 
+    fun playbackQueueTotalCount(): Int {
+        if (shuffleOn && shuffleOrder.isNotEmpty()) return shuffleOrder.size
+        return (if (currentTrack != null) 1 else 0) + queue.size
+    }
+
     /**
-     * Pool de shuffle = [visibleTracks] (canciones / favoritos / playlist activa).
+     * Pool de shuffle = [playbackPoolTracks] (lista visible con filtros activos).
      * [shuffleOrder] es una permutación única de ese pool; [queue] espeja siempre
      * lo pendiente: shuffleOrder.drop(shuffleIndex + 1).
      */
@@ -752,13 +812,13 @@ fun PlayerScreen(
     }
 
     /**
-     * Nueva permutación aleatoria del pool [visibleTracks].
+     * Nueva permutación aleatoria del pool [playbackPoolTracks].
      * [playbackAnchor] si no es null (p. ej. tema que vamos a reproducir antes de asignar [currentTrack]),
      * determina [shuffleIndex]; si no, se usa [currentTrack].
      */
     fun rebuildShuffleOrderFromPool(playbackAnchor: DeviceTrack? = null) {
         if (!viewModel.shuffleEnabled.value) return
-        val base = shufflePoolTracks.toMutableList()
+        val base = playbackPoolTracks.toMutableList()
         val anchor = playbackAnchor ?: currentTrack
         anchor?.let { a ->
             if (base.none { it.uri == a.uri }) base.add(a)
@@ -1187,7 +1247,7 @@ fun PlayerScreen(
     }
 
     fun startPlaybackFromCollection(startTrack: DeviceTrack) {
-        val pool = shufflePoolTracks
+        val pool = playbackPoolTracks
         if (pool.isEmpty()) return
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
@@ -1792,9 +1852,7 @@ fun PlayerScreen(
                 isPlaying = isPlaying,
                 position = sliderPosition,
                 artwork = currentArtwork,
-                queueSize = if (shuffleOn && shuffleOrder.isNotEmpty())
-                    (shuffleOrder.size - (shuffleIndex + 1).coerceAtLeast(0)).coerceAtLeast(0)
-                else queue.size,
+                queueSize = playbackQueueTotalCount(),
                 sliderAccessibilityLabel = miniSliderA11y,
                 onTogglePlay = {
                     currentTrack ?: return@MiniPlayerBar
@@ -1823,10 +1881,14 @@ fun PlayerScreen(
 
             // OVERLAY EXPANDIDO (boceto 2)
             if (isExpanded) {
-                val canDownloadLyrics =
-                    !lyricsDownloading &&
+                val lyricsLoadingForCurrent = currentTrack?.uri in lyricsDownloadingUris
+                val canRefreshLyrics =
+                    !lyricsLoadingForCurrent &&
                         currentTrack != null &&
-                        lyricsState is LyricsUiState.Empty
+                        lyricsState !is LyricsUiState.Loading &&
+                        lyricsState !is LyricsUiState.Idle
+                val canDeleteLyrics =
+                    !lyricsLoadingForCurrent && lyricsState is LyricsUiState.Ready
                 val lyricsPositionMs = remember(sliderDragPos, playbackPositionMs, playbackDurationMs) {
                     sliderDragPos?.let { (it.coerceIn(0f, 1f) * playbackDurationMs).toLong() }
                         ?: playbackPositionMs
@@ -1867,9 +1929,13 @@ fun PlayerScreen(
                     repeatMode = repeatMode,
                     onToggleShuffle = { onToggleShuffle() },
                     onToggleRepeat = { onCycleRepeatMode() },
-                    canDownloadLyrics = canDownloadLyrics,
-                    onRequestLyricsDownload = {
-                        currentTrack?.let { downloadLyricsIfNeeded(it) }
+                    canRefreshLyrics = canRefreshLyrics,
+                    canDeleteLyrics = canDeleteLyrics,
+                    onRefreshLyrics = {
+                        currentTrack?.let { downloadLyricsIfNeeded(it, forceRefresh = true) }
+                    },
+                    onDeleteLyrics = {
+                        currentTrack?.let { deleteLyricsForTrack(it) }
                     },
                 )
             }
@@ -1890,11 +1956,21 @@ fun PlayerScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = stringResource(R.string.player_queue_title),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.player_queue_title),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.player_queue_total,
+                                        playbackQueueTotalCount(),
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                )
+                            }
                             // displayQueue: en shuffle muestra el resto del orden aleatorio;
                             // en modo normal muestra la cola manual.
                             val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty())

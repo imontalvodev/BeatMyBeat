@@ -13,7 +13,7 @@ object LyricsOvhApi {
     )
 
     fun fetch(title: String, artist: String): LyricsResponse {
-        val safeArtist = cleanArtistForLyrics(artist)
+        val safeArtist = extractPrimaryArtistForLyrics(artist)
             .ifBlank {
                 return LyricsResponse(false, "", null, null, null, null, "MissingArtist", null)
             }

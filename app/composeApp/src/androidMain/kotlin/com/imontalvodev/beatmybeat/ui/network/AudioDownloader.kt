@@ -280,7 +280,7 @@ object AudioDownloader {
             if (!isUnknown(safeTitle) && !isUnknown(safeArtist)) {
                 runCatching {
                     val album = album.trim()
-                    LyricsFetcher.fetch(
+                    LyricsFetchCoordinator.fetch(
                         context,
                         LyricsFetcher.Request(
                             title = safeTitle,
