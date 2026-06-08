@@ -67,7 +67,14 @@ import com.imontalvodev.beatmybeat.ui.theme.SuggestionListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.ActiveDownloadProgressSection
 import com.imontalvodev.beatmybeat.download.DownloadProgressBus
+import com.imontalvodev.beatmybeat.download.LyricsLibraryStats
+import com.imontalvodev.beatmybeat.download.LyricsLibraryStatsCalculator
+import com.imontalvodev.beatmybeat.download.LyricsProgressBus
+import com.imontalvodev.beatmybeat.service.LyricsBatchService
+import com.imontalvodev.beatmybeat.ui.feature.player.PlayerViewModel
+import com.imontalvodev.beatmybeat.ui.theme.ActiveLyricsBatchProgressSection
 import com.imontalvodev.beatmybeat.ui.network.fetchYouTubeSongMetadata
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -109,6 +116,14 @@ fun AnalyzeScreen(
 
     val activeDownload by DownloadProgressBus.state.collectAsState()
     val downloadInProgress = activeDownload != null
+    val activeLyricsBatch by LyricsProgressBus.state.collectAsState()
+    val lyricsBatchInProgress = activeLyricsBatch != null
+
+    val playerViewModel: PlayerViewModel = viewModel()
+    val deviceTracks by playerViewModel.tracks.collectAsState()
+    val librarySyncing by playerViewModel.librarySyncing.collectAsState()
+    var lyricsStats by remember { mutableStateOf<LyricsLibraryStats?>(null) }
+    var lyricsStatsLoading by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -117,6 +132,21 @@ fun AnalyzeScreen(
     val scope = rememberCoroutineScope()
     fun showSnack(message: String) {
         Toast.makeText(context.applicationContext, message, Toast.LENGTH_SHORT).show()
+    }
+
+    LaunchedEffect(mode) {
+        if (mode == "lyrics") {
+            playerViewModel.syncLibrary(auto = true)
+        }
+    }
+
+    LaunchedEffect(mode, deviceTracks, librarySyncing, activeLyricsBatch) {
+        if (mode != "lyrics" || librarySyncing || activeLyricsBatch != null) return@LaunchedEffect
+        lyricsStatsLoading = true
+        lyricsStats = withContext(Dispatchers.IO) {
+            LyricsLibraryStatsCalculator.compute(context.applicationContext, deviceTracks)
+        }
+        lyricsStatsLoading = false
     }
 
     Box(
@@ -137,7 +167,12 @@ fun AnalyzeScreen(
 
             val tabUrl = stringResource(R.string.analyze_tab_url)
             val tabSong = stringResource(R.string.analyze_tab_song)
-            val selectedTabIndex = if (mode == "url") 0 else 1
+            val tabLyrics = stringResource(R.string.analyze_tab_lyrics)
+            val selectedTabIndex = when (mode) {
+                "url" -> 0
+                "song" -> 1
+                else -> 2
+            }
             PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
                 Tab(
                     selected = mode == "url",
@@ -148,6 +183,11 @@ fun AnalyzeScreen(
                     selected = mode == "song",
                     onClick = { mode = "song" },
                     text = { Text(tabSong) },
+                )
+                Tab(
+                    selected = mode == "lyrics",
+                    onClick = { mode = "lyrics" },
+                    text = { Text(tabLyrics) },
                 )
             }
 
@@ -174,7 +214,41 @@ fun AnalyzeScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    if (mode == "url") {
+                    if (mode == "lyrics") {
+                        when {
+                            librarySyncing || lyricsStatsLoading -> {
+                                Text(
+                                    text = stringResource(R.string.analyze_lyrics_scanning),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                SuggestionListSkeleton()
+                            }
+                            deviceTracks.isEmpty() -> {
+                                Text(
+                                    text = stringResource(R.string.analyze_lyrics_no_tracks),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                )
+                            }
+                            else -> {
+                                val stats = lyricsStats
+                                if (stats != null) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.analyze_lyrics_summary,
+                                            stats.eligibleTracks,
+                                            stats.cachedTracks,
+                                            stats.pendingTracks,
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                                    )
+                                }
+                            }
+                        }
+                    } else if (mode == "url") {
                         OutlinedTextField(
                             value = urlInput,
                             onValueChange = {
@@ -229,24 +303,26 @@ fun AnalyzeScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = stringResource(R.string.analyze_download_format),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        AudioDownloader.DownloadFormat.entries.forEach { format ->
-                            ModeChip(
-                                text = format.label,
-                                selected = selectedFormat == format,
-                                onClick = { selectedFormat = format },
-                            )
+                    if (mode != "lyrics") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(R.string.analyze_download_format),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AudioDownloader.DownloadFormat.entries.forEach { format ->
+                                ModeChip(
+                                    text = format.label,
+                                    selected = selectedFormat == format,
+                                    onClick = { selectedFormat = format },
+                                )
+                            }
                         }
                     }
 
@@ -254,6 +330,24 @@ fun AnalyzeScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
+                    if (mode == "lyrics") {
+                        PrimaryButton(
+                            text = if (lyricsBatchInProgress) {
+                                stringResource(R.string.analyze_lyrics_fetching)
+                            } else {
+                                stringResource(R.string.analyze_lyrics_cta)
+                            },
+                            enabled = !lyricsBatchInProgress &&
+                                !librarySyncing &&
+                                !lyricsStatsLoading &&
+                                (lyricsStats?.eligibleTracks ?: 0) > 0,
+                            onClick = {
+                                LyricsBatchService.enqueueBatch(context)
+                                showSnack(resources.getString(R.string.lyrics_batch_started_background))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
                     PrimaryButton(
                         text = when {
                             downloadInProgress -> stringResource(R.string.analyze_cta_downloading)
@@ -390,6 +484,15 @@ fun AnalyzeScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    }
+
+                    if (activeLyricsBatch != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        ActiveLyricsBatchProgressSection(
+                            batch = activeLyricsBatch!!,
+                            onCancel = { LyricsBatchService.cancelBatch(context) },
+                        )
+                    }
 
                     if (activeDownload != null) {
                         Spacer(modifier = Modifier.height(12.dp))

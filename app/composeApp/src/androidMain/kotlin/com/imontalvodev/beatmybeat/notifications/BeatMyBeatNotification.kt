@@ -29,6 +29,7 @@ object BeatMyBeatNotification {
     // IDs fijos para poder “pisar” la notificación en progreso por la de completado.
     const val DOWNLOAD_NOTIFICATION_ID = 1001
     const val PLAYBACK_NOTIFICATION_ID = 1002
+    const val LYRICS_BATCH_NOTIFICATION_ID = 1003
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

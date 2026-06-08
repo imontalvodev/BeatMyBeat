@@ -787,13 +787,21 @@ fun PlayerScreen(
         )
     }
 
-    /** Pool de shuffle: una entrada por fichero (evita colas incompletas por ids duplicados). */
-    val shufflePoolTracks = remember(visibleTracks) {
+    /**
+     * Pool de reproducción según el contexto actual: pestaña (canciones / favoritos / playlist),
+     * búsqueda y ordenación. Una entrada por URI.
+     */
+    val playbackPoolTracks = remember(visibleTracks) {
         visibleTracks.distinctBy { it.uri }
     }
 
+    fun playbackQueueTotalCount(): Int {
+        if (shuffleOn && shuffleOrder.isNotEmpty()) return shuffleOrder.size
+        return (if (currentTrack != null) 1 else 0) + queue.size
+    }
+
     /**
-     * Pool de shuffle = [visibleTracks] (canciones / favoritos / playlist activa).
+     * Pool de shuffle = [playbackPoolTracks] (lista visible con filtros activos).
      * [shuffleOrder] es una permutación única de ese pool; [queue] espeja siempre
      * lo pendiente: shuffleOrder.drop(shuffleIndex + 1).
      */
@@ -804,13 +812,13 @@ fun PlayerScreen(
     }
 
     /**
-     * Nueva permutación aleatoria del pool [visibleTracks].
+     * Nueva permutación aleatoria del pool [playbackPoolTracks].
      * [playbackAnchor] si no es null (p. ej. tema que vamos a reproducir antes de asignar [currentTrack]),
      * determina [shuffleIndex]; si no, se usa [currentTrack].
      */
     fun rebuildShuffleOrderFromPool(playbackAnchor: DeviceTrack? = null) {
         if (!viewModel.shuffleEnabled.value) return
-        val base = shufflePoolTracks.toMutableList()
+        val base = playbackPoolTracks.toMutableList()
         val anchor = playbackAnchor ?: currentTrack
         anchor?.let { a ->
             if (base.none { it.uri == a.uri }) base.add(a)
@@ -1239,7 +1247,7 @@ fun PlayerScreen(
     }
 
     fun startPlaybackFromCollection(startTrack: DeviceTrack) {
-        val pool = shufflePoolTracks
+        val pool = playbackPoolTracks
         if (pool.isEmpty()) return
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
@@ -1844,9 +1852,7 @@ fun PlayerScreen(
                 isPlaying = isPlaying,
                 position = sliderPosition,
                 artwork = currentArtwork,
-                queueSize = if (shuffleOn && shuffleOrder.isNotEmpty())
-                    (shuffleOrder.size - (shuffleIndex + 1).coerceAtLeast(0)).coerceAtLeast(0)
-                else queue.size,
+                queueSize = playbackQueueTotalCount(),
                 sliderAccessibilityLabel = miniSliderA11y,
                 onTogglePlay = {
                     currentTrack ?: return@MiniPlayerBar
@@ -1950,11 +1956,21 @@ fun PlayerScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = stringResource(R.string.player_queue_title),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.player_queue_title),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.player_queue_total,
+                                        playbackQueueTotalCount(),
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                )
+                            }
                             // displayQueue: en shuffle muestra el resto del orden aleatorio;
                             // en modo normal muestra la cola manual.
                             val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty())
