@@ -171,6 +171,11 @@
     <string name="player_lyrics_synced_mode">Synchronisierte Lyrics</string>
     <string name="player_lyrics_tap_load">Tippen, um Lyrics zu laden</string>
     <string name="player_lyrics_loading">Lyrics werden geladen…</string>
+    <string name="player_lyrics_refresh">Erneut suchen</string>
+    <string name="player_lyrics_delete">Lyrics löschen</string>
+    <string name="player_lyrics_deleted">Lyrics gelöscht</string>
+    <string name="player_lyrics_refresh_cd">Lyrics erneut suchen</string>
+    <string name="player_lyrics_delete_cd">Gespeicherte Lyrics löschen</string>
     <string name="player_delete_failed">Song konnte nicht gelöscht werden.</string>
     <string name="player_delete_failed_saf">Löschen fehlgeschlagen (SAF).</string>
     <string name="player_delete_confirm_system">Löschen im Systemdialog bestätigen.</string>

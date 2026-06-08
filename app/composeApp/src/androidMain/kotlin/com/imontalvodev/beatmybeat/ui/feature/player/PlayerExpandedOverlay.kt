@@ -64,6 +64,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -180,8 +182,10 @@ internal fun ExpandedPlayerOverlay(
     repeatMode: RepeatMode,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
-    canDownloadLyrics: Boolean,
-    onRequestLyricsDownload: () -> Unit,
+    canRefreshLyrics: Boolean,
+    canDeleteLyrics: Boolean,
+    onRefreshLyrics: () -> Unit,
+    onDeleteLyrics: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val expandedPlayScale by animateFloatAsState(
@@ -320,13 +324,52 @@ internal fun ExpandedPlayerOverlay(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                if (canRefreshLyrics || canDeleteLyrics) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (canRefreshLyrics) {
+                            TextButton(onClick = onRefreshLyrics) {
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = stringResource(R.string.player_lyrics_refresh_cd),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = stringResource(R.string.player_lyrics_refresh),
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                        }
+                        if (canDeleteLyrics) {
+                            TextButton(onClick = onDeleteLyrics) {
+                                Icon(
+                                    imageVector = Icons.Filled.DeleteOutline,
+                                    contentDescription = stringResource(R.string.player_lyrics_delete_cd),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = stringResource(R.string.player_lyrics_delete),
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = true)
                         .clickable(
-                            enabled = canDownloadLyrics && !hasSyncedLyrics,
-                            onClick = onRequestLyricsDownload,
+                            enabled = canRefreshLyrics &&
+                                lyricsState is LyricsUiState.Empty &&
+                                !hasSyncedLyrics,
+                            onClick = onRefreshLyrics,
                         ),
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.30f)),

@@ -171,6 +171,11 @@
     <string name="player_lyrics_synced_mode">Sinkronizirani tekst</string>
     <string name="player_lyrics_tap_load">Dodirni za učitavanje teksta</string>
     <string name="player_lyrics_loading">Učitavanje teksta…</string>
+    <string name="player_lyrics_refresh">Pretraži ponovo</string>
+    <string name="player_lyrics_delete">Obriši tekst</string>
+    <string name="player_lyrics_deleted">Tekst obrisan</string>
+    <string name="player_lyrics_refresh_cd">Ponovo pretraži tekst</string>
+    <string name="player_lyrics_delete_cd">Obriši spremljeni tekst</string>
     <string name="player_delete_failed">Nije moguće obrisati pjesmu.</string>
     <string name="player_delete_failed_saf">Brisanje nije uspjelo (SAF).</string>
     <string name="player_delete_confirm_system">Potvrdi brisanje u dijalogu sustava.</string>

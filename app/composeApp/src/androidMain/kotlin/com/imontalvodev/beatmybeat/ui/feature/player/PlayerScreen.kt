@@ -632,7 +632,34 @@ fun PlayerScreen(
             s.equals("unknown artist", ignoreCase = true) ||
             s.isBlank()
 
-    fun downloadLyricsIfNeeded(track: DeviceTrack) {
+    fun lyricsSearchKeys(
+        track: DeviceTrack,
+        meta: TrackLyricsMetadata,
+    ): Pair<List<String>, List<String>> {
+        val uriTitle = titleFromUri(track.uri)
+        val metaPair = resolveTrackMeta(track)
+        val titles = listOf(
+            meta.title.trim(),
+            sanitizeTitle(meta.title),
+            metaPair.first.trim(),
+            uriTitle,
+            sanitizeTitle(uriTitle),
+            track.title.trim(),
+        ).distinct().filter { it.isNotBlank() }
+        val artists = com.imontalvodev.beatmybeat.ui.network.buildLyricsArtistCandidates(
+            meta.artist,
+            listOf(track.artist.trim(), metaPair.second.trim()),
+        )
+        return titles to artists
+    }
+
+    suspend fun clearLyricsCacheForTrack(track: DeviceTrack) {
+        val meta = resolveTrackMetadata(track)
+        val (titles, artists) = lyricsSearchKeys(track, meta)
+        LyricsCache.removeAll(context, titles, artists)
+    }
+
+    fun downloadLyricsIfNeeded(track: DeviceTrack, forceRefresh: Boolean = false) {
         if (lyricsDownloading) return
 
         lyricsDownloading = true
@@ -668,6 +695,9 @@ fun PlayerScreen(
                 }
 
                 val res = withContext(Dispatchers.IO) {
+                    if (forceRefresh) {
+                        clearLyricsCacheForTrack(track)
+                    }
                     LyricsFetcher.fetch(
                         context,
                         LyricsFetcher.Request(
@@ -678,6 +708,7 @@ fun PlayerScreen(
                             titleCandidates = titleCandidates,
                             artistCandidates = artistCandidates,
                         ),
+                        skipCache = forceRefresh,
                     )
                 }
 
@@ -694,6 +725,17 @@ fun PlayerScreen(
             } finally {
                 lyricsDownloading = false
             }
+        }
+    }
+
+    fun deleteLyricsForTrack(track: DeviceTrack) {
+        if (lyricsDownloading) return
+        uiScope.launch {
+            withContext(Dispatchers.IO) { clearLyricsCacheForTrack(track) }
+            lyricsState = LyricsUiState.Empty(
+                resources.getString(R.string.player_lyrics_tap_download),
+            )
+            showToast(resources.getString(R.string.player_lyrics_deleted))
         }
     }
 
@@ -1823,10 +1865,13 @@ fun PlayerScreen(
 
             // OVERLAY EXPANDIDO (boceto 2)
             if (isExpanded) {
-                val canDownloadLyrics =
+                val canRefreshLyrics =
                     !lyricsDownloading &&
                         currentTrack != null &&
-                        lyricsState is LyricsUiState.Empty
+                        lyricsState !is LyricsUiState.Loading &&
+                        lyricsState !is LyricsUiState.Idle
+                val canDeleteLyrics =
+                    !lyricsDownloading && lyricsState is LyricsUiState.Ready
                 val lyricsPositionMs = remember(sliderDragPos, playbackPositionMs, playbackDurationMs) {
                     sliderDragPos?.let { (it.coerceIn(0f, 1f) * playbackDurationMs).toLong() }
                         ?: playbackPositionMs
@@ -1867,9 +1912,13 @@ fun PlayerScreen(
                     repeatMode = repeatMode,
                     onToggleShuffle = { onToggleShuffle() },
                     onToggleRepeat = { onCycleRepeatMode() },
-                    canDownloadLyrics = canDownloadLyrics,
-                    onRequestLyricsDownload = {
-                        currentTrack?.let { downloadLyricsIfNeeded(it) }
+                    canRefreshLyrics = canRefreshLyrics,
+                    canDeleteLyrics = canDeleteLyrics,
+                    onRefreshLyrics = {
+                        currentTrack?.let { downloadLyricsIfNeeded(it, forceRefresh = true) }
+                    },
+                    onDeleteLyrics = {
+                        currentTrack?.let { deleteLyricsForTrack(it) }
                     },
                 )
             }

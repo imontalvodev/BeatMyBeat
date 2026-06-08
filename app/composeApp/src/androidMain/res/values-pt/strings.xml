@@ -171,6 +171,11 @@
     <string name="player_lyrics_synced_mode">Letra sincronizada</string>
     <string name="player_lyrics_tap_load">Toque para carregar letra</string>
     <string name="player_lyrics_loading">A carregar letra…</string>
+    <string name="player_lyrics_refresh">Pesquisar de novo</string>
+    <string name="player_lyrics_delete">Eliminar letra</string>
+    <string name="player_lyrics_deleted">Letra eliminada</string>
+    <string name="player_lyrics_refresh_cd">Pesquisar letra novamente</string>
+    <string name="player_lyrics_delete_cd">Eliminar letra guardada</string>
     <string name="player_delete_failed">Não foi possível excluir a música.</string>
     <string name="player_delete_failed_saf">Não foi possível excluir (SAF).</string>
     <string name="player_delete_confirm_system">Confirme a exclusão no diálogo do sistema.</string>

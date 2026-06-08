@@ -211,4 +211,9 @@
     <string name="player_lyrics_synced_mode">Synced lyrics</string>
     <string name="player_lyrics_tap_load">Tap to load lyrics</string>
     <string name="player_lyrics_loading">Loading lyrics…</string>
+    <string name="player_lyrics_refresh">Search again</string>
+    <string name="player_lyrics_delete">Delete lyrics</string>
+    <string name="player_lyrics_deleted">Lyrics deleted</string>
+    <string name="player_lyrics_refresh_cd">Search for lyrics again</string>
+    <string name="player_lyrics_delete_cd">Delete saved lyrics</string>
 </resources>

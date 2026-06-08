@@ -1,21 +1,25 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import com.imontalvodev.beatmybeat.core.Logger
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.math.abs
 
 /**
  * Cliente para [LRCLIB](https://lrclib.net/docs).
  * Devuelve letra plana y/o LRC sincronizado para preparar karaoke futuro.
+ *
+ * Las búsquedas exigen **título + artista**; no se usa fallback solo por título (homónimos).
+ * La duración refuerza el emparejamiento con tolerancia para variantes de álbum (±unos segundos).
  */
 object LrcLibApi {
 
     private const val BASE_URL = "https://lrclib.net/api"
     private const val USER_AGENT = "BeatMyBeat/1.0 (Android; https://github.com/imontalvodev/beatmybeat)"
     private const val TIMEOUT_SEC = 20L
-    private const val DURATION_TOLERANCE_SEC = 5
+    private const val STRONG_MATCH_SCORE = 75
+    private const val LOG_TAG = "LrcLibApi"
 
     private val client = AppHttpClient.withTimeouts(
         connectSeconds = TIMEOUT_SEC,
@@ -35,10 +39,7 @@ object LrcLibApi {
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-        val artists = (listOf(cleanArtistForLyrics(artistName).trim(), artistName.trim()) + artistCandidates)
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
+        val artists = buildLyricsArtistCandidates(artistName, artistCandidates)
         val albums = listOf(
             albumName.trim(),
             UNKNOWN_ALBUM,
@@ -48,30 +49,31 @@ object LrcLibApi {
             return failure("MissingFields", "Título o artista vacío")
         }
 
-        // 1) Rápido: solo caché interna de LRCLIB (sin fuentes externas).
-        for ((title, artist, album) in metadataCombos(titles, artists, albums)) {
-            fetchFromEndpoint("get-cached", title, artist, album, durationSeconds)
-                ?.let { return it }
+        Logger.d(LOG_TAG, "fetch title='${titles.first()}' artist='${artists.first()}' dur=${durationSeconds}s")
+
+        // 1) Caché interna LRCLIB (requiere duración según documentación).
+        if (durationSeconds > 0) {
+            for ((title, artist, album) in metadataCombos(titles, artists, albums)) {
+                fetchFromEndpoint("get-cached", title, artist, album, durationSeconds)
+                    ?.let { return it }
+            }
         }
 
-        // 2) Búsqueda en base de datos (suele ser rápida).
+        // 2) Búsqueda en base de datos (título + artista obligatorios).
         for (title in titles) {
             for (artist in artists) {
                 searchAndFetch(title, artist, durationSeconds)
                     ?.let { return it }
             }
         }
-        for (title in titles) {
-            searchAndFetch(title, artistName = "", durationSeconds)
-                ?.let { return it }
-        }
 
-        // 3) Lento: /api/get puede ir a fuentes externas — una sola vez con los metadatos principales.
+        // 3) /api/get (fuentes externas) — requiere duración exacta (±2 s en servidor LRCLIB).
         if (durationSeconds > 0) {
             fetchFromEndpoint("get", titles.first(), artists.first(), albums.first(), durationSeconds)
                 ?.let { return it }
         }
 
+        Logger.d(LOG_TAG, "not found for '${titles.first()}' / '${artists.first()}'")
         return failure("NotFound", null)
     }
 
@@ -113,6 +115,7 @@ object LrcLibApi {
             .build()
 
         val json = executeGet(url.toString()) ?: return null
+        // LRCLIB ya emparejó la petición en /get y /get-cached; confiar en 200 OK.
         return parseLyricsRecord(json, source = "lrclib", sourceUrl = url.toString())
     }
 
@@ -121,16 +124,13 @@ object LrcLibApi {
         artistName: String,
         durationSeconds: Int,
     ): LyricsResponse? {
-        val attempts = buildList {
-            if (artistName.isNotBlank()) {
-                add(mapOf("track_name" to trackName, "artist_name" to artistName))
-                add(mapOf("q" to "$artistName $trackName"))
-            }
-            add(mapOf("track_name" to trackName))
-            if (artistName.isNotBlank()) {
-                add(mapOf("q" to "$trackName $artistName"))
-            }
-        }
+        if (artistName.isBlank()) return null
+
+        val attempts = listOf(
+            mapOf("track_name" to trackName, "artist_name" to artistName),
+            mapOf("q" to "$artistName $trackName"),
+            mapOf("q" to "$trackName $artistName"),
+        )
 
         var bestRecord: JSONObject? = null
         var bestScore = Int.MIN_VALUE
@@ -152,77 +152,57 @@ object LrcLibApi {
                     bestUrl = url.toString()
                 }
             }
-            // Coincidencia clara: no seguir probando más búsquedas.
-            if (bestScore >= 75) break
+            if (bestScore >= STRONG_MATCH_SCORE) break
         }
 
         val record = bestRecord ?: return null
+        if (bestScore == Int.MIN_VALUE || !jsonMatchesSearchResult(record, trackName, artistName, durationSeconds)) {
+            return null
+        }
+
         val id = record.optLong("id", 0L)
         if (id > 0L) {
             val byIdUrl = "$BASE_URL/get/$id"
             executeGet(byIdUrl)?.let { parsed ->
+                if (!jsonMatchesSearchResult(parsed, trackName, artistName, durationSeconds)) return null
                 return parseLyricsRecord(parsed, source = "lrclib", sourceUrl = byIdUrl)
             }
         }
         return parseLyricsRecord(record, source = "lrclib", sourceUrl = bestUrl.orEmpty())
     }
 
+    /** Validación solo para resultados de /api/search (evitar homónimos). */
+    private fun jsonMatchesSearchResult(
+        json: JSONObject,
+        trackName: String,
+        artistName: String,
+        durationSeconds: Int,
+    ): Boolean = isAcceptableLrcCandidate(
+        expectedTitle = trackName,
+        expectedArtist = artistName,
+        expectedDurationSec = durationSeconds,
+        candidate = json.toLyricsCandidate(),
+    )
+
     private fun scoreSearchResult(
         item: JSONObject,
         trackName: String,
         artistName: String,
         durationSeconds: Int,
-    ): Int {
-        val resultTrack = readField(item, "trackName", "track_name")
-        val resultArtist = readField(item, "artistName", "artist_name")
-        var score = 0
+    ): Int = scoreLrcCandidate(
+        expectedTitle = trackName,
+        expectedArtist = artistName,
+        expectedDurationSec = durationSeconds,
+        candidate = item.toLyricsCandidate(),
+    )
 
-        score += titleMatchScore(trackName, resultTrack) * 4
-        if (artistName.isNotBlank()) {
-            score += titleMatchScore(artistName, resultArtist) * 3
-        }
-
-        if (durationSeconds > 0) {
-            val dur = item.optInt("duration", -1)
-            if (dur > 0) {
-                val delta = abs(dur - durationSeconds)
-                score += when {
-                    delta <= 2 -> 40
-                    delta <= DURATION_TOLERANCE_SEC -> 25
-                    delta <= 12 -> 8
-                    else -> -20
-                }
-            }
-        }
-
-        val hasSynced = readField(item, "syncedLyrics", "synced_lyrics").isNotBlank()
-        val hasPlain = readField(item, "plainLyrics", "plain_lyrics").isNotBlank()
-        if (hasSynced) score += 15
-        if (hasPlain) score += 5
-
-        return score
-    }
-
-    private fun titleMatchScore(expected: String, actual: String): Int {
-        val a = normalizeForMatch(expected)
-        val b = normalizeForMatch(actual)
-        if (a.isBlank() || b.isBlank()) return 0
-        if (a == b) return 30
-        if (b.contains(a) || a.contains(b)) return 20
-        val aTokens = a.split(' ').filter { it.length > 2 }
-        val bTokens = b.split(' ').filter { it.length > 2 }
-        if (aTokens.isEmpty() || bTokens.isEmpty()) return 0
-        val overlap = aTokens.count { token -> bTokens.any { it.contains(token) || token.contains(it) } }
-        return (overlap * 10).coerceAtMost(25)
-    }
-
-    private fun normalizeForMatch(raw: String): String =
-        raw.lowercase()
-            .replace(Regex("\\(.*?\\)|\\[.*?\\]"), " ")
-            .replace(Regex("(?i)\\b(feat\\.?|ft\\.?|featuring|remaster(ed)?|official|audio|video|live|lyrics|prod\\.?|produced)\\b"), " ")
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+    private fun JSONObject.toLyricsCandidate(): LrcLyricsCandidate = LrcLyricsCandidate(
+        trackName = readField(this, "trackName", "track_name"),
+        artistName = readField(this, "artistName", "artist_name"),
+        durationSeconds = optInt("duration", -1),
+        hasSyncedLyrics = readField(this, "syncedLyrics", "synced_lyrics").isNotBlank(),
+        hasPlainLyrics = readField(this, "plainLyrics", "plain_lyrics").isNotBlank(),
+    )
 
     private fun readField(json: JSONObject, vararg keys: String): String {
         for (key in keys) {

@@ -18,15 +18,16 @@ object LyricsFetcher {
         val artistCandidates: List<String> = emptyList(),
     )
 
-    fun fetch(context: Context, request: Request): LyricsResponse {
+    fun fetch(
+        context: Context,
+        request: Request,
+        skipCache: Boolean = false,
+    ): LyricsResponse {
         val titles = (listOf(request.title.trim()) + request.titleCandidates)
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-        val artists = (listOf(request.artist.trim()) + request.artistCandidates)
-            .map { cleanArtistForLyrics(it).trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
+        val artists = buildLyricsArtistCandidates(request.artist, request.artistCandidates)
 
         if (artists.isEmpty() || titles.isEmpty()) {
             return LyricsResponse(
@@ -41,11 +42,13 @@ object LyricsFetcher {
             )
         }
 
-        for (title in titles) {
-            for (artist in artists) {
-                LyricsCache.getEntry(context, title, artist)?.let { cached ->
-                    if (cached.hasAnyLyrics()) {
-                        return cached.toResponse()
+        if (!skipCache) {
+            for (title in titles) {
+                for (artist in artists) {
+                    LyricsCache.getEntry(context, title, artist)?.let { cached ->
+                        if (cached.hasAnyLyrics()) {
+                            return cached.toResponse()
+                        }
                     }
                 }
             }

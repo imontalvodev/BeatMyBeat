@@ -178,6 +178,11 @@
     <string name="player_lyrics_synced_mode">Letra sincronizada</string>
     <string name="player_lyrics_tap_load">Pulsa para cargar letra</string>
     <string name="player_lyrics_loading">Cargando letra…</string>
+    <string name="player_lyrics_refresh">Volver a buscar</string>
+    <string name="player_lyrics_delete">Eliminar letra</string>
+    <string name="player_lyrics_deleted">Letra eliminada</string>
+    <string name="player_lyrics_refresh_cd">Volver a buscar letra</string>
+    <string name="player_lyrics_delete_cd">Eliminar letra guardada</string>
     <string name="player_delete_failed">No se pudo eliminar la canción.</string>
     <string name="player_delete_failed_saf">No se pudo eliminar (SAF).</string>
     <string name="player_delete_confirm_system">Confirma la eliminación en el diálogo del sistema.</string>

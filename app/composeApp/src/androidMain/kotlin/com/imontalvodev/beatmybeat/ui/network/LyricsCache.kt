@@ -103,6 +103,20 @@ object LyricsCache {
         )
     }
 
+    /** Elimina la entrada en caché (JSON y legado .txt) para título + artista. */
+    fun remove(context: Context, title: String, artist: String) {
+        jsonFileFor(context, title, artist).delete()
+        legacyFileFor(context, title, artist).delete()
+    }
+
+    fun removeAll(context: Context, titles: Collection<String>, artists: Collection<String>) {
+        for (title in titles) {
+            for (artist in artists) {
+                remove(context, title, artist)
+            }
+        }
+    }
+
     private fun jsonFileFor(context: Context, title: String, artist: String): File {
         val dir = File(context.filesDir, DIR_NAME)
         return File(dir, sha1Hex(cacheKey(title, artist)) + ".json")
