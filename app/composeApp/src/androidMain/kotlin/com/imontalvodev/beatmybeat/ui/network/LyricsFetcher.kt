@@ -4,6 +4,7 @@ import android.content.Context
 
 /**
  * Orquesta la obtención de letras: caché local → LRCLIB → lyrics.ovh.
+ * Las peticiones concurrentes y el límite de paralelismo van en [LyricsFetchCoordinator].
  */
 object LyricsFetcher {
 
@@ -30,16 +31,7 @@ object LyricsFetcher {
         val artists = buildLyricsArtistCandidates(request.artist, request.artistCandidates)
 
         if (artists.isEmpty() || titles.isEmpty()) {
-            return LyricsResponse(
-                success = false,
-                lyrics = "",
-                syncedLrc = null,
-                lrclibId = null,
-                source = null,
-                sourceUrl = null,
-                error = "MissingFields",
-                message = null,
-            )
+            return notFound("MissingFields")
         }
 
         if (!skipCache) {
@@ -57,25 +49,21 @@ object LyricsFetcher {
         val durationSec = (request.durationMs / 1000L).toInt().coerceAtLeast(0)
         val album = request.album.trim()
 
-        for (title in titles) {
-            for (artist in artists) {
-                val lrc = LrcLibApi.fetchLyrics(
-                    trackName = title,
-                    artistName = artist,
-                    albumName = album,
-                    durationSeconds = durationSec,
-                    titleCandidates = titles.filter { it != title },
-                    artistCandidates = artists.filter { it != artist },
-                )
-                if (lrc.success && lrc.lyrics.isNotBlank()) {
-                    LyricsCache.putFromResponse(context, title, artist, lrc)
-                    return lrc
-                }
-            }
+        val lrc = LrcLibApi.fetchLyrics(
+            trackName = titles.first(),
+            artistName = artists.first(),
+            albumName = album,
+            durationSeconds = durationSec,
+            titleCandidates = titles.drop(1),
+            artistCandidates = artists.drop(1),
+        )
+        if (lrc.success && lrc.lyrics.isNotBlank()) {
+            LyricsCache.putFromResponse(context, titles.first(), artists.first(), lrc)
+            return lrc
         }
 
-        for (title in titles) {
-            for (artist in artists) {
+        for (title in titles.take(2)) {
+            for (artist in artists.take(2)) {
                 val ovh = LyricsOvhApi.fetch(title = title, artist = artist)
                 if (ovh.success && ovh.lyrics.isNotBlank()) {
                     LyricsCache.putFromResponse(context, title, artist, ovh)
@@ -84,15 +72,17 @@ object LyricsFetcher {
             }
         }
 
-        return LyricsResponse(
-            success = false,
-            lyrics = "",
-            syncedLrc = null,
-            lrclibId = null,
-            source = null,
-            sourceUrl = null,
-            error = "NotFound",
-            message = null,
-        )
+        return notFound("NotFound")
     }
+
+    private fun notFound(error: String) = LyricsResponse(
+        success = false,
+        lyrics = "",
+        syncedLrc = null,
+        lrclibId = null,
+        source = null,
+        sourceUrl = null,
+        error = error,
+        message = null,
+    )
 }

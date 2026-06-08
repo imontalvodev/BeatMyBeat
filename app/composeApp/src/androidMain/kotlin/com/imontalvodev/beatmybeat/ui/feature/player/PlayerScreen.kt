@@ -138,6 +138,7 @@ import coil.compose.AsyncImage
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
+import com.imontalvodev.beatmybeat.ui.network.LyricsFetchCoordinator
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
 import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
@@ -562,8 +563,9 @@ fun PlayerScreen(
     }
 
     // Letras: solo caché local (offline-first). Se rellenan al descargar.
-    var lyricsDownloading by remember { mutableStateOf(false) }
-    LaunchedEffect(currentTrack?.id) {
+    /** URIs de pistas con descarga de letra en curso (independiente de la pista actual). */
+    var lyricsDownloadingUris by remember { mutableStateOf(setOf<String>()) }
+    LaunchedEffect(currentTrack?.id, lyricsDownloadingUris) {
         val t = currentTrack ?: run {
             lyricsState = LyricsUiState.Empty(
                 resources.getString(R.string.player_lyrics_select_song),
@@ -598,9 +600,13 @@ fun PlayerScreen(
             )
             return@LaunchedEffect
         }
-        lyricsState = LyricsUiState.Empty(
-            resources.getString(R.string.player_lyrics_tap_download),
-        )
+        lyricsState = if (t.uri in lyricsDownloadingUris) {
+            LyricsUiState.Loading
+        } else {
+            LyricsUiState.Empty(
+                resources.getString(R.string.player_lyrics_tap_download),
+            )
+        }
     }
 
     fun sanitizeTitle(input: String): String {
@@ -660,19 +666,23 @@ fun PlayerScreen(
     }
 
     fun downloadLyricsIfNeeded(track: DeviceTrack, forceRefresh: Boolean = false) {
-        if (lyricsDownloading) return
+        if (track.uri in lyricsDownloadingUris) return
 
-        lyricsDownloading = true
-        lyricsState = LyricsUiState.Loading
+        lyricsDownloadingUris = lyricsDownloadingUris + track.uri
+        if (currentTrack?.uri == track.uri) {
+            lyricsState = LyricsUiState.Loading
+        }
 
         uiScope.launch {
             try {
                 val meta = withContext(Dispatchers.IO) { resolveTrackMetadata(track) }
 
                 if (isUnknown(meta.title) || isUnknown(meta.artist)) {
-                    lyricsState = LyricsUiState.Empty(
-                        resources.getString(R.string.player_lyrics_unavailable),
-                    )
+                    if (currentTrack?.uri == track.uri) {
+                        lyricsState = LyricsUiState.Empty(
+                            resources.getString(R.string.player_lyrics_unavailable),
+                        )
+                    }
                     return@launch
                 }
 
@@ -694,42 +704,42 @@ fun PlayerScreen(
                     else -> 0L
                 }
 
-                val res = withContext(Dispatchers.IO) {
-                    if (forceRefresh) {
-                        clearLyricsCacheForTrack(track)
-                    }
-                    LyricsFetcher.fetch(
-                        context,
-                        LyricsFetcher.Request(
-                            title = meta.title,
-                            artist = meta.artist,
-                            album = meta.album,
-                            durationMs = effectiveDurationMs,
-                            titleCandidates = titleCandidates,
-                            artistCandidates = artistCandidates,
-                        ),
-                        skipCache = forceRefresh,
-                    )
+                if (forceRefresh) {
+                    withContext(Dispatchers.IO) { clearLyricsCacheForTrack(track) }
                 }
+                val res = LyricsFetchCoordinator.fetch(
+                    context,
+                    LyricsFetcher.Request(
+                        title = meta.title,
+                        artist = meta.artist,
+                        album = meta.album,
+                        durationMs = effectiveDurationMs,
+                        titleCandidates = titleCandidates,
+                        artistCandidates = artistCandidates,
+                    ),
+                    skipCache = forceRefresh,
+                )
 
-                if (res.success && res.lyrics.isNotBlank()) {
-                    lyricsState = LyricsUiState.Ready(
-                        lyrics = res.lyrics,
-                        syncedLrc = res.syncedLrc,
-                    )
-                } else {
-                    lyricsState = LyricsUiState.Empty(
-                        resources.getString(R.string.player_lyrics_unavailable),
-                    )
+                if (currentTrack?.uri == track.uri) {
+                    if (res.success && res.lyrics.isNotBlank()) {
+                        lyricsState = LyricsUiState.Ready(
+                            lyrics = res.lyrics,
+                            syncedLrc = res.syncedLrc,
+                        )
+                    } else {
+                        lyricsState = LyricsUiState.Empty(
+                            resources.getString(R.string.player_lyrics_unavailable),
+                        )
+                    }
                 }
             } finally {
-                lyricsDownloading = false
+                lyricsDownloadingUris = lyricsDownloadingUris - track.uri
             }
         }
     }
 
     fun deleteLyricsForTrack(track: DeviceTrack) {
-        if (lyricsDownloading) return
+        if (track.uri in lyricsDownloadingUris) return
         uiScope.launch {
             withContext(Dispatchers.IO) { clearLyricsCacheForTrack(track) }
             lyricsState = LyricsUiState.Empty(
@@ -1865,13 +1875,14 @@ fun PlayerScreen(
 
             // OVERLAY EXPANDIDO (boceto 2)
             if (isExpanded) {
+                val lyricsLoadingForCurrent = currentTrack?.uri in lyricsDownloadingUris
                 val canRefreshLyrics =
-                    !lyricsDownloading &&
+                    !lyricsLoadingForCurrent &&
                         currentTrack != null &&
                         lyricsState !is LyricsUiState.Loading &&
                         lyricsState !is LyricsUiState.Idle
                 val canDeleteLyrics =
-                    !lyricsDownloading && lyricsState is LyricsUiState.Ready
+                    !lyricsLoadingForCurrent && lyricsState is LyricsUiState.Ready
                 val lyricsPositionMs = remember(sliderDragPos, playbackPositionMs, playbackDurationMs) {
                     sliderDragPos?.let { (it.coerceIn(0f, 1f) * playbackDurationMs).toLong() }
                         ?: playbackPositionMs
