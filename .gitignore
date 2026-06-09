@@ -1,10 +1,19 @@
-# Monorepo: solo versionar la app Android (carpeta app/).
+# Monorepo: versionar app/ + documentación legal en la raíz.
 # backend/ y middleware/ son legado y no deben volver al repo.
+
+# Ignorar todo por defecto…
 *
+
+# …excepto lo explícito:
 !.gitignore
 !README.md
 !README.en.md
 !README.es.md
+!LICENSE
+!PRIVACY.md
+!CHANGELOG.md
+!AUTHORS
+!THIRD_PARTY_NOTICES.md
 !app/
 !app/**
 
@@ -12,12 +21,14 @@
 /backend/
 /middleware/
 
-# Artefactos y secretos (en cualquier ruta)
+# Binarios de release (subir solo a GitHub Releases, no a git)
 *.apk
 *.aab
 *.jks
 *.keystore
 **/release/
+
+# Secretos y entorno local
 local.properties
 .env
 !.env.example

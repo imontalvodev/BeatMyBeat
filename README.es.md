@@ -155,7 +155,7 @@ Jetpack Compose · Material 3 · Media3 / ExoPlayer · NewPipe Extractor · ffmp
 | Canal | Observaciones |
 |-------|----------------|
 | **GitHub Releases** | Canal previsto para APK firmado; conviene publicar checksum (SHA-256) |
-| **F-Droid** | Requiere solicitud en [fdroiddata](https://gitlab.com/fdroid/fdroiddata); ver documentación legal |
+| **F-Droid** | Guía paso a paso: [`app/docs/fdroid-publicacion.md`](app/docs/fdroid-publicacion.md) · MR en [fdroiddata](https://gitlab.com/fdroid/fdroiddata) |
 | **Instalación manual** | Puede aparecer aviso de **Play Protect** en APKs fuera de Play Store; no requiere cuenta de desarrollador de Google para publicar en F-Droid |
 | **Google Play** | No previsto (políticas habituales frente a descargadores de YouTube) |
 
