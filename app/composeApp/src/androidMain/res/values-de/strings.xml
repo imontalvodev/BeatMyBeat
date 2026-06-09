@@ -95,6 +95,12 @@
     <string name="profile_customize_background">Hintergrund anpassen</string>
     <string name="profile_customize_text">Text anpassen</string>
     <string name="profile_select_language">Sprache auswählen</string>
+    <string name="profile_about">Über</string>
+    <string name="profile_about_version">Version %1$s · GPL-3.0</string>
+    <string name="profile_source_code">Quellcode</string>
+    <string name="profile_privacy_policy">Datenschutz</string>
+    <string name="profile_license">Lizenz</string>
+    <string name="profile_responsible_use">Verantwortungsvolle Nutzung: Urheberrecht und Plattformbedingungen beachten.</string>
     <string name="splash_tagline">Deine Musik, dein Rhythmus</string>
     <string name="splash_download_music">Musik herunterladen</string>
     <string name="splash_go_to_player">Zum Player</string>

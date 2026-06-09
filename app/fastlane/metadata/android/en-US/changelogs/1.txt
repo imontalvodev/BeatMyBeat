@@ -1,0 +1,1 @@
+First public release: local player, YouTube downloads, synced lyrics, themes, and batch lyrics download.

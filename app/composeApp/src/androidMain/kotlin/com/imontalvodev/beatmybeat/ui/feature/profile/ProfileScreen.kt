@@ -14,11 +14,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.TextFields
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import com.imontalvodev.beatmybeat.BuildConfig
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -55,6 +63,7 @@ fun ProfileScreen(
     onOpenStorageFolder: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val palette = currentBeatMyBeatThemeProfile()
     val bgBrush = Brush.verticalGradient(
         colors = listOf(palette.backgroundTop, palette.backgroundBottom),
@@ -133,6 +142,50 @@ fun ProfileScreen(
                 label = stringResource(R.string.profile_customize_text),
                 icon = Icons.Filled.TextFields,
                 onClick = onCustomizeText,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ProfileOption(
+                label = stringResource(R.string.profile_about),
+                subtitle = stringResource(R.string.profile_about_version, BuildConfig.VERSION_NAME),
+                icon = Icons.Filled.Info,
+                onClick = { },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ProfileOption(
+                label = stringResource(R.string.profile_source_code),
+                icon = Icons.Filled.Code,
+                onClick = {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/imontalvodev/BeatMyBeat")),
+                    )
+                },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ProfileOption(
+                label = stringResource(R.string.profile_privacy_policy),
+                icon = Icons.Filled.PrivacyTip,
+                onClick = {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/imontalvodev/BeatMyBeat/blob/main/PRIVACY.md"),
+                        ),
+                    )
+                },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ProfileOption(
+                label = stringResource(R.string.profile_license),
+                subtitle = stringResource(R.string.profile_responsible_use),
+                icon = Icons.Filled.Gavel,
+                onClick = {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://github.com/imontalvodev/BeatMyBeat/blob/main/LICENSE"),
+                        ),
+                    )
+                },
             )
         }
     }

@@ -1,0 +1,18 @@
+BeatMyBeat is a free, open-source Android music client. Play your local library, organize playlists and favorites, and download audio from YouTube or YouTube Music — without ads or a proprietary backend.
+
+<b>Features</b>
+• Local playback with queue, shuffle, and repeat
+• Scan music on device (MediaStore and custom folders)
+• Search and download from YouTube / YouTube Music
+• Multiple audio formats (MP3, M4A, FLAC, …) via FFmpeg
+• Synced lyrics (LRCLIB) with offline cache and batch download
+• Custom themes and multiple languages
+
+<b>Privacy</b>
+No analytics, no accounts, no BeatMyBeat servers. Network access is used only for features you trigger (YouTube, lyrics APIs). See PRIVACY.md in the source repository.
+
+<b>Responsible use</b>
+You are responsible for complying with copyright and the terms of content platforms. Download only content you have the right to use.
+
+<b>License</b>
+GPL-3.0-only — https://github.com/imontalvodev/BeatMyBeat

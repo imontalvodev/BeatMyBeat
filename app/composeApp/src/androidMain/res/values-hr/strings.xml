@@ -95,6 +95,12 @@
     <string name="profile_customize_background">Prilagodi pozadinu</string>
     <string name="profile_customize_text">Prilagodi tekst</string>
     <string name="profile_select_language">Odaberi jezik</string>
+    <string name="profile_about">O aplikaciji</string>
+    <string name="profile_about_version">Verzija %1$s · GPL-3.0</string>
+    <string name="profile_source_code">Izvorni kod</string>
+    <string name="profile_privacy_policy">Pravila privatnosti</string>
+    <string name="profile_license">Licenca</string>
+    <string name="profile_responsible_use">Odgovorna upotreba: poštuj autorska prava i uvjete platformi.</string>
     <string name="splash_tagline">Tvoja glazba, tvoj ritam</string>
     <string name="splash_download_music">Preuzmi glazbu</string>
     <string name="splash_go_to_player">Idi na reproduktor</string>

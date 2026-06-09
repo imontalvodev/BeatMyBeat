@@ -1,0 +1,1 @@
+Reproductor local y descargas desde YouTube. Sin anuncios ni servidor. GPL-3.0.
