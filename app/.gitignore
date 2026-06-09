@@ -18,8 +18,10 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
 
-# Salida de assembleRelease / APK local
+# APK de release local (p. ej. composeApp/release/BeatMyBeat.apk → GitHub Releases)
 composeApp/release/
+*.apk
+*.aab
 
 # Firma release (nunca subir)
 *.jks

@@ -76,6 +76,11 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    // F-Droid reproducible builds: omit dependency metadata from APK/AAB.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
     buildTypes {
         getByName("release") {
             isMinifyEnabled = true

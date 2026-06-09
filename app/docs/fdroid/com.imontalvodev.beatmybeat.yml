@@ -1,0 +1,37 @@
+# Plantilla para merge request en https://gitlab.com/fdroid/fdroiddata
+# Copiar a metadata/com.imontalvodev.beatmybeat.yml en tu fork de fdroiddata.
+# Ajustar `commit` al tag real (p. ej. v1.0.0) antes de enviar el MR.
+
+AntiFeatures:
+  NonFreeNet:
+    en-US: Depends on YouTube/Google and third-party lyrics APIs.
+    es-ES: Depende de YouTube/Google y APIs de letras de terceros.
+
+Categories:
+  - Multimedia
+  - Internet
+
+License: GPL-3.0-only
+AuthorName: imontalvodev
+SourceCode: https://github.com/imontalvodev/BeatMyBeat
+IssueTracker: https://github.com/imontalvodev/BeatMyBeat/issues
+Changelog: https://github.com/imontalvodev/BeatMyBeat/blob/main/CHANGELOG.md
+
+AutoName: BeatMyBeat
+
+RepoType: git
+Repo: https://github.com/imontalvodev/BeatMyBeat
+
+Builds:
+  - versionName: '1.0'
+    versionCode: 1
+    commit: v1.0.0
+    subdir: app
+    gradle:
+      - composeApp
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9.]+$
+UpdateCheckData: composeApp/build.gradle.kts|versionCode\s*=\s*(\d+)|.|versionName\s*=\s*"(.*)"
+CurrentVersion: '1.0'
+CurrentVersionCode: 1
