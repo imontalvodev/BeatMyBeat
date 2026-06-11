@@ -4,14 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Code
@@ -47,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
@@ -80,29 +83,39 @@ fun ProfileScreen(
         )
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(bgBrush),
     ) {
+        val layout = profileLayoutFor(maxHeight, maxWidth)
+        val scrollState = rememberScrollState()
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 32.dp, vertical = 48.dp),
+                .verticalScroll(scrollState)
+                .padding(
+                    horizontal = layout.horizontalPadding,
+                    vertical = layout.verticalPadding,
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top,
         ) {
-            AppMiniBrand(modifier = Modifier.align(Alignment.Start))
+            AppMiniBrand(
+                modifier = Modifier.align(Alignment.Start),
+                logoSize = layout.miniBrandLogoSize,
+            )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(layout.brandToLogoSpacing))
 
             AppLogo(
-                size = 156.dp,
+                size = layout.profileLogoSize,
                 innerPaddingFraction = 0.06f,
                 modifier = Modifier.clickable { /* TODO: cambiar foto */ },
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(layout.logoToPhotoSpacing))
 
             Text(
                 text = stringResource(R.string.profile_change_photo),
@@ -110,7 +123,7 @@ fun ProfileScreen(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(layout.headerToListSpacing))
 
             ProfileOption(
                 label = stringResource(R.string.profile_change_language),
@@ -187,6 +200,8 @@ fun ProfileScreen(
                     )
                 },
             )
+
+            Spacer(modifier = Modifier.height(layout.bottomScrollPadding))
         }
     }
 
@@ -216,6 +231,54 @@ fun ProfileScreen(
             },
         )
     }
+}
+
+private data class ProfileLayout(
+    val horizontalPadding: Dp,
+    val verticalPadding: Dp,
+    val miniBrandLogoSize: Dp,
+    val profileLogoSize: Dp,
+    val brandToLogoSpacing: Dp,
+    val logoToPhotoSpacing: Dp,
+    val headerToListSpacing: Dp,
+    val bottomScrollPadding: Dp,
+)
+
+private fun profileLayoutFor(maxHeight: Dp, maxWidth: Dp): ProfileLayout {
+    val compactHeight = maxHeight < 640.dp
+    val veryCompactHeight = maxHeight < 520.dp
+    val narrowWidth = maxWidth < 360.dp
+
+    return ProfileLayout(
+        horizontalPadding = when {
+            narrowWidth -> 16.dp
+            compactHeight -> 24.dp
+            else -> 32.dp
+        },
+        verticalPadding = when {
+            veryCompactHeight -> 12.dp
+            compactHeight -> 20.dp
+            else -> 48.dp
+        },
+        miniBrandLogoSize = when {
+            veryCompactHeight -> 40.dp
+            compactHeight -> 44.dp
+            else -> 52.dp
+        },
+        profileLogoSize = when {
+            veryCompactHeight -> 88.dp
+            compactHeight -> 112.dp
+            else -> 156.dp
+        },
+        brandToLogoSpacing = if (veryCompactHeight) 8.dp else if (compactHeight) 12.dp else 20.dp,
+        logoToPhotoSpacing = if (veryCompactHeight) 6.dp else 12.dp,
+        headerToListSpacing = when {
+            veryCompactHeight -> 16.dp
+            compactHeight -> 24.dp
+            else -> 48.dp
+        },
+        bottomScrollPadding = 16.dp,
+    )
 }
 
 @Composable
