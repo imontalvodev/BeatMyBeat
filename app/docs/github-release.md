@@ -1,130 +1,115 @@
 # Publicar un release en GitHub
 
-Guía para versiones de BeatMyBeat posteriores a `v1.0.0`. Repo: [imontalvodev/BeatMyBeat](https://github.com/imontalvodev/BeatMyBeat).
+Guía para versiones de BeatMyBeat. Repo: [imontalvodev/BeatMyBeat](https://github.com/imontalvodev/BeatMyBeat).
+
+## Historial de versiones publicadas
+
+| Tag | versionName | versionCode | Notas |
+|-----|-------------|-------------|--------|
+| `v1.0.0` | `1.0` | 1 | Primer release público |
+| **`v1.0.1`** | **`1.0.1`** | **2** | **Próximo release** (perfil, actualizaciones, beatmybeat.com) |
+
+> Si publicaste por error un tag intermedio (p. ej. `v1.0.3`), bórralo o desmárcalo como *Latest* en GitHub antes de publicar `v1.0.1`, para que `releases/latest` y el aviso in-app apunten a la versión correcta.
 
 ## 1. Versión en código
 
 Edita `app/composeApp/build.gradle.kts`:
 
 ```kotlin
-versionCode = 5        // siempre +1 respecto al release anterior
-versionName = "1.0.4"  // semver; debe coincidir con el tag sin la «v»
+versionCode = 2        // siempre +1 respecto al release anterior en GitHub
+versionName = "1.0.1"
 ```
-
-| Release | versionCode | versionName | Tag |
-|---------|-------------|-------------|-----|
-| 1.0.0 | 1 | `1.0` | `v1.0.0` |
-| 1.0.3 | 4 | `1.0.3` | `v1.0.3` |
-| **próximo** | **5** | **`1.0.4`** | **`v1.0.4`** |
 
 Actualiza también:
 
 - `CHANGELOG.md` (raíz)
-- `app/fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`
-- Texto del release: `app/docs/release-notes-v1.0.4.md` (o crea el de la versión nueva)
+- `app/fastlane/metadata/android/en-US/changelogs/2.txt`
+- Texto del release: [`release-notes-v1.0.1.md`](./release-notes-v1.0.1.md)
 
 ## 2. Merge a `main`
 
 ```bash
 git checkout develop
 git pull origin develop
-# commit de versión + changelog si falta
 git push origin develop
 
-# PR develop → main en GitHub, revisar y mergear
+# PR develop → main en GitHub → merge
 ```
 
 ## 3. Compilar APK firmado
-
-Desde `app/`:
 
 ```bash
 cd app
 ./gradlew :composeApp:assembleRelease
 ```
 
-El APK sin firmar queda en:
+APK sin firmar: `composeApp/build/outputs/apk/release/composeApp-release-unsigned.apk`
 
-`composeApp/build/outputs/apk/release/composeApp-release-unsigned.apk`
+Copia el APK **firmado** a `composeApp/release/BeatMyBeat.apk` (gitignored) o fírmalo con Android Studio.
 
-**APK firmado** (si usas keystore local, no versionado):
-
-- Copia/rename a `composeApp/release/BeatMyBeat.apk` (carpeta gitignored), **o**
-- Firma con `apksigner` / Android Studio → **Generate Signed APK**
-
-Comprueba en el dispositivo que **Perfil → Acerca de** muestra la `versionName` correcta.
+Comprueba en el dispositivo: **Perfil → Acerca de** → `1.0.1`.
 
 ## 4. Tag en `main`
-
-Tras el merge, en local:
 
 ```bash
 git checkout main
 git pull origin main
-git tag -a v1.0.4 -m "BeatMyBeat 1.0.4"
-git push origin v1.0.4
+git tag -a v1.0.1 -m "BeatMyBeat 1.0.1"
+git push origin v1.0.1
 ```
-
-El tag debe apuntar al commit de `main` que incluye el `versionCode` / `versionName` del release.
 
 ## 5. Crear GitHub Release
 
-1. [Releases → Draft a new release](https://github.com/imontalvodev/BeatMyBeat/releases/new)
-2. **Choose a tag:** `v1.0.4`
-3. **Release title:** `BeatMyBeat 1.0.4`
-4. **Description:** copia desde `app/docs/release-notes-v1.0.4.md` (bloque EN o ES)
+1. [Draft a new release](https://github.com/imontalvodev/BeatMyBeat/releases/new)
+2. **Tag:** `v1.0.1`
+3. **Title:** `BeatMyBeat 1.0.1`
+4. **Description:** copia desde [`release-notes-v1.0.1.md`](./release-notes-v1.0.1.md)
 5. Adjunta **`BeatMyBeat.apk`**
-6. Calcula y pega el SHA-256 en la descripción:
+6. SHA-256 en la descripción:
 
 ```bash
-sha256sum composeApp/release/BeatMyBeat.apk
-# o la ruta de tu APK firmado
+sha256sum app/composeApp/release/BeatMyBeat.apk
 ```
 
-7. **Publish release** (no draft)
+7. Marca como **Latest** y publica.
 
 ### Con `gh` CLI (opcional)
 
 ```bash
-SHA=$(sha256sum app/composeApp/release/BeatMyBeat.apk | awk '{print $1}')
-gh release create v1.0.4 app/composeApp/release/BeatMyBeat.apk \
+gh release create v1.0.1 app/composeApp/release/BeatMyBeat.apk \
   --repo imontalvodev/BeatMyBeat \
-  --title "BeatMyBeat 1.0.4" \
-  --notes-file app/docs/release-notes-v1.0.4.md
-# Edita la release en la web para añadir SHA-256 si no está en el .md
+  --title "BeatMyBeat 1.0.1" \
+  --notes-file app/docs/release-notes-v1.0.1.md
 ```
 
-## 6. Comprobar actualizaciones in-app
+## 6. Probar actualizaciones in-app
 
-La app consulta:
+La app consulta `https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest` y compara versiones.
 
-`https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest`
-
-Verifica:
+Con **`1.0.0`** instalado y **`v1.0.1`** en GitHub:
 
 ```bash
 curl -s https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest \
   | jq '{tag_name, html_url}'
 ```
 
-Prueba con un APK **anterior** instalado (p. ej. `1.0.2`):
+- Al abrir la app, o
+- **Perfil → Buscar actualizaciones**
 
-- Al abrir la app (máx. cada 12 h), o
-- **Perfil → Buscar actualizaciones** (inmediato)
+El botón del aviso abre **https://beatmybeat.com** (no GitHub).
 
-Más detalle: [`actualizaciones-github.md`](./actualizaciones-github.md).
+Detalle: [`actualizaciones-github.md`](./actualizaciones-github.md).
 
-## 7. F-Droid (cuando corresponda)
+## 7. F-Droid
 
-Tras un release nuevo, actualiza el YAML en [fdroiddata](https://gitlab.com/fdroid/fdroiddata) con el nuevo `commit:` / `versionCode` / `CurrentVersion*`. Ver [`fdroid-publicacion.md`](./fdroid-publicacion.md).
+Tras publicar, actualiza el YAML en fdroiddata (`commit`, `versionCode`, `CurrentVersion*`). Ver [`fdroid-publicacion.md`](./fdroid-publicacion.md).
 
-## Checklist rápido
+## Checklist
 
-- [ ] `versionCode` y `versionName` en `build.gradle.kts`
-- [ ] `CHANGELOG.md` + fastlane changelog
-- [ ] PR `develop` → `main` mergeado
-- [ ] APK firmado probado en dispositivo
-- [ ] Tag `vX.Y.Z` en `main`
-- [ ] GitHub Release con APK + SHA-256
-- [ ] `releases/latest` devuelve el tag nuevo
-- [ ] Aviso de actualización probado desde Perfil
+- [ ] `versionCode = 2`, `versionName = "1.0.1"`
+- [ ] `CHANGELOG.md` + fastlane `changelogs/2.txt`
+- [ ] PR `develop` → `main`
+- [ ] APK firmado probado
+- [ ] Tag `v1.0.1` + Release con APK y SHA-256
+- [ ] `releases/latest` → `v1.0.1`
+- [ ] Aviso de actualización probado (1.0.0 → 1.0.1)
