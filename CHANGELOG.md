@@ -4,6 +4,14 @@ All notable changes to BeatMyBeat are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.3] — 2026-06-12
+
+### Changed
+- Release packaging and in-app update check validation
+
+### Notes
+- Same features as 1.0.2 (profile layout fix + GitHub release update prompt)
+
 ## [1.0.2] — 2026-06-11
 
 ### Added
