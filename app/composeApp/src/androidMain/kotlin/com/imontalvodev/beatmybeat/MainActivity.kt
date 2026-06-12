@@ -55,6 +55,7 @@ import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
 import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
 import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
+import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdatePrompt
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerScreen
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerSection
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
@@ -119,6 +120,7 @@ class MainActivity : AppCompatActivity() {
 
             BeatMyBeatTheme(themeProfile = activeProfile) {
                 CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
+                    ReleaseUpdatePrompt()
                     PlaybackServiceBinding {
                         key(localeTick) {
                         val navController = rememberNavController()

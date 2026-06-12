@@ -4,6 +4,16 @@ All notable changes to BeatMyBeat are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.2] — 2026-06-11
+
+### Added
+- In-app update prompt: checks GitHub Releases on startup and notifies when a newer version is published
+
+## [1.0.1] — 2026-06-11
+
+### Fixed
+- Profile screen layout on small devices (scroll + responsive header sizing)
+
 ## [1.0] — 2026-06-09
 
 ### Added

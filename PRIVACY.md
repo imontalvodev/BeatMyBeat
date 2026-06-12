@@ -21,6 +21,7 @@ The app connects directly from your device to third-party services when you use 
 | `i.ytimg.com` | Thumbnails |
 | [LRCLIB](https://lrclib.net) | Synced lyrics |
 | [lyrics.ovh](https://lyrics.ovh) | Fallback plain lyrics |
+| [GitHub Releases API](https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest) | Optional in-app check for newer app versions (at most once every 12 hours) |
 
 No account is required. BeatMyBeat does not send your library or listening history to the developer.
 

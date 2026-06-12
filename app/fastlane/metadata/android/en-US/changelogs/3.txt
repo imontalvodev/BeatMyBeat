@@ -1,0 +1,2 @@
+In-app update notification via GitHub Releases.
+Profile screen scroll and layout fixes on small devices.
