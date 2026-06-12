@@ -1,6 +1,8 @@
 # BeatMyBeat 1.0.3 — Release notes (GitHub)
 
-Copia el bloque que prefieras al crear el release en GitHub (`v1.0.3`).
+> **Publicado.** Para nuevos releases usa [`github-release.md`](./github-release.md) y el archivo `release-notes-vX.Y.Z.md` de la versión correspondiente.
+
+Copia histórica del release `v1.0.3`.
 
 ---
 
@@ -68,12 +70,3 @@ Añade el SHA-256 tras subir el APK:
 - [Código fuente](https://github.com/imontalvodev/BeatMyBeat)
 ```
 
----
-
-## Checklist al publicar en GitHub
-
-1. Merge `develop` → `main` (PR).
-2. Tag anotado: `v1.0.3` sobre el commit de `main`.
-3. **Create release** → tag `v1.0.3`, título `BeatMyBeat 1.0.3`, pega la descripción de arriba.
-4. Adjunta APK firmado (`BeatMyBeat.apk`).
-5. Publica SHA-256 en la descripción del release.

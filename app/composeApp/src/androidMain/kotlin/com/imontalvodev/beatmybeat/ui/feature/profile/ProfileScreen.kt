@@ -24,11 +24,20 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.TextFields
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
 import com.imontalvodev.beatmybeat.BuildConfig
+import com.imontalvodev.beatmybeat.LocalSnackbarHostState
+import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdateDialog
+import com.imontalvodev.beatmybeat.core.VersionCompare
+import com.imontalvodev.beatmybeat.ui.network.GitHubReleaseInfo
+import com.imontalvodev.beatmybeat.ui.network.ReleaseUpdateClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -41,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +77,10 @@ fun ProfileScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val snackbarHostState = LocalSnackbarHostState.current
+    val scope = rememberCoroutineScope()
+    var pendingUpdate by remember { mutableStateOf<GitHubReleaseInfo?>(null) }
+    var checkingUpdates by remember { mutableStateOf(false) }
     val palette = currentBeatMyBeatThemeProfile()
     val bgBrush = Brush.verticalGradient(
         colors = listOf(palette.backgroundTop, palette.backgroundBottom),
@@ -158,6 +172,37 @@ fun ProfileScreen(
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             ProfileOption(
+                label = stringResource(R.string.profile_check_updates),
+                subtitle = if (checkingUpdates) {
+                    stringResource(R.string.profile_check_updates_running)
+                } else {
+                    stringResource(R.string.profile_check_updates_hint)
+                },
+                icon = Icons.Filled.SystemUpdate,
+                onClick = {
+                    if (checkingUpdates) return@ProfileOption
+                    checkingUpdates = true
+                    scope.launch {
+                        val release = withContext(Dispatchers.IO) {
+                            ReleaseUpdateClient.fetchLatestRelease()
+                        }
+                        checkingUpdates = false
+                        when {
+                            release == null -> snackbarHostState.showSnackbar(
+                                context.getString(R.string.update_check_failed),
+                            )
+                            VersionCompare.isNewer(release.version, BuildConfig.VERSION_NAME) -> {
+                                pendingUpdate = release
+                            }
+                            else -> snackbarHostState.showSnackbar(
+                                context.getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME),
+                            )
+                        }
+                    }
+                },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            ProfileOption(
                 label = stringResource(R.string.profile_about),
                 subtitle = stringResource(R.string.profile_about_version, BuildConfig.VERSION_NAME),
                 icon = Icons.Filled.Info,
@@ -203,6 +248,13 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(layout.bottomScrollPadding))
         }
+    }
+
+    pendingUpdate?.let { release ->
+        ReleaseUpdateDialog(
+            release = release,
+            onDismiss = { pendingUpdate = null },
+        )
     }
 
     if (showLanguageDialog) {

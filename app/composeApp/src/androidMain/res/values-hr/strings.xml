@@ -102,9 +102,14 @@
     <string name="profile_license">Licenca</string>
     <string name="profile_responsible_use">Odgovorna upotreba: poštuj autorska prava i uvjete platformi.</string>
     <string name="update_available_title">Dostupna je nova verzija (%1$s)</string>
-    <string name="update_available_message">Ažuriranje je dostupno na GitHubu. Instalirano: %1$s · Dostupno: %2$s.</string>
-    <string name="update_view_release">Pogledaj na GitHubu</string>
+    <string name="update_available_message">Dostupno je ažuriranje. Instalirano: %1$s · Dostupno: %2$s.</string>
+    <string name="update_view_release">Idi na beatmybeat.com</string>
     <string name="update_later">Kasnije</string>
+    <string name="profile_check_updates">Provjeri ažuriranja</string>
+    <string name="profile_check_updates_hint">Provjerava noviju verziju</string>
+    <string name="profile_check_updates_running">Provjera…</string>
+    <string name="update_up_to_date">Već imaš najnoviju verziju (%1$s).</string>
+    <string name="update_check_failed">Provjera ažuriranja nije uspjela. Provjeri vezu.</string>
     <string name="splash_tagline">Tvoja glazba, tvoj ritam</string>
     <string name="splash_download_music">Preuzmi glazbu</string>
     <string name="splash_go_to_player">Idi na reproduktor</string>

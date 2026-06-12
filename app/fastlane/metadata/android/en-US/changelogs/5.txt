@@ -1,0 +1,1 @@
+Fix GitHub update check after network errors. Manual update check in Profile.

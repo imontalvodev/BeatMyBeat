@@ -10,12 +10,19 @@
 | Comparación | `VersionCompare.isNewer(remota, instalada)` — semver numérico |
 | Frecuencia | Como máximo cada **12 horas** (`UpdatePrefs`) |
 | UI | `ReleaseUpdatePrompt` en `MainActivity` — diálogo al arrancar |
+| Enlace al pulsar actualizar | `https://beatmybeat.com` (no la URL del release en GitHub) |
 
 Código: `ReleaseUpdateClient.kt`, `UpdateChecker.kt`, `ReleaseUpdatePrompt.kt`.
 
 ## Cuándo aparece el aviso
 
 Solo si **la versión del latest release en GitHub es mayor** que la instalada.
+
+**Perfil → Buscar actualizaciones** fuerza la comprobación (sin esperar 12 h) y distingue error de red de «ya actualizado».
+
+### Bug corregido (1.0.3+)
+
+Si la petición a GitHub **fallaba** (red, rate limit), antes se guardaba igual la hora de comprobación y **no volvía a intentar durante 12 h**. Ahora solo se registra el intervalo cuando la API responde correctamente.
 
 | Instalada | Latest en GitHub | ¿Aviso? |
 |-----------|------------------|---------|
@@ -48,10 +55,8 @@ curl -s https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest \
   | jq '{tag_name, html_url, draft, prerelease}'
 ```
 
-Respuesta actual (ejemplo): `tag_name: "v1.0.0"`.
+Último release publicado: comprobar con el comando anterior (`tag_name`).
 
-Tras publicar `v1.0.3`, el mismo comando debe devolver `v1.0.3`.
+## Publicar release en GitHub
 
-## Publicar release en GitHub (resumen)
-
-Ver `app/docs/release-notes-v1.0.3.md` para texto listo para pegar.
+Ver [`github-release.md`](./github-release.md) y `app/docs/release-notes-vX.Y.Z.md` para el texto del release.
