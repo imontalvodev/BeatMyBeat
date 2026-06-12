@@ -13,6 +13,9 @@ data class GitHubReleaseInfo(
 )
 
 object ReleaseUpdateClient {
+    /** Página de descarga / actualización (no el release de GitHub). */
+    const val UPDATE_PAGE_URL = "https://beatmybeat.com"
+
     private const val LATEST_RELEASE_URL =
         "https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest"
     private const val LOG_TAG = "ReleaseUpdateClient"
@@ -56,9 +59,6 @@ object ReleaseUpdateClient {
         val version = tagName.removePrefix("v").removePrefix("V").trim()
         if (version.isBlank()) return null
 
-        val pageUrl = json.optString("html_url").trim()
-        if (pageUrl.isBlank()) return null
-
         val title = json.optString("name").trim().ifBlank { tagName }
         val notes = excerptReleaseNotes(json.optString("body"))
 
@@ -66,7 +66,7 @@ object ReleaseUpdateClient {
             version = version,
             title = title,
             releaseNotesExcerpt = notes,
-            releasePageUrl = pageUrl,
+            releasePageUrl = UPDATE_PAGE_URL,
         )
     }
 

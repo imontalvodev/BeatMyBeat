@@ -4,6 +4,12 @@ All notable changes to BeatMyBeat are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.4] — 2026-06-12
+
+### Fixed
+- Update check: do not record a successful check when the GitHub API request fails (avoids a 12 h silent cooldown)
+- Profile: **Check for updates** runs an immediate GitHub Releases check
+
 ## [1.0.3] — 2026-06-12
 
 ### Changed

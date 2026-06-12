@@ -10,6 +10,7 @@
 | Comparación | `VersionCompare.isNewer(remota, instalada)` — semver numérico |
 | Frecuencia | Como máximo cada **12 horas** (`UpdatePrefs`) |
 | UI | `ReleaseUpdatePrompt` en `MainActivity` — diálogo al arrancar |
+| Enlace al pulsar actualizar | `https://beatmybeat.com` (no la URL del release en GitHub) |
 
 Código: `ReleaseUpdateClient.kt`, `UpdateChecker.kt`, `ReleaseUpdatePrompt.kt`.
 
