@@ -101,6 +101,10 @@
     <string name="profile_privacy_policy">Política de privacidade</string>
     <string name="profile_license">Licença</string>
     <string name="profile_responsible_use">Uso responsável: respeite direitos de autor e termos das plataformas.</string>
+    <string name="update_available_title">Nova versão disponível (%1$s)</string>
+    <string name="update_available_message">Há uma atualização no GitHub. Instalada: %1$s · Disponível: %2$s.</string>
+    <string name="update_view_release">Ver no GitHub</string>
+    <string name="update_later">Mais tarde</string>
     <string name="splash_tagline">Sua música, no seu ritmo</string>
     <string name="splash_download_music">Baixar música</string>
     <string name="splash_go_to_player">Ir para o player</string>
