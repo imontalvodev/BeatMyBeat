@@ -1,8 +1,8 @@
 # BeatMyBeat 1.0.3 — Release notes (GitHub)
 
-> **Publicado.** Para nuevos releases usa [`github-release.md`](./github-release.md) y el archivo `release-notes-vX.Y.Z.md` de la versión correspondiente.
+> **No usar.** Release de numeración intermedia; el orden oficial es `v1.0.0` → `v1.0.1`. Ver [`github-release.md`](./github-release.md).
 
-Copia histórica del release `v1.0.3`.
+Copia histórica (obsoleta).
 
 ---
 
