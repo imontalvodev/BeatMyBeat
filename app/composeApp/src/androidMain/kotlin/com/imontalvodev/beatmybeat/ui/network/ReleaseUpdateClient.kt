@@ -28,6 +28,7 @@ object ReleaseUpdateClient {
         val request = Request.Builder()
             .url(LATEST_RELEASE_URL)
             .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
             .header("User-Agent", "BeatMyBeat/${BuildConfig.VERSION_NAME} (Android)")
             .get()
             .build()

@@ -105,6 +105,11 @@
     <string name="update_available_message">Há uma atualização no GitHub. Instalada: %1$s · Disponível: %2$s.</string>
     <string name="update_view_release">Ver no GitHub</string>
     <string name="update_later">Mais tarde</string>
+    <string name="profile_check_updates">Procurar atualizações</string>
+    <string name="profile_check_updates_hint">Verifica GitHub Releases</string>
+    <string name="profile_check_updates_running">A verificar…</string>
+    <string name="update_up_to_date">Já tens a versão mais recente (%1$s).</string>
+    <string name="update_check_failed">Não foi possível verificar atualizações. Verifica a ligação.</string>
     <string name="splash_tagline">Sua música, no seu ritmo</string>
     <string name="splash_download_music">Baixar música</string>
     <string name="splash_go_to_player">Ir para o player</string>

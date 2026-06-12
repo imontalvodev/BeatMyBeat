@@ -42,61 +42,69 @@ fun ReleaseUpdatePrompt() {
     }
 
     pendingRelease?.let { release ->
-        AlertDialog(
-            onDismissRequest = {
+        ReleaseUpdateDialog(
+            release = release,
+            onDismiss = {
                 UpdatePrefs.setDismissedVersion(context.applicationContext, release.version)
                 pendingRelease = null
             },
-            title = {
+        )
+    }
+}
+
+@Composable
+fun ReleaseUpdateDialog(
+    release: GitHubReleaseInfo,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    R.string.update_available_title,
+                    release.version,
+                ),
+            )
+        },
+        text = {
+            Column {
                 Text(
                     text = stringResource(
-                        R.string.update_available_title,
+                        R.string.update_available_message,
+                        BuildConfig.VERSION_NAME,
                         release.version,
                     ),
                 )
-            },
-            text = {
-                Column {
+                if (release.releaseNotesExcerpt.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = stringResource(
-                            R.string.update_available_message,
-                            BuildConfig.VERSION_NAME,
-                            release.version,
-                        ),
+                        text = release.releaseNotesExcerpt,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (release.releaseNotesExcerpt.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = release.releaseNotesExcerpt,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(release.releasePageUrl)),
-                        )
-                        UpdatePrefs.setDismissedVersion(context.applicationContext, release.version)
-                        pendingRelease = null
-                    },
-                ) {
-                    Text(stringResource(R.string.update_view_release))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        UpdatePrefs.setDismissedVersion(context.applicationContext, release.version)
-                        pendingRelease = null
-                    },
-                ) {
-                    Text(stringResource(R.string.update_later))
-                }
-            },
-        )
-    }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(release.releasePageUrl)),
+                    )
+                    UpdatePrefs.setDismissedVersion(context.applicationContext, release.version)
+                    onDismiss()
+                },
+            ) {
+                Text(stringResource(R.string.update_view_release))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.update_later))
+            }
+        },
+    )
 }

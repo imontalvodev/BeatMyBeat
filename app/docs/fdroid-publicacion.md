@@ -15,14 +15,15 @@ Guía paso a paso para la primera inclusión en el repositorio oficial de [F-Dro
 
 ## 1. Preparar release en GitHub
 
-1. Fusiona `develop` → `main` cuando esté estable.
-2. Verifica que `versionCode` / `versionName` en `composeApp/build.gradle.kts` coinciden con el release.
-3. Crea tag anotado y release:
-   ```bash
-   git tag -a v1.0.0 -m "BeatMyBeat 1.0.0"
-   git push origin v1.0.0
-   ```
-4. Opcional: adjunta APK firmado en GitHub Releases (F-Droid firmará con su propia clave).
+Guía completa: [`github-release.md`](./github-release.md).
+
+Resumen:
+
+1. Sube `versionCode` / `versionName` en `composeApp/build.gradle.kts`.
+2. Actualiza `CHANGELOG.md` y fastlane changelog.
+3. Merge `develop` → `main`.
+4. Tag `vX.Y.Z` y **GitHub Release** con APK firmado + SHA-256.
+5. F-Droid compila desde el tag; el APK de GitHub es para instalación directa.
 
 ## 2. Assets gráficos (pendiente manual)
 
