@@ -103,7 +103,12 @@
     <string name="profile_responsible_use">Odgovorna upotreba: poštuj autorska prava i uvjete platformi.</string>
     <string name="update_available_title">Dostupna je nova verzija (%1$s)</string>
     <string name="update_available_message">Dostupno je ažuriranje. Instalirano: %1$s · Dostupno: %2$s.</string>
-    <string name="update_view_release">Idi na beatmybeat.com</string>
+    <string name="update_download_apk">Preuzmi ažuriranje</string>
+    <string name="update_download_started">Preuzimanje APK-a u Preuzimanja…</string>
+    <string name="update_download_description">BeatMyBeat %1$s</string>
+    <string name="update_download_failed">Preuzimanje ažuriranja nije uspjelo.</string>
+    <string name="update_install_failed">Instalacija se nije mogla otvoriti.</string>
+    <string name="update_install_permission_required">Dozvoli instalaciju nepoznatih aplikacija za nastavak.</string>
     <string name="update_later">Kasnije</string>
     <string name="profile_check_updates">Provjeri ažuriranja</string>
     <string name="profile_check_updates_hint">Provjerava noviju verziju</string>

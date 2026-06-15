@@ -103,7 +103,12 @@
     <string name="profile_responsible_use">Verantwortungsvolle Nutzung: Urheberrecht und Plattformbedingungen beachten.</string>
     <string name="update_available_title">Neue Version verfügbar (%1$s)</string>
     <string name="update_available_message">Ein Update ist verfügbar. Installiert: %1$s · Verfügbar: %2$s.</string>
-    <string name="update_view_release">Zu beatmybeat.com</string>
+    <string name="update_download_apk">Update herunterladen</string>
+    <string name="update_download_started">APK wird in Downloads gespeichert…</string>
+    <string name="update_download_description">BeatMyBeat %1$s</string>
+    <string name="update_download_failed">Update konnte nicht heruntergeladen werden.</string>
+    <string name="update_install_failed">Installer konnte nicht geöffnet werden.</string>
+    <string name="update_install_permission_required">Erlaube die Installation unbekannter Apps, um fortzufahren.</string>
     <string name="update_later">Später</string>
     <string name="profile_check_updates">Nach Updates suchen</string>
     <string name="profile_check_updates_hint">Prüft auf eine neuere Version</string>

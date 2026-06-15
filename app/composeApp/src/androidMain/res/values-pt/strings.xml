@@ -103,7 +103,12 @@
     <string name="profile_responsible_use">Uso responsável: respeite direitos de autor e termos das plataformas.</string>
     <string name="update_available_title">Nova versão disponível (%1$s)</string>
     <string name="update_available_message">Há uma atualização disponível. Instalada: %1$s · Disponível: %2$s.</string>
-    <string name="update_view_release">Ir a beatmybeat.com</string>
+    <string name="update_download_apk">Descarregar atualização</string>
+    <string name="update_download_started">A descarregar APK para Transferências…</string>
+    <string name="update_download_description">BeatMyBeat %1$s</string>
+    <string name="update_download_failed">Não foi possível descarregar a atualização.</string>
+    <string name="update_install_failed">Não foi possível abrir o instalador.</string>
+    <string name="update_install_permission_required">Permite instalar apps desconhecidas para continuar.</string>
     <string name="update_later">Mais tarde</string>
     <string name="profile_check_updates">Procurar atualizações</string>
     <string name="profile_check_updates_hint">Verifica se há versão nova</string>
