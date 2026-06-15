@@ -184,6 +184,7 @@
     <string name="analyze_no_results">No se encontraron resultados para esa búsqueda.</string>
     <string name="analyze_connection_error">Error de conexión. Comprueba tu internet e inténtalo de nuevo.</string>
     <string name="analyze_playlist_url_required">Introduce una URL de YouTube o YouTube Music.</string>
+    <string name="analyze_song_input_required">Introduce datos de la canción para analizar.</string>
     <string name="analyze_playlist_resolve_empty">No se pudieron resolver canciones de la playlist/álbum.</string>
     <string name="analyze_playlist_resolve_failed">No se pudo resolver la playlist directamente desde YouTube. Inténtalo más tarde.</string>
     <string name="analyze_url_invalid_format">Formato inválido. Usa una URL completa de YouTube o YouTube Music.</string>

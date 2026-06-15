@@ -173,6 +173,7 @@
     <string name="analyze_no_results">No results found for that search.</string>
     <string name="analyze_connection_error">Connection error. Check your internet and try again.</string>
     <string name="analyze_playlist_url_required">Enter a YouTube or YouTube Music URL.</string>
+    <string name="analyze_song_input_required">Enter song details to analyze.</string>
     <string name="analyze_playlist_resolve_empty">Could not resolve tracks from the playlist/album.</string>
     <string name="analyze_playlist_resolve_failed">Could not resolve the playlist directly from YouTube. Try again later.</string>
     <string name="analyze_url_invalid_format">Invalid format. Use a full YouTube or YouTube Music URL.</string>

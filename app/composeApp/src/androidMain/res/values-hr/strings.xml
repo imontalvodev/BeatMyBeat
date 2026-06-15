@@ -177,6 +177,7 @@
     <string name="analyze_no_results">Nema rezultata za tu pretragu.</string>
     <string name="analyze_connection_error">Greška veze. Provjeri internet i pokušaj ponovno.</string>
     <string name="analyze_playlist_url_required">Unesi YouTube ili YouTube Music URL.</string>
+    <string name="analyze_song_input_required">Unesi podatke pjesme za analizu.</string>
     <string name="analyze_playlist_resolve_empty">Nije moguće razriješiti pjesme iz playliste/albuma.</string>
     <string name="analyze_playlist_resolve_failed">Nije moguće razriješiti playlistu izravno s YouTubea. Pokušaj kasnije.</string>
     <string name="analyze_url_invalid_format">Nevažeći format. Koristi puni YouTube ili YouTube Music URL.</string>
