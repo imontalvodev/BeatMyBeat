@@ -824,8 +824,9 @@ fun PlayerScreen(
 
     /**
      * Nueva permutación aleatoria del pool [playbackPoolTracks].
-     * [playbackAnchor] si no es null (p. ej. tema que vamos a reproducir antes de asignar [currentTrack]),
-     * determina [shuffleIndex]; si no, se usa [currentTrack].
+     * Si hay [playbackAnchor] o [currentTrack], se coloca en el índice 0 para que
+     * ExoPlayer y la UI reciban TODAS las canciones pendientes (no solo las posteriores
+     * a una posición aleatoria en el orden barajado).
      */
     fun rebuildShuffleOrderFromPool(playbackAnchor: DeviceTrack? = null) {
         if (!viewModel.shuffleEnabled.value) return
@@ -841,12 +842,15 @@ fun PlayerScreen(
             syncQueueToServiceOnly()
             return
         }
-        shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
-        shuffleIndex = when {
-            shuffleOrder.isEmpty() -> -1
-            anchor == null -> 0
-            else -> shuffleOrder.indexOfFirst { it.uri == anchor.uri }.takeIf { it >= 0 } ?: 0
+        var order = base.shuffled(Random(System.currentTimeMillis()))
+        if (anchor != null) {
+            val anchorIdx = order.indexOfFirst { it.uri == anchor.uri }
+            if (anchorIdx > 0) {
+                order = listOf(order[anchorIdx]) + order.drop(anchorIdx + 1) + order.take(anchorIdx)
+            }
         }
+        shuffleOrder = order
+        shuffleIndex = if (shuffleOrder.isEmpty()) -1 else 0
         refreshShuffleQueueMirror()
         syncQueueToServiceOnly()
     }
