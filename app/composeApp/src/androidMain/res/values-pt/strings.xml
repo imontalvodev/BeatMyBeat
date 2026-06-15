@@ -103,7 +103,12 @@
     <string name="profile_responsible_use">Uso responsável: respeite direitos de autor e termos das plataformas.</string>
     <string name="update_available_title">Nova versão disponível (%1$s)</string>
     <string name="update_available_message">Há uma atualização disponível. Instalada: %1$s · Disponível: %2$s.</string>
-    <string name="update_view_release">Ir a beatmybeat.com</string>
+    <string name="update_download_apk">Descarregar atualização</string>
+    <string name="update_download_started">A descarregar APK para Transferências…</string>
+    <string name="update_download_description">BeatMyBeat %1$s</string>
+    <string name="update_download_failed">Não foi possível descarregar a atualização.</string>
+    <string name="update_install_failed">Não foi possível abrir o instalador.</string>
+    <string name="update_install_permission_required">Permite instalar apps desconhecidas para continuar.</string>
     <string name="update_later">Mais tarde</string>
     <string name="profile_check_updates">Procurar atualizações</string>
     <string name="profile_check_updates_hint">Verifica se há versão nova</string>
@@ -177,6 +182,7 @@
     <string name="analyze_no_results">Nenhum resultado para essa pesquisa.</string>
     <string name="analyze_connection_error">Erro de ligação. Verifique a internet e tente novamente.</string>
     <string name="analyze_playlist_url_required">Introduza um URL do YouTube ou YouTube Music.</string>
+    <string name="analyze_song_input_required">Introduza dados da música para analisar.</string>
     <string name="analyze_playlist_resolve_empty">Não foi possível resolver faixas da playlist/álbum.</string>
     <string name="analyze_playlist_resolve_failed">Não foi possível resolver a playlist diretamente do YouTube. Tente mais tarde.</string>
     <string name="analyze_url_invalid_format">Formato inválido. Use um URL completo do YouTube ou YouTube Music.</string>

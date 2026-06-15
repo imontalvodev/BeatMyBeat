@@ -55,6 +55,7 @@ import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
 import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
 import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
+import com.imontalvodev.beatmybeat.ui.feature.update.ApkUpdateInstaller
 import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdatePrompt
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerScreen
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerSection
@@ -85,6 +86,8 @@ class MainActivity : AppCompatActivity() {
             val granted = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
             if (!granted) notificationPermissionLauncher.launch(permission)
         }
+
+        ApkUpdateInstaller.tryCompletePendingInstall(this)
 
         setContent {
             var localeCompositionEpoch by remember { mutableIntStateOf(0) }
@@ -359,4 +362,9 @@ class MainActivity : AppCompatActivity() {
             } // BeatMyBeatTheme
         } // setContent
     } // onCreate
+
+    override fun onResume() {
+        super.onResume()
+        ApkUpdateInstaller.tryCompletePendingInstall(this)
+    }
 }

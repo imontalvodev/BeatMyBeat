@@ -3,6 +3,7 @@ package com.imontalvodev.beatmybeat.ui.network
 import com.imontalvodev.beatmybeat.BuildConfig
 import com.imontalvodev.beatmybeat.core.Logger
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 
 data class GitHubReleaseInfo(
@@ -10,11 +11,12 @@ data class GitHubReleaseInfo(
     val title: String,
     val releaseNotesExcerpt: String,
     val releasePageUrl: String,
+    val apkDownloadUrl: String?,
 )
 
 object ReleaseUpdateClient {
-    /** Página de descarga / actualización (no el release de GitHub). */
-    const val UPDATE_PAGE_URL = "https://beatmybeat.com"
+    const val LATEST_RELEASE_PAGE_URL =
+        "https://github.com/imontalvodev/BeatMyBeat/releases/latest"
 
     private const val LATEST_RELEASE_URL =
         "https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest"
@@ -61,13 +63,37 @@ object ReleaseUpdateClient {
 
         val title = json.optString("name").trim().ifBlank { tagName }
         val notes = excerptReleaseNotes(json.optString("body"))
+        val releasePageUrl = json.optString("html_url").trim()
+            .ifBlank { LATEST_RELEASE_PAGE_URL }
 
         return GitHubReleaseInfo(
             version = version,
             title = title,
             releaseNotesExcerpt = notes,
-            releasePageUrl = UPDATE_PAGE_URL,
+            releasePageUrl = releasePageUrl,
+            apkDownloadUrl = findApkDownloadUrl(json.optJSONArray("assets")),
         )
+    }
+
+    private fun findApkDownloadUrl(assets: JSONArray?): String? {
+        if (assets == null || assets.length() == 0) return null
+
+        var fallback: String? = null
+        for (index in 0 until assets.length()) {
+            val asset = assets.optJSONObject(index) ?: continue
+            val name = asset.optString("name").trim()
+            val downloadUrl = asset.optString("browser_download_url").trim()
+            if (name.isBlank() || downloadUrl.isBlank() || !name.endsWith(".apk", ignoreCase = true)) {
+                continue
+            }
+            if (name.equals("BeatMyBeat.apk", ignoreCase = true)) {
+                return downloadUrl
+            }
+            if (fallback == null) {
+                fallback = downloadUrl
+            }
+        }
+        return fallback
     }
 
     private fun excerptReleaseNotes(raw: String): String {

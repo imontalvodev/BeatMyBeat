@@ -1,2 +1,4 @@
-In-app update notification via GitHub Releases.
-Profile screen scroll and layout fixes on small devices.
+In-app update: download APK from GitHub and open installer automatically.
+Playback queue position restored after reopening the app.
+Queue counters fixed in shuffle mode.
+Toast when Analyze URL or song field is empty.

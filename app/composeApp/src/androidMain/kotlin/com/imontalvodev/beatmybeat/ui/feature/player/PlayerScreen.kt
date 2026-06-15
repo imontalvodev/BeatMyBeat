@@ -310,6 +310,9 @@ fun PlayerScreen(
     var queueRepeatIndex by remember { mutableStateOf(-1) }
     var shuffleOrder by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
     var shuffleIndex by remember { mutableStateOf(-1) }
+    /** Cola de sesión: lista COMPLETA de la sesión y posición absoluta de la canción actual. */
+    var sessionOrderUris by remember { mutableStateOf<List<String>>(emptyList()) }
+    var sessionOrderIndex by remember { mutableStateOf(0) }
     val queueSnapshotHydrated by viewModel.queueUiHydrated.collectAsState()
 
     fun syncQueueToServiceOnly() {
@@ -796,7 +799,15 @@ fun PlayerScreen(
     }
 
     fun playbackQueueTotalCount(): Int {
-        if (shuffleOn && shuffleOrder.isNotEmpty()) return shuffleOrder.size
+        if (shuffleOn && shuffleOrder.isNotEmpty()) {
+            // Derivar la posición actual desde currentTrack para que el conteo sea siempre
+            // reactivo: cuántas canciones quedan (incluyendo la actual) en el orden aleatorio.
+            val ct = currentTrack
+            val pos = if (ct != null) {
+                shuffleOrder.indexOfFirst { it.uri == ct.uri }.takeIf { it >= 0 } ?: shuffleIndex
+            } else shuffleIndex
+            return (shuffleOrder.size - pos.coerceAtLeast(0)).coerceAtLeast(if (ct != null) 1 else 0)
+        }
         return (if (currentTrack != null) 1 else 0) + queue.size
     }
 
@@ -813,8 +824,9 @@ fun PlayerScreen(
 
     /**
      * Nueva permutación aleatoria del pool [playbackPoolTracks].
-     * [playbackAnchor] si no es null (p. ej. tema que vamos a reproducir antes de asignar [currentTrack]),
-     * determina [shuffleIndex]; si no, se usa [currentTrack].
+     * Si hay [playbackAnchor] o [currentTrack], se coloca en el índice 0 para que
+     * ExoPlayer y la UI reciban TODAS las canciones pendientes (no solo las posteriores
+     * a una posición aleatoria en el orden barajado).
      */
     fun rebuildShuffleOrderFromPool(playbackAnchor: DeviceTrack? = null) {
         if (!viewModel.shuffleEnabled.value) return
@@ -830,12 +842,15 @@ fun PlayerScreen(
             syncQueueToServiceOnly()
             return
         }
-        shuffleOrder = base.shuffled(Random(System.currentTimeMillis()))
-        shuffleIndex = when {
-            shuffleOrder.isEmpty() -> -1
-            anchor == null -> 0
-            else -> shuffleOrder.indexOfFirst { it.uri == anchor.uri }.takeIf { it >= 0 } ?: 0
+        var order = base.shuffled(Random(System.currentTimeMillis()))
+        if (anchor != null) {
+            val anchorIdx = order.indexOfFirst { it.uri == anchor.uri }
+            if (anchorIdx > 0) {
+                order = listOf(order[anchorIdx]) + order.drop(anchorIdx + 1) + order.take(anchorIdx)
+            }
         }
+        shuffleOrder = order
+        shuffleIndex = if (shuffleOrder.isEmpty()) -1 else 0
         refreshShuffleQueueMirror()
         syncQueueToServiceOnly()
     }
@@ -847,6 +862,11 @@ fun PlayerScreen(
         if (shuffleActive && shuffleOrder.isNotEmpty()) {
             orderUris = shuffleOrder.map { it.uri }
             currentIndex = shuffleIndex.coerceIn(0, shuffleOrder.lastIndex)
+        } else if (sessionOrderUris.isNotEmpty()) {
+            // Índice absoluto en la lista completa de sesión: al restaurar se reanuda
+            // exactamente aquí y continúa hacia los siguientes (sessionOrderIndex+1, +2…).
+            orderUris = sessionOrderUris
+            currentIndex = sessionOrderIndex.coerceIn(0, sessionOrderUris.lastIndex)
         } else {
             val current = currentTrack
             if (current == null && queue.isEmpty()) return null
@@ -900,6 +920,16 @@ fun PlayerScreen(
             refreshShuffleQueueMirror()
         } else {
             tracks.reversed().forEach { queue.add(0, it) }
+            // Reflejar la inserción en la lista de sesión para que el snapshot sea correcto.
+            if (sessionOrderUris.isNotEmpty()) {
+                val mutable = sessionOrderUris.toMutableList()
+                var insertAt = (sessionOrderIndex + 1).coerceAtMost(mutable.size)
+                tracks.forEach { t ->
+                    mutable.add(insertAt, t.uri)
+                    insertAt++
+                }
+                sessionOrderUris = mutable
+            }
         }
         if (!shuffleActive && repeatMode == RepeatMode.LIST) {
             val ct = currentTrack
@@ -926,10 +956,15 @@ fun PlayerScreen(
         if (resolved.shuffleOn) {
             shuffleOrder = resolved.tracks
             shuffleIndex = resolved.currentIndex
+            sessionOrderUris = emptyList()
+            sessionOrderIndex = 0
             refreshShuffleQueueMirror()
         } else {
             shuffleOrder = emptyList()
             shuffleIndex = -1
+            // Restaurar la lista completa y el índice absoluto tal como se guardaron.
+            sessionOrderUris = resolved.tracks.map { it.uri }
+            sessionOrderIndex = resolved.currentIndex
             queue.clear()
             queue.addAll(resolved.tracks.drop(resolved.currentIndex + 1))
         }
@@ -950,6 +985,8 @@ fun PlayerScreen(
             shuffleOrder = emptyList()
             shuffleIndex = -1
         }
+        sessionOrderUris = emptyList()
+        sessionOrderIndex = 0
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
         syncQueueToService(persist = false)
@@ -1073,6 +1110,13 @@ fun PlayerScreen(
             append(shuffleOrder.joinToString("\u0001") { it.uri })
             append('|')
             append(shuffleIndex)
+        } else if (sessionOrderUris.isNotEmpty()) {
+            // Sólo necesitamos que cambie cuando avanza la posición en la lista.
+            append(sessionOrderIndex)
+            append('|')
+            append(sessionOrderUris.size)
+            append('|')
+            append(currentTrack?.uri ?: "")
         } else {
             append(currentTrack?.uri ?: "")
             append('|')
@@ -1090,6 +1134,8 @@ fun PlayerScreen(
         viewModel.clearPlaybackQueueSnapshot()
         queueRepeatSnapshot = emptyList()
         queueRepeatIndex = -1
+        sessionOrderUris = emptyList()
+        sessionOrderIndex = 0
         if (next) {
             rebuildShuffleOrderFromPool()
             syncQueueToService()
@@ -1140,6 +1186,8 @@ fun PlayerScreen(
         if (!playbackActive) {
             viewModel.clearPlaybackQueueSnapshot()
             queue.clear()
+            sessionOrderUris = emptyList()
+            sessionOrderIndex = 0
             if (shuffleOn) rebuildShuffleOrderFromPool()
             else syncQueueToService()
             queueRepeatSnapshot = emptyList()
@@ -1159,8 +1207,19 @@ fun PlayerScreen(
                     refreshShuffleQueueMirror()
                     syncQueueToService()
                 }
-            } else if (queue.firstOrNull()?.uri == track.uri) {
-                queue.removeAt(0)
+            } else {
+                val sessionIdx = sessionOrderUris.indexOf(track.uri)
+                if (sessionIdx >= 0) {
+                    // Avanzar el puntero y reconstruir queue con los temas restantes,
+                    // para que el contador y la lista de la UI se actualicen en tiempo real.
+                    sessionOrderIndex = sessionIdx
+                    val remainingUris = sessionOrderUris.drop(sessionIdx + 1)
+                    val byUri = deviceTracks.associateBy { it.uri }
+                    queue.clear()
+                    remainingUris.mapNotNull { byUri[it] }.forEach { queue.add(it) }
+                } else if (queue.firstOrNull()?.uri == track.uri) {
+                    queue.removeAt(0)
+                }
             }
         }
         currentTrack = track
@@ -1231,13 +1290,22 @@ fun PlayerScreen(
             currentTrack = track
             currentIndex = deviceTracks.indexOfFirst { it.uri == track.uri }.takeIf { it >= 0 }
                 ?: deviceTracks.indexOfFirst { it.id == track.id }
-            // isPlaying se actualiza automáticamente vía PlaybackService.state
 
             if (shuffleOn && shuffleOrder.isNotEmpty()) {
                 val si = shuffleOrder.indexOfFirst { it.uri == track.uri }
                 if (si >= 0) {
                     shuffleIndex = si
                     refreshShuffleQueueMirror()
+                }
+            } else {
+                // Actualizar puntero y reconstruir queue con lo que queda en la sesión.
+                val si = sessionOrderUris.indexOf(track.uri)
+                if (si >= 0) {
+                    sessionOrderIndex = si
+                    val remainingUris = sessionOrderUris.drop(si + 1)
+                    val byUri = deviceTracks.associateBy { it.uri }
+                    queue.clear()
+                    remainingUris.mapNotNull { byUri[it] }.forEach { queue.add(it) }
                 }
             }
             persistPlaybackSnapshot()
@@ -1265,6 +1333,9 @@ fun PlayerScreen(
         }
 
         val startIndex = pool.indexOfFirst { it.uri == startTrack.uri }.coerceAtLeast(0)
+        // Guardar la lista completa del pool y el índice absoluto de inicio.
+        sessionOrderUris = pool.map { it.uri }
+        sessionOrderIndex = startIndex
         queue.clear()
         queue.addAll(pool.drop(startIndex + 1))
         playTrack(pool[startIndex], clearQueue = false)
@@ -1971,12 +2042,18 @@ fun PlayerScreen(
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                 )
                             }
-                            // displayQueue: en shuffle muestra el resto del orden aleatorio;
-                            // en modo normal muestra la cola manual.
-                            val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty())
-                                shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0))
-                            else
+                            // displayQueue: en shuffle muestra el resto del orden aleatorio
+                            // derivado de la posición real de currentTrack (más reactivo que shuffleIndex).
+                            val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty()) {
+                                val ct = currentTrack
+                                val pos = if (ct != null) {
+                                    shuffleOrder.indexOfFirst { it.uri == ct.uri }
+                                        .takeIf { it >= 0 } ?: shuffleIndex
+                                } else shuffleIndex
+                                shuffleOrder.drop((pos + 1).coerceAtLeast(0))
+                            } else {
                                 queue.toList()
+                            }
 
                             if (displayQueue.isNotEmpty()) {
                                 TextButton(onClick = {
@@ -1989,10 +2066,16 @@ fun PlayerScreen(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty())
-                            shuffleOrder.drop((shuffleIndex + 1).coerceAtLeast(0))
-                        else
+                        val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty()) {
+                            val ct = currentTrack
+                            val pos = if (ct != null) {
+                                shuffleOrder.indexOfFirst { it.uri == ct.uri }
+                                    .takeIf { it >= 0 } ?: shuffleIndex
+                            } else shuffleIndex
+                            shuffleOrder.drop((pos + 1).coerceAtLeast(0))
+                        } else {
                             queue.toList()
+                        }
 
                         if (currentTrack != null) {
                             Text(

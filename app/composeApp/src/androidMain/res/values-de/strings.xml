@@ -103,7 +103,12 @@
     <string name="profile_responsible_use">Verantwortungsvolle Nutzung: Urheberrecht und Plattformbedingungen beachten.</string>
     <string name="update_available_title">Neue Version verfügbar (%1$s)</string>
     <string name="update_available_message">Ein Update ist verfügbar. Installiert: %1$s · Verfügbar: %2$s.</string>
-    <string name="update_view_release">Zu beatmybeat.com</string>
+    <string name="update_download_apk">Update herunterladen</string>
+    <string name="update_download_started">APK wird in Downloads gespeichert…</string>
+    <string name="update_download_description">BeatMyBeat %1$s</string>
+    <string name="update_download_failed">Update konnte nicht heruntergeladen werden.</string>
+    <string name="update_install_failed">Installer konnte nicht geöffnet werden.</string>
+    <string name="update_install_permission_required">Erlaube die Installation unbekannter Apps, um fortzufahren.</string>
     <string name="update_later">Später</string>
     <string name="profile_check_updates">Nach Updates suchen</string>
     <string name="profile_check_updates_hint">Prüft auf eine neuere Version</string>
@@ -177,6 +182,7 @@
     <string name="analyze_no_results">Keine Ergebnisse für diese Suche.</string>
     <string name="analyze_connection_error">Verbindungsfehler. Prüfe deine Internetverbindung und versuche es erneut.</string>
     <string name="analyze_playlist_url_required">Gib eine YouTube- oder YouTube Music-URL ein.</string>
+    <string name="analyze_song_input_required">Gib Songdaten zum Analysieren ein.</string>
     <string name="analyze_playlist_resolve_empty">Tracks der Playlist/des Albums konnten nicht aufgelöst werden.</string>
     <string name="analyze_playlist_resolve_failed">Playlist konnte nicht direkt von YouTube aufgelöst werden. Versuche es später erneut.</string>
     <string name="analyze_url_invalid_format">Ungültiges Format. Verwende eine vollständige YouTube- oder YouTube Music-URL.</string>

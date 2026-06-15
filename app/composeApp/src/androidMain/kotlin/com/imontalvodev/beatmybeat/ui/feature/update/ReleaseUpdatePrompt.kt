@@ -1,7 +1,5 @@
 package com.imontalvodev.beatmybeat.ui.feature.update
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -91,14 +89,12 @@ fun ReleaseUpdateDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(release.releasePageUrl)),
-                    )
+                    ApkUpdateDownloader.startDownload(context, release)
                     UpdatePrefs.setDismissedVersion(context.applicationContext, release.version)
                     onDismiss()
                 },
             ) {
-                Text(stringResource(R.string.update_view_release))
+                Text(stringResource(R.string.update_download_apk))
             }
         },
         dismissButton = {

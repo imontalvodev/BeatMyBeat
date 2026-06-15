@@ -361,6 +361,7 @@ fun AnalyzeScreen(
                             keyboardController?.hide()
                             if (mode == "song") {
                                 if (songTitle.isBlank() && songArtist.isBlank() && songAlbum.isBlank()) {
+                                    showSnack(resources.getString(R.string.analyze_song_input_required))
                                 } else {
                                     scope.launch {
                                         searchingSuggestions = true
@@ -408,6 +409,7 @@ fun AnalyzeScreen(
                                 if (normalizedUrl.isBlank()) {
                                     urlInputError =
                                         resources.getString(R.string.analyze_playlist_url_required)
+                                    showSnack(resources.getString(R.string.analyze_playlist_url_required))
                                 } else {
                                     when (val parsed = parseYouTubeInput(normalizedUrl)) {
                                         is ParsedYouTubeInput.Invalid -> {

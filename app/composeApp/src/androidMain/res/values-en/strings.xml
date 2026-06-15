@@ -103,7 +103,12 @@
     <string name="profile_responsible_use">Responsible use: respect copyright and platform terms.</string>
     <string name="update_available_title">New version available (%1$s)</string>
     <string name="update_available_message">An update is available. Installed: %1$s · Available: %2$s.</string>
-    <string name="update_view_release">Go to beatmybeat.com</string>
+    <string name="update_download_apk">Download update</string>
+    <string name="update_download_started">Downloading APK to Downloads…</string>
+    <string name="update_download_description">BeatMyBeat %1$s</string>
+    <string name="update_download_failed">Could not download the update.</string>
+    <string name="update_install_failed">Could not open the installer.</string>
+    <string name="update_install_permission_required">Allow installing unknown apps to continue.</string>
     <string name="update_later">Later</string>
     <string name="profile_check_updates">Check for updates</string>
     <string name="profile_check_updates_hint">Checks for a newer version</string>
@@ -173,6 +178,7 @@
     <string name="analyze_no_results">No results found for that search.</string>
     <string name="analyze_connection_error">Connection error. Check your internet and try again.</string>
     <string name="analyze_playlist_url_required">Enter a YouTube or YouTube Music URL.</string>
+    <string name="analyze_song_input_required">Enter song details to analyze.</string>
     <string name="analyze_playlist_resolve_empty">Could not resolve tracks from the playlist/album.</string>
     <string name="analyze_playlist_resolve_failed">Could not resolve the playlist directly from YouTube. Try again later.</string>
     <string name="analyze_url_invalid_format">Invalid format. Use a full YouTube or YouTube Music URL.</string>
