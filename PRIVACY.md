@@ -1,6 +1,6 @@
 # BeatMyBeat — Privacy policy
 
-**Last updated:** 2026-06-09
+**Last updated:** 2026-06-11
 
 BeatMyBeat does **not** operate backend servers and does **not** collect personal data for the developer.
 

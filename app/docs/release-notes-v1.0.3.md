@@ -1,22 +1,17 @@
-# BeatMyBeat 1.0.3 — Release notes (GitHub)
+# BeatMyBeat 1.0.3
 
-> **No usar.** Release de numeración intermedia; el orden oficial es `v1.0.0` → `v1.0.1`. Ver [`github-release.md`](./github-release.md).
-
-Copia histórica (obsoleta).
+Notas para el [GitHub Release](https://github.com/imontalvodev/BeatMyBeat/releases/new) · tag `v1.0.3`
 
 ---
 
-## EN — Title
+## English
 
-`BeatMyBeat 1.0.3`
+**Title:** BeatMyBeat 1.0.3
 
-## EN — Description
+### Fixed
 
-```markdown
-### What's new
-
-- **Update notification:** on startup, the app checks [GitHub Releases](https://github.com/imontalvodev/BeatMyBeat/releases/latest) and prompts when a newer version is available.
-- **Profile screen:** layout fixes on small devices (scroll + responsive header).
+- **Playback queue:** **Add to queue** and **Play next** work again; manual queue changes stay in sync with playback and survive tab switches.
+- **Library metadata:** artist subtitles no longer show corrupted characters from YouTube tags (e.g. `Â€¢` instead of a separator).
 
 ### Install
 
@@ -24,32 +19,28 @@ Copia histórica (obsoleta).
 2. Allow installation from unknown sources if prompted.
 3. On Android 13+, grant media permissions when asked.
 
-### Checksum
+### Checksum (SHA-256)
 
-Add SHA-256 after uploading the APK:
-
-`sha256sum BeatMyBeat.apk`
+```
+(replace after signing the APK — sha256sum BeatMyBeat.apk)
+```
 
 ### Links
 
 - [Full changelog](https://github.com/imontalvodev/BeatMyBeat/blob/main/CHANGELOG.md)
 - [Privacy policy](https://github.com/imontalvodev/BeatMyBeat/blob/main/PRIVACY.md)
 - [Source code](https://github.com/imontalvodev/BeatMyBeat)
-```
 
 ---
 
-## ES — Título
+## Español
 
-`BeatMyBeat 1.0.3`
+**Título:** BeatMyBeat 1.0.3
 
-## ES — Descripción
+### Corregido
 
-```markdown
-### Novedades
-
-- **Aviso de actualización:** al abrir la app, consulta [GitHub Releases](https://github.com/imontalvodev/BeatMyBeat/releases/latest) y avisa si hay una versión más reciente.
-- **Pantalla de perfil:** correcciones de diseño en pantallas pequeñas (scroll y cabecera adaptable).
+- **Cola de reproducción:** **Poner en cola** y **Reproducir a continuación** vuelven a funcionar; los cambios manuales se mantienen al reproducir y al cambiar de pestaña.
+- **Metadatos en biblioteca:** el artista ya no muestra caracteres corruptos de etiquetas de YouTube (p. ej. `Â€¢` en lugar del separador).
 
 ### Instalación
 
@@ -57,16 +48,26 @@ Add SHA-256 after uploading the APK:
 2. Permite instalar desde orígenes desconocidas si el sistema lo pide.
 3. En Android 13+, concede permisos de medios cuando se soliciten.
 
-### Checksum
+### Checksum (SHA-256)
 
-Añade el SHA-256 tras subir el APK:
-
-`sha256sum BeatMyBeat.apk`
+```
+(sustituir tras firmar el APK — sha256sum BeatMyBeat.apk)
+```
 
 ### Enlaces
 
 - [Changelog completo](https://github.com/imontalvodev/BeatMyBeat/blob/main/CHANGELOG.md)
 - [Política de privacidad](https://github.com/imontalvodev/BeatMyBeat/blob/main/PRIVACY.md)
 - [Código fuente](https://github.com/imontalvodev/BeatMyBeat)
-```
 
+---
+
+## Publicación
+
+| Campo | Valor |
+|-------|--------|
+| Tag | `v1.0.3` |
+| versionCode | `4` |
+| Asset | `BeatMyBeat.apk` |
+
+En GitHub, pega la sección **English** o **Español** (desde el título de sección hasta **Links** / **Enlaces**) en la descripción del release.

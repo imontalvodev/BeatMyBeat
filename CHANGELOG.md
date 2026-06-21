@@ -4,6 +4,22 @@ All notable changes to BeatMyBeat are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.3] — 2026-06-11
+
+### Fixed
+- **Playback queue:** adding tracks to the end of the queue and **Play next** work correctly again (session queue stays in sync with the UI and ExoPlayer)
+- **Library metadata:** artist names no longer show mojibake from YouTube tags (e.g. `Â€¢` instead of a bullet separator)
+
+## [1.0.2] — 2026-06-11
+
+### Added
+- **In-app updates:** **Download update** fetches `BeatMyBeat.apk` from GitHub Releases and opens the system installer when the download finishes
+
+### Fixed
+- **Playback queue:** resuming the app no longer resets the queue to the first track; shuffle order and position are restored
+- **Queue counter:** “tracks in queue” and “Up next” counts update correctly while shuffle is on
+- **Analyze screen:** toast when URL or song field is empty before running analysis
+
 ## [1.0.1] — 2026-06-12
 
 ### Added
