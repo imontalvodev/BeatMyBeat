@@ -13,6 +13,38 @@ data class LyricsResponse(
 )
 
 /**
+ * Corrige texto UTF-8 mal interpretado como Latin-1 (p. ej. `Â€¢` → `•`).
+ */
+fun normalizeDisplayMetadata(raw: String): String {
+    var text = raw.trim()
+    if (text.isEmpty()) return text
+
+    text = text
+        .replace("Ã¢â‚¬Â¢", "•")
+        .replace("Â€¢", "•")
+        .replace("â€¢", "•")
+        .replace("Ã‚Â·", "·")
+        .replace("Â·", "·")
+        .replace("â€™", "'")
+        .replace("Ã¢â‚¬â„¢", "'")
+        .replace("â€œ", "\"")
+        .replace("â€", "\"")
+
+    if (text.contains('Ã') || text.contains('Â')) {
+        text = runCatching {
+            String(text.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
+        }.getOrDefault(text)
+    }
+    return text
+}
+
+/** Artista legible en la UI a partir de metadatos de YouTube/MediaStore. */
+fun formatArtistForDisplay(raw: String): String {
+    val normalized = normalizeDisplayMetadata(raw)
+    return extractPrimaryArtistForLyrics(normalized).ifBlank { normalized }
+}
+
+/**
  * Elimina sufijos de canal de YouTube del nombre del artista antes de buscar letras.
  */
 fun cleanArtistForLyrics(raw: String): String {
@@ -33,7 +65,7 @@ fun cleanArtistForLyrics(raw: String): String {
  * p. ej. `"Alex Lumbier • Caliente (Versión Techno) • 3:26"` → `"Alex Lumbier"`.
  */
 fun extractPrimaryArtistForLyrics(raw: String): String {
-    var result = raw.trim()
+    var result = normalizeDisplayMetadata(raw)
     if (result.isBlank()) return result
 
     val bulletParts = result.split(Regex("""\s*[•·|]\s*"""))

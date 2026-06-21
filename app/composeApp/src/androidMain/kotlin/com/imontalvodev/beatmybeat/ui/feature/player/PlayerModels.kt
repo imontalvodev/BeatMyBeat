@@ -279,6 +279,9 @@ internal fun resolveTrackMeta(track: com.imontalvodev.beatmybeat.ui.data.DeviceT
     return Pair(m.title, m.artist)
 }
 
+internal fun String.toDisplayArtist(): String =
+    com.imontalvodev.beatmybeat.ui.network.formatArtistForDisplay(this).toTitleCaseSimple()
+
 internal fun String.toTitleCaseSimple(): String {
     val trimmed = trim()
     if (trimmed.isEmpty()) return trimmed

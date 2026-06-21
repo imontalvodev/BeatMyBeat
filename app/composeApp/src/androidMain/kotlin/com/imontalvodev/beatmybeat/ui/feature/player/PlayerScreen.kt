@@ -2167,7 +2167,7 @@ fun PlayerScreen(
                                             overflow = TextOverflow.Ellipsis,
                                         )
                                         Text(
-                                            text = currentTrack!!.artist.toTitleCaseSimple(),
+                                            text = currentTrack!!.artist.toDisplayArtist(),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                             maxLines = 1,
@@ -2243,7 +2243,7 @@ fun PlayerScreen(
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
                                                 Text(
-                                                    text = t.artist.toTitleCaseSimple(),
+                                                    text = t.artist.toDisplayArtist(),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                                     maxLines = 1,

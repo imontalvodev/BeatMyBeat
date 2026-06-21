@@ -13,6 +13,17 @@ class LyricsArtistExtractionTest {
     }
 
     @Test
+    fun mojibake_bullet_metadata_formats_artist_for_display() {
+        val raw = "Parkineos Y Amygdala Â€¢ Teknocity Â€¢ 4:21"
+        assertEquals("Parkineos Y Amygdala", formatArtistForDisplay(raw))
+    }
+
+    @Test
+    fun normalize_display_metadata_fixes_common_bullet_mojibake() {
+        assertEquals("Artist • Song • 4:21", normalizeDisplayMetadata("Artist Â€¢ Song Â€¢ 4:21"))
+    }
+
+    @Test
     fun build_candidates_puts_primary_artist_first() {
         val candidates = buildLyricsArtistCandidates(
             "Melendi - Topic",
