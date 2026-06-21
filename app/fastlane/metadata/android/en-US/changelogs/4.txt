@@ -1,1 +1,2 @@
-Update check via GitHub Releases. Profile screen layout fixes on small devices.
+Playback queue: add to queue and play next work correctly again.
+Artist metadata display fixes mojibake characters from YouTube tags.

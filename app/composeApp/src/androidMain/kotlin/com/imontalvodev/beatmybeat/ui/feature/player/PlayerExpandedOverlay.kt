@@ -315,7 +315,7 @@ internal fun ExpandedPlayerOverlay(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = (track?.artist ?: "").toTitleCaseSimple(),
+                    text = (track?.artist ?: "").toDisplayArtist(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                     maxLines = 1,

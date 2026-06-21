@@ -278,7 +278,7 @@ internal fun MiniPlayerBar(
                     }
                     Spacer(modifier = Modifier.size(8.dp))
                     Text(
-                        text = "${(track?.title ?: stringResource(R.string.player_no_song)).toTitleCaseSimple()} · ${(track?.artist ?: "").toTitleCaseSimple()}",
+                        text = "${(track?.title ?: stringResource(R.string.player_no_song)).toTitleCaseSimple()} · ${(track?.artist ?: "").toDisplayArtist()}",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,

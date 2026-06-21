@@ -278,7 +278,7 @@ internal fun TrackRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = track.artist.toTitleCaseSimple(),
+                        text = track.artist.toDisplayArtist(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         maxLines = 1,

@@ -5,8 +5,8 @@
 | Paso | Detalle |
 |------|---------|
 | API | `GET https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest` |
-| Versión instalada | `BuildConfig.VERSION_NAME` (p. ej. `1.0.1`) |
-| Versión remota | `tag_name` del release sin prefijo `v` (p. ej. `v1.0.2` → `1.0.2`) |
+| Versión instalada | `BuildConfig.VERSION_NAME` (p. ej. `1.0.3`) |
+| Versión remota | `tag_name` del release sin prefijo `v` (p. ej. `v1.0.3` → `1.0.3`) |
 | Comparación | `VersionCompare.isNewer(remota, instalada)` — semver numérico |
 | Frecuencia | Como máximo cada **12 horas** (`UpdatePrefs`) |
 | UI | `ReleaseUpdatePrompt` en `MainActivity` — diálogo al arrancar |
@@ -35,19 +35,19 @@ Si la petición a GitHub **fallaba** (red, rate limit), antes se guardaba igual 
 
 | Instalada | Latest en GitHub | ¿Aviso? |
 |-----------|------------------|---------|
-| `1.0.1` | `1.0.1` | No |
-| `1.0.1` | `1.0.2` | **Sí** |
-| `1.0.2` | `1.0.1` | No (vas por delante) |
+| `1.0.3` | `1.0.3` | No |
+| `1.0.2` | `1.0.3` | **Sí** |
+| `1.0.3` | `1.0.2` | No (vas por delante) |
 
 ## Cómo probar el aviso de actualización
 
-1. **En el dispositivo:** instala un APK **antiguo** (p. ej. `1.0.1` del release anterior en GitHub).
-2. **En GitHub:** publica release **`v1.0.2`** (o cualquier versión **posterior** a la instalada) con **`BeatMyBeat.apk`** adjunto.
+1. **En el dispositivo:** instala un APK **antiguo** (p. ej. `1.0.2` del release anterior en GitHub).
+2. **En GitHub:** publica release **`v1.0.3`** (o cualquier versión **posterior** a la instalada) con **`BeatMyBeat.apk`** adjunto.
 3. **En el dispositivo:** borra datos de BeatMyBeat *o* espera 12 h (o desinstala/reinstala para resetear `UpdatePrefs`).
 4. Abre la app → debe salir el diálogo con la versión nueva.
 5. Pulsa **Descargar actualización** → la APK aparece en Descargas y se abre el instalador.
 
-> Si compilas e instalas `1.0.2` mientras GitHub sigue en `1.0.1`, **no verás aviso** (comportamiento correcto).
+> Si compilas e instalas `1.0.3` mientras GitHub sigue en `1.0.2`, **no verás aviso** (comportamiento correcto).
 
 ## Reset rápido del intervalo de 12 h (desarrollo)
 
@@ -68,4 +68,4 @@ curl -s https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest \
 
 ## Publicar release en GitHub
 
-Ver [`github-release.md`](./github-release.md) y [`release-notes-v1.0.2.md`](./release-notes-v1.0.2.md) para el texto del release.
+Ver [`github-release.md`](./github-release.md) y [`release-notes-v1.0.3.md`](./release-notes-v1.0.3.md) para el texto del release.
