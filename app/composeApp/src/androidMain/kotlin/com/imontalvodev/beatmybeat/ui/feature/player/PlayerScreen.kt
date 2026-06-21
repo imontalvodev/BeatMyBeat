@@ -315,6 +315,68 @@ fun PlayerScreen(
     var sessionOrderIndex by remember { mutableStateOf(0) }
     val queueSnapshotHydrated by viewModel.queueUiHydrated.collectAsState()
 
+    fun currentSessionQueueState(): SessionQueueState? {
+        if (sessionOrderUris.isEmpty()) return null
+        return SessionQueueState(sessionOrderUris, sessionOrderIndex)
+    }
+
+    fun applySessionQueueState(state: SessionQueueState?) {
+        if (state == null || state.orderUris.isEmpty()) {
+            sessionOrderUris = emptyList()
+            sessionOrderIndex = 0
+            return
+        }
+        sessionOrderUris = state.orderUris
+        sessionOrderIndex = state.currentIndex.coerceIn(0, state.orderUris.lastIndex)
+    }
+
+    fun rebuildPendingQueueFromSession() {
+        val state = currentSessionQueueState() ?: return
+        val byUri = deviceTracks.associateBy { it.uri }
+        queue.clear()
+        resolvePendingTracks(pendingUrisFromSession(state), byUri).forEach { queue.add(it) }
+    }
+
+    fun ensureSessionQueueInitialized() {
+        val ensured = ensureSessionQueue(
+            currentTrackUri = currentTrack?.uri,
+            pendingQueueUris = queue.map { it.uri },
+            existing = currentSessionQueueState(),
+        ) ?: return
+        applySessionQueueState(ensured)
+        rebuildPendingQueueFromSession()
+    }
+
+    fun updateQueueRepeatSnapshotForAppend(tracks: List<DeviceTrack>) {
+        if (shuffleOn || repeatMode != RepeatMode.LIST) return
+        val ct = currentTrack ?: return
+        if (tracks.isEmpty()) return
+        if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
+            queueRepeatSnapshot = listOf(ct) + queue.toList()
+            queueRepeatIndex = 0
+        } else {
+            queueRepeatSnapshot = queueRepeatSnapshot + tracks
+        }
+    }
+
+    fun updateQueueRepeatSnapshotForPlayNext(tracks: List<DeviceTrack>) {
+        if (shuffleOn || repeatMode != RepeatMode.LIST) return
+        val ct = currentTrack ?: return
+        if (tracks.isEmpty()) return
+        if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
+            queueRepeatSnapshot = listOf(ct) + queue.toList()
+            queueRepeatIndex = 0
+        } else {
+            val mutable = queueRepeatSnapshot.toMutableList()
+            var insertAt = (queueRepeatIndex + 1).coerceAtMost(mutable.size)
+            tracks.forEach { track ->
+                mutable.add(insertAt, track)
+                insertAt++
+            }
+            queueRepeatSnapshot = mutable
+        }
+    }
+
     fun syncQueueToServiceOnly() {
         val svc = boundService ?: return
         val shuffleActive = viewModel.shuffleEnabled.value
@@ -326,7 +388,7 @@ fun PlayerScreen(
         val arr = JSONArray()
         nextTracks.forEach { t ->
             val o = JSONObject()
-            o.put("id", t.id)
+            o.put("id", t.uri)
             o.put("uri", t.uri)
             o.put("title", t.title)
             o.put("artist", t.artist)
@@ -918,36 +980,39 @@ fun PlayerScreen(
             }
             shuffleOrder = mutable
             refreshShuffleQueueMirror()
+        } else if (currentTrack != null) {
+            ensureSessionQueueInitialized()
+            val updated = insertTracksPlayNextInSession(
+                state = currentSessionQueueState() ?: return,
+                trackUris = tracks.map { it.uri },
+            )
+            applySessionQueueState(updated)
+            rebuildPendingQueueFromSession()
         } else {
             tracks.reversed().forEach { queue.add(0, it) }
-            // Reflejar la inserción en la lista de sesión para que el snapshot sea correcto.
-            if (sessionOrderUris.isNotEmpty()) {
-                val mutable = sessionOrderUris.toMutableList()
-                var insertAt = (sessionOrderIndex + 1).coerceAtMost(mutable.size)
-                tracks.forEach { t ->
-                    mutable.add(insertAt, t.uri)
-                    insertAt++
-                }
-                sessionOrderUris = mutable
-            }
         }
-        if (!shuffleActive && repeatMode == RepeatMode.LIST) {
-            val ct = currentTrack
-            if (ct != null) {
-                if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
-                    queueRepeatSnapshot = listOf(ct) + queue.toList()
-                    queueRepeatIndex = 0
-                } else {
-                    val mutable = queueRepeatSnapshot.toMutableList()
-                    var insertAt = (queueRepeatIndex + 1).coerceAtMost(mutable.size)
-                    tracks.forEach { t ->
-                        mutable.add(insertAt, t)
-                        insertAt++
-                    }
-                    queueRepeatSnapshot = mutable
-                }
-            }
+        updateQueueRepeatSnapshotForPlayNext(tracks)
+        syncQueueToService()
+    }
+
+    fun appendTracksToQueue(tracks: List<DeviceTrack>) {
+        if (tracks.isEmpty()) return
+        val shuffleActive = viewModel.shuffleEnabled.value
+        if (shuffleActive && shuffleOrder.isNotEmpty() && shuffleIndex >= 0) {
+            shuffleOrder = shuffleOrder + tracks
+            refreshShuffleQueueMirror()
+        } else if (currentTrack != null) {
+            ensureSessionQueueInitialized()
+            val updated = appendTracksToSession(
+                state = currentSessionQueueState() ?: return,
+                trackUris = tracks.map { it.uri },
+            )
+            applySessionQueueState(updated)
+            rebuildPendingQueueFromSession()
+        } else {
+            queue.addAll(tracks)
         }
+        updateQueueRepeatSnapshotForAppend(tracks)
         syncQueueToService()
     }
 
@@ -1114,7 +1179,7 @@ fun PlayerScreen(
             // Sólo necesitamos que cambie cuando avanza la posición en la lista.
             append(sessionOrderIndex)
             append('|')
-            append(sessionOrderUris.size)
+            append(sessionOrderUris.joinToString("\u0001"))
             append('|')
             append(currentTrack?.uri ?: "")
         } else {
@@ -1208,15 +1273,13 @@ fun PlayerScreen(
                     syncQueueToService()
                 }
             } else {
-                val sessionIdx = sessionOrderUris.indexOf(track.uri)
-                if (sessionIdx >= 0) {
-                    // Avanzar el puntero y reconstruir queue con los temas restantes,
-                    // para que el contador y la lista de la UI se actualicen en tiempo real.
-                    sessionOrderIndex = sessionIdx
-                    val remainingUris = sessionOrderUris.drop(sessionIdx + 1)
-                    val byUri = deviceTracks.associateBy { it.uri }
-                    queue.clear()
-                    remainingUris.mapNotNull { byUri[it] }.forEach { queue.add(it) }
+                val sessionState = currentSessionQueueState()
+                if (sessionState != null) {
+                    val advanced = advanceSessionToTrack(sessionState, track.uri)
+                    if (advanced != null) {
+                        applySessionQueueState(advanced)
+                        rebuildPendingQueueFromSession()
+                    }
                 } else if (queue.firstOrNull()?.uri == track.uri) {
                     queue.removeAt(0)
                 }
@@ -1298,14 +1361,13 @@ fun PlayerScreen(
                     refreshShuffleQueueMirror()
                 }
             } else {
-                // Actualizar puntero y reconstruir queue con lo que queda en la sesión.
-                val si = sessionOrderUris.indexOf(track.uri)
-                if (si >= 0) {
-                    sessionOrderIndex = si
-                    val remainingUris = sessionOrderUris.drop(si + 1)
-                    val byUri = deviceTracks.associateBy { it.uri }
-                    queue.clear()
-                    remainingUris.mapNotNull { byUri[it] }.forEach { queue.add(it) }
+                val sessionState = currentSessionQueueState()
+                if (sessionState != null) {
+                    val advanced = advanceSessionToTrack(sessionState, track.uri)
+                    if (advanced != null) {
+                        applySessionQueueState(advanced)
+                        rebuildPendingQueueFromSession()
+                    }
                 }
             }
             persistPlaybackSnapshot()
@@ -1453,6 +1515,10 @@ fun PlayerScreen(
 
     fun finishDeletion(track: DeviceTrack, showToast: Boolean = true) {
         queue.removeAll { it.uri == track.uri }
+        currentSessionQueueState()?.let { state ->
+            applySessionQueueState(removeTrackFromSession(state, track.uri))
+            rebuildPendingQueueFromSession()
+        }
         if (shuffleOn) {
             val curUri = currentTrack?.uri
             val wasCurrent = curUri == track.uri
@@ -1795,19 +1861,7 @@ fun PlayerScreen(
                             onToggleSelection = { toggleTrackSelection(track.uri) },
                             onPlayTrack = { startPlaybackFromCollection(track) },
                             onQueue = {
-                                queue.add(track)
-                                syncQueueToService()
-                                if (!shuffleOn && repeatMode == RepeatMode.LIST) {
-                                    val ct = currentTrack
-                                    if (ct != null) {
-                                        if (queueRepeatSnapshot.isEmpty() || queueRepeatIndex < 0) {
-                                            queueRepeatSnapshot = listOf(ct) + queue.toList()
-                                            queueRepeatIndex = 0
-                                        } else {
-                                            queueRepeatSnapshot = queueRepeatSnapshot + track
-                                        }
-                                    }
-                                }
+                                appendTracksToQueue(listOf(track))
                                 showToast(queueAddedText)
                             },
                             onPlayNext = {
@@ -1824,8 +1878,7 @@ fun PlayerScreen(
                             onDeleteFromDevice = { requestDeleteFromDevice(listOf(track)) },
                             onBulkQueue = {
                                 if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                queue.addAll(selectedTracksOrdered)
-                                syncQueueToService()
+                                appendTracksToQueue(selectedTracksOrdered)
                                 showToast(
                                     if (selectedTracksOrdered.size == 1) {
                                         queueAddedText
