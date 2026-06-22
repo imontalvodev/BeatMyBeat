@@ -69,9 +69,7 @@ object ApkUpdateInstaller {
     }
 
     private fun launchPackageInstaller(context: Context, apkUri: Uri): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !context.packageManager.canRequestPackageInstalls()
-        ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !canInstallPackages(context)) {
             showToast(context, R.string.update_install_permission_required)
             val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                 data = Uri.parse("package:${context.packageName}")
@@ -94,6 +92,10 @@ object ApkUpdateInstaller {
             false
         }
     }
+
+    private fun canInstallPackages(context: Context): Boolean =
+        runCatching { context.packageManager.canRequestPackageInstalls() }
+            .getOrDefault(false)
 
     private fun clearPending(context: Context) {
         UpdatePrefs.clearPendingApkDownloadId(context)
