@@ -53,6 +53,8 @@ kotlin {
         }
         androidUnitTest.dependencies {
             implementation(libs.kotlin.test)
+            // android.jar stubs org.json (lanza en runtime); esta dependencia da una implementación real para tests JVM.
+            implementation(libs.json)
         }
     }
 }
