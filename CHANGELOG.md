@@ -4,6 +4,18 @@ All notable changes to BeatMyBeat are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.4] — 2026-07-17
+
+### Fixed
+- **Playback:** playback errors (moved/deleted file, unsupported format) and a corrupted playback queue now show a clear message instead of silently doing nothing
+- **Downloads:** M4A tags (title/artist/cover art) are now written in the correct place inside the file — previous downloads showed no metadata in most players despite the app reporting success
+- **Downloads:** chunked downloads can no longer duplicate/corrupt the output file when the source doesn't support partial content (HTTP range) requests
+- **Library & lyrics:** fixed a few background race conditions in library sync and lyrics fetching that could show stale data or waste network requests
+- **Update check:** version comparison is now more robust against non-standard release tags
+
+### Security
+- **In-app updates:** the downloaded APK is now verified to be BeatMyBeat's own package before installing (an unexpected release asset is rejected), and the installer no longer exposes raw `file://` URIs
+
 ## [1.0.3] — 2026-06-11
 
 ### Fixed
