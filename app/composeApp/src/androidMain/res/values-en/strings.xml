@@ -109,6 +109,10 @@
     <string name="update_download_failed">Could not download the update.</string>
     <string name="update_install_failed">Could not open the installer.</string>
     <string name="update_install_permission_required">Allow installing unknown apps to continue.</string>
+    <string name="update_downloading_title">Downloading update…</string>
+    <string name="update_ready_title">Update ready</string>
+    <string name="update_ready_message">BeatMyBeat %1$s has been downloaded. Install now?</string>
+    <string name="update_install_apk">Install</string>
     <string name="update_later">Later</string>
     <string name="profile_check_updates">Check for updates</string>
     <string name="profile_check_updates_hint">Checks for a newer version</string>

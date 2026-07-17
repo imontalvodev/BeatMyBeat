@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.0.4] — 2026-07-17
 
+### Added
+- **In-app updates:** old pending/downloaded APK is now removed before starting a new update download; after downloading, the app asks for confirmation before installing (in-app dialog + notification action) instead of launching the installer automatically; the download now shows a graphical progress indicator
+
 ### Fixed
 - **Playback:** playback errors (moved/deleted file, unsupported format) and a corrupted playback queue now show a clear message instead of silently doing nothing
 - **Downloads:** M4A tags (title/artist/cover art) are now written in the correct place inside the file — previous downloads showed no metadata in most players despite the app reporting success

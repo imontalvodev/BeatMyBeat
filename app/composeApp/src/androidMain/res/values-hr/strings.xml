@@ -109,6 +109,10 @@
     <string name="update_download_failed">Preuzimanje ažuriranja nije uspjelo.</string>
     <string name="update_install_failed">Instalacija se nije mogla otvoriti.</string>
     <string name="update_install_permission_required">Dozvoli instalaciju nepoznatih aplikacija za nastavak.</string>
+    <string name="update_downloading_title">Preuzimanje ažuriranja…</string>
+    <string name="update_ready_title">Ažuriranje spremno</string>
+    <string name="update_ready_message">BeatMyBeat %1$s je preuzet. Instalirati sada?</string>
+    <string name="update_install_apk">Instaliraj</string>
     <string name="update_later">Kasnije</string>
     <string name="profile_check_updates">Provjeri ažuriranja</string>
     <string name="profile_check_updates_hint">Provjerava noviju verziju</string>

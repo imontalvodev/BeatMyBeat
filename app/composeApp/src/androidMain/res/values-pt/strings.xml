@@ -109,6 +109,10 @@
     <string name="update_download_failed">Não foi possível descarregar a atualização.</string>
     <string name="update_install_failed">Não foi possível abrir o instalador.</string>
     <string name="update_install_permission_required">Permite instalar apps desconhecidas para continuar.</string>
+    <string name="update_downloading_title">A transferir atualização…</string>
+    <string name="update_ready_title">Atualização pronta</string>
+    <string name="update_ready_message">BeatMyBeat %1$s foi transferido. Instalar agora?</string>
+    <string name="update_install_apk">Instalar</string>
     <string name="update_later">Mais tarde</string>
     <string name="profile_check_updates">Procurar atualizações</string>
     <string name="profile_check_updates_hint">Verifica se há versão nova</string>

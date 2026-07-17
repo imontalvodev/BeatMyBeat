@@ -8,6 +8,10 @@ Notas para el [GitHub Release](https://github.com/imontalvodev/BeatMyBeat/releas
 
 **Title:** BeatMyBeat 1.0.4
 
+### Added
+
+- **In-app updates:** starting a new update download now removes any old pending/downloaded APK first; once the download finishes, the app asks you to confirm before installing (in-app dialog + a notification action) instead of opening the installer automatically; the download now shows a graphical progress indicator (percentage) instead of just a system notification.
+
 ### Fixed
 
 - **Playback:** playback errors (moved/deleted file, unsupported format) and a corrupted playback queue now show a clear message instead of silently doing nothing.
@@ -43,6 +47,10 @@ Notas para el [GitHub Release](https://github.com/imontalvodev/BeatMyBeat/releas
 ## Español
 
 **Título:** BeatMyBeat 1.0.4
+
+### Novedades
+
+- **Actualizaciones in-app:** al iniciar una nueva descarga de actualización, se elimina primero cualquier APK anterior pendiente o ya descargada; al terminar la descarga, la app pide confirmación antes de instalar (diálogo en la app + acción en la notificación) en vez de abrir el instalador automáticamente; la descarga ahora muestra un indicador de progreso gráfico (porcentaje) en vez de solo una notificación del sistema.
 
 ### Corregido
 

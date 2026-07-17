@@ -176,6 +176,10 @@
     <string name="update_download_failed">No se pudo descargar la actualización.</string>
     <string name="update_install_failed">No se pudo abrir el instalador.</string>
     <string name="update_install_permission_required">Permite instalar apps desconocidas para continuar.</string>
+    <string name="update_downloading_title">Descargando actualización…</string>
+    <string name="update_ready_title">Actualización lista</string>
+    <string name="update_ready_message">BeatMyBeat %1$s se ha descargado. ¿Instalar ahora?</string>
+    <string name="update_install_apk">Instalar</string>
     <string name="update_later">Más tarde</string>
     <string name="profile_check_updates">Buscar actualizaciones</string>
     <string name="profile_check_updates_hint">Comprueba si hay una versión nueva</string>
