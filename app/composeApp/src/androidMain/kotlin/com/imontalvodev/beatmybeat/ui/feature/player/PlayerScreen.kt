@@ -151,6 +151,7 @@ import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
+import com.imontalvodev.beatmybeat.service.shouldShowPlaybackError
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -277,6 +278,17 @@ fun PlayerScreen(
     val playbackPositionMs = playbackState.positionMs
     val playbackDurationMs = playbackState.durationMs
     val playbackMediaId = playbackState.currentMediaId
+
+    // Errores de reproducción/cola del servicio: evento consumible (id único) para no repetir
+    // el mismo toast en recomposiciones sucesivas.
+    val playbackError by PlaybackService.playbackError.collectAsState()
+    var lastShownErrorId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(playbackError) {
+        val error = playbackError ?: return@LaunchedEffect
+        if (!shouldShowPlaybackError(error.id, lastShownErrorId)) return@LaunchedEffect
+        lastShownErrorId = error.id
+        showToast(error.message, long = true)
+    }
 
     // posición normalizada [0,1] que ve el Slider: mientras el usuario arrastra
     // usamos sliderDragPos; en cuanto suelta, el StateFlow vuelve a mandar.

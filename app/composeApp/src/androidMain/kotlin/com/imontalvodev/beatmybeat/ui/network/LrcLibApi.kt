@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import android.os.SystemClock
 import com.imontalvodev.beatmybeat.core.Logger
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -22,6 +23,14 @@ object LrcLibApi {
     private const val LOG_TAG = "LrcLibApi"
     private const val MAX_TITLE_VARIANTS = 2
     private const val MAX_ARTIST_VARIANTS = 2
+
+    /**
+     * Tope acumulado para toda la búsqueda de una pista (todas las combinaciones
+     * título×artista). Sin esto, el peor caso encadena hasta ~4 combinaciones × varias
+     * llamadas HTTP cada una (con timeouts individuales de hasta 25s) y puede bloquear
+     * el lote de letras varios minutos por una sola pista lenta.
+     */
+    private const val MAX_FETCH_BUDGET_MS = 20_000L
 
     /** /api/get puede ir a fuentes externas: timeout largo pero acotado. */
     private val getClient = AppHttpClient.withTimeouts(
@@ -59,8 +68,14 @@ object LrcLibApi {
 
         Logger.d(LOG_TAG, "fetch title='${titles.first()}' artist='${artists.first()}' dur=${durationSeconds}s")
 
+        val deadline = SystemClock.elapsedRealtime() + MAX_FETCH_BUDGET_MS
+
         for ((titleIndex, title) in titles.withIndex()) {
             for ((artistIndex, artist) in artists.withIndex()) {
+                if (SystemClock.elapsedRealtime() >= deadline) {
+                    Logger.w(LOG_TAG, "fetchLyrics: presupuesto de tiempo agotado, abortando búsqueda")
+                    return failure("Timeout", null)
+                }
                 if (durationSeconds > 0) {
                     fetchFromEndpoint(fastClient, "get-cached", title, artist, album, durationSeconds)
                         ?.let { return it }

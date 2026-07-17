@@ -53,6 +53,8 @@ kotlin {
         }
         androidUnitTest.dependencies {
             implementation(libs.kotlin.test)
+            // android.jar stubs org.json (lanza en runtime); esta dependencia da una implementación real para tests JVM.
+            implementation(libs.json)
         }
     }
 }
@@ -65,8 +67,8 @@ android {
         applicationId = "com.imontalvodev.beatmybeat"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
     }
     buildFeatures {
         buildConfig = true

@@ -17,6 +17,7 @@ import com.imontalvodev.beatmybeat.ui.network.AudioDownloader
 import com.imontalvodev.beatmybeat.ui.network.fetchYouTubeSongMetadata
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +31,10 @@ import org.json.JSONArray
  */
 class SongDownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** @Volatile: leído/escrito desde el hilo que llama a [launchDownload]/[cancelActiveWork] y
+     * desde el propio hilo de la corrutina (Dispatchers.IO), garantiza visibilidad entre ambos. */
+    @Volatile
     private var downloadJob: Job? = null
     private var lastProgressNotifyElapsed = 0L
 
@@ -248,7 +253,11 @@ class SongDownloadService : Service() {
 
     private fun launchDownload(startId: Int, block: suspend () -> Unit) {
         downloadJob?.cancel()
-        val job = scope.launch {
+        // LAZY: el cuerpo no arranca hasta job.start(), llamado DESPUÉS de asignar el campo.
+        // Sin esto, la corrutina podía completarse (y ejecutar su `finally`) en otro hilo antes
+        // de que `downloadJob = job` fuera visible en el hilo que llama, dejando el campo
+        // apuntando a un job obsoleto en vez de a null tras un fallo muy rápido.
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 block()
             } catch (_: CancellationException) {
@@ -260,6 +269,7 @@ class SongDownloadService : Service() {
             }
         }
         downloadJob = job
+        job.start()
     }
 
     private fun cancelActiveWork(startId: Int, showToast: Boolean) {

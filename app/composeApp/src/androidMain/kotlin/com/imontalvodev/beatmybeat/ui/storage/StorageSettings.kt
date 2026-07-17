@@ -151,10 +151,18 @@ object StorageSettings {
 
         tree.findFile(displayName)?.delete()
         val doc = tree.createFile(mimeType, displayName) ?: return null
-        context.contentResolver.openOutputStream(doc.uri)?.use { out ->
-            input.copyTo(out)
-        } ?: return null
-        return displayName
+        var completed = false
+        try {
+            context.contentResolver.openOutputStream(doc.uri)?.use { out ->
+                input.copyTo(out)
+            } ?: return null
+            completed = true
+            return displayName
+        } finally {
+            // Copia interrumpida (I/O, sin espacio): no dejar un archivo truncado en la carpeta
+            // del usuario, igual que hace saveToDefaultPublicFolder en su rama de MediaStore.
+            if (!completed) doc.delete()
+        }
     }
 
     private fun saveToDefaultPublicFolder(

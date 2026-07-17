@@ -206,6 +206,8 @@
     <string name="player_prev_cd">Zurück</string>
     <string name="player_next_cd">Weiter</string>
     <string name="player_audio_permission_denied_snack">Musikberechtigung verweigert. Du siehst nur BeatMyBeat-Downloads.</string>
+    <string name="player_playback_error">Der Song konnte nicht abgespielt werden. Die Datei wurde möglicherweise verschoben, gelöscht oder hat ein nicht unterstütztes Format.</string>
+    <string name="player_queue_load_error">Die Wiedergabeliste konnte nicht geladen werden.</string>
     <string name="player_lyrics_select_song">Wähle einen Song</string>
     <string name="player_lyrics_unavailable">Für diesen Song sind keine Lyrics verfügbar</string>
     <string name="player_lyrics_tap_download">Tippen, um Lyrics herunterzuladen (Internet erforderlich).</string>

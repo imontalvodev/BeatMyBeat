@@ -206,6 +206,8 @@
     <string name="player_prev_cd">Prethodna</string>
     <string name="player_next_cd">Sljedeća</string>
     <string name="player_audio_permission_denied_snack">Dozvola za glazbu odbijena. Vidjet ćeš samo BeatMyBeat preuzimanja.</string>
+    <string name="player_playback_error">Pjesmu nije bilo moguće reproducirati. Datoteka je možda premještena, izbrisana ili ima nepodržani format.</string>
+    <string name="player_queue_load_error">Popis za reprodukciju nije bilo moguće učitati.</string>
     <string name="player_lyrics_select_song">Odaberi pjesmu</string>
     <string name="player_lyrics_unavailable">Tekst nije dostupan za ovu pjesmu</string>
     <string name="player_lyrics_tap_download">Dodirni za preuzimanje teksta (potreban internet).</string>

@@ -75,25 +75,24 @@ object ReleaseUpdateClient {
         )
     }
 
-    private fun findApkDownloadUrl(assets: JSONArray?): String? {
+    /**
+     * Solo acepta el asset con el nombre exacto esperado. Sin fallback al primer `.apk` que
+     * encuentre: un asset inesperado en el release (cuenta comprometida, CI con artefacto raro)
+     * no debe poder colarse como actualización.
+     */
+    internal fun findApkDownloadUrl(assets: JSONArray?): String? {
         if (assets == null || assets.length() == 0) return null
 
-        var fallback: String? = null
         for (index in 0 until assets.length()) {
             val asset = assets.optJSONObject(index) ?: continue
             val name = asset.optString("name").trim()
             val downloadUrl = asset.optString("browser_download_url").trim()
-            if (name.isBlank() || downloadUrl.isBlank() || !name.endsWith(".apk", ignoreCase = true)) {
-                continue
-            }
+            if (downloadUrl.isBlank()) continue
             if (name.equals("BeatMyBeat.apk", ignoreCase = true)) {
                 return downloadUrl
             }
-            if (fallback == null) {
-                fallback = downloadUrl
-            }
         }
-        return fallback
+        return null
     }
 
     private fun excerptReleaseNotes(raw: String): String {

@@ -5,12 +5,20 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.provider.Settings
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import com.imontalvodev.beatmybeat.R
+import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.ui.storage.UpdatePrefs
+import java.io.File
 
 object ApkUpdateInstaller {
+
+    private const val LOG_TAG = "ApkUpdateInstaller"
+    private const val UPDATES_CACHE_DIR = "updates"
+    private const val PENDING_APK_FILENAME = "pending_update.apk"
 
     fun tryCompletePendingInstall(context: Context) {
         val downloadId = UpdatePrefs.getPendingApkDownloadId(context)
@@ -33,13 +41,13 @@ object ApkUpdateInstaller {
             val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
             when (status) {
                 DownloadManager.STATUS_SUCCESSFUL -> {
-                    val apkUri = resolveDownloadedApkUri(downloadManager, cursor, downloadId)
-                    if (apkUri == null) {
+                    val verifiedApkUri = copyAndVerifyDownloadedApk(context, downloadManager, downloadId)
+                    if (verifiedApkUri == null) {
                         clearPending(context)
                         showToast(context, R.string.update_install_failed)
                         return
                     }
-                    if (launchPackageInstaller(context, apkUri)) {
+                    if (launchPackageInstaller(context, verifiedApkUri)) {
                         clearPending(context)
                     }
                 }
@@ -47,25 +55,69 @@ object ApkUpdateInstaller {
                     clearPending(context)
                     showToast(context, R.string.update_download_failed)
                 }
+                DownloadManager.STATUS_PAUSED -> {
+                    // La mayoría de pausas (esperando wifi/red/reintento) las resuelve el propio
+                    // DownloadManager solo; no tocar el pending id o se pierde el progreso. Solo
+                    // PAUSED_UNKNOWN no tiene reintento automático esperable: limpiar en vez de
+                    // dejar el pending id y el receiver enganchados para siempre.
+                    val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                    val reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else -1
+                    if (reason == DownloadManager.PAUSED_UNKNOWN) {
+                        runCatching { downloadManager.remove(downloadId) }
+                        clearPending(context)
+                        showToast(context, R.string.update_download_failed)
+                    }
+                }
             }
         }
     }
 
-    private fun resolveDownloadedApkUri(
+    /**
+     * Copia el APK descargado (gestionado por [DownloadManager], fuera del control de otras apps)
+     * a caché privada de la app y verifica que su `packageName` coincide con el de BeatMyBeat antes
+     * de exponerlo al instalador. Evita instalar un APK inesperado (asset de release equivocado,
+     * descarga corrupta) y evita depender de URIs `file://` no soportadas en Android moderno.
+     */
+    private fun copyAndVerifyDownloadedApk(
+        context: Context,
         downloadManager: DownloadManager,
-        cursor: android.database.Cursor,
         downloadId: Long,
     ): Uri? {
-        downloadManager.getUriForDownloadedFile(downloadId)?.let { return it }
+        val cacheDir = File(context.cacheDir, UPDATES_CACHE_DIR).apply { mkdirs() }
+        val destFile = File(cacheDir, PENDING_APK_FILENAME)
 
-        val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-        if (localUriIndex >= 0) {
-            val localUri = cursor.getString(localUriIndex)?.trim().orEmpty()
-            if (localUri.isNotBlank()) {
-                return Uri.parse(localUri)
+        val copied = runCatching {
+            val pfd = downloadManager.openDownloadedFile(downloadId)
+            ParcelFileDescriptor.AutoCloseInputStream(pfd).use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
             }
+            true
+        }.getOrElse { error ->
+            Logger.e(LOG_TAG, "No se pudo copiar el APK descargado a caché", error)
+            destFile.delete()
+            false
         }
-        return null
+        if (!copied) return null
+
+        val packageInfo = runCatching {
+            context.packageManager.getPackageArchiveInfo(destFile.absolutePath, 0)
+        }.getOrNull()
+        val downloadedPackageName = packageInfo?.packageName
+        if (downloadedPackageName != context.packageName) {
+            Logger.e(
+                LOG_TAG,
+                "APK descargado rechazado: packageName='$downloadedPackageName' " +
+                    "no coincide con '${context.packageName}'",
+            )
+            destFile.delete()
+            return null
+        }
+
+        return runCatching {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
+        }.onFailure { error ->
+            Logger.e(LOG_TAG, "No se pudo generar la URI del FileProvider para el APK", error)
+        }.getOrNull()
     }
 
     private fun launchPackageInstaller(context: Context, apkUri: Uri): Boolean {

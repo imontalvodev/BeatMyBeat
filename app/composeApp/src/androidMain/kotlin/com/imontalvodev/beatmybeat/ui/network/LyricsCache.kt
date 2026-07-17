@@ -1,6 +1,7 @@
 package com.imontalvodev.beatmybeat.ui.network
 
 import android.content.Context
+import com.imontalvodev.beatmybeat.core.Logger
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -85,6 +86,8 @@ object LyricsCache {
             }
             jsonFile.writeText(obj.toString())
             legacyFileFor(context, title, artist).delete()
+        }.onFailure { error ->
+            Logger.e("LyricsCache", "No se pudo escribir caché de letras para '$title' / '$artist'", error)
         }
     }
 

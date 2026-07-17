@@ -18,6 +18,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -59,6 +60,12 @@ class PlaybackService : Service() {
         val currentTitle: String = "",
         val currentArtist: String = "",
         val currentMediaId: String = "",
+    )
+
+    /** Evento consumible: [id] único por ocurrencia para que la UI no repita el mismo toast al recomponer. */
+    data class PlaybackErrorEvent(
+        val id: Long,
+        val message: String,
     )
 
     private val binder = LocalBinder()
@@ -134,7 +141,17 @@ class PlaybackService : Service() {
                 new: Player.PositionInfo,
                 reason: Int,
             ) = pushState(force = true)
+
+            override fun onPlayerError(error: PlaybackException) {
+                Logger.e("PlaybackService", "ExoPlayer error: ${error.errorCodeName}", error)
+                emitPlaybackError(getString(R.string.player_playback_error))
+                pushState(force = true)
+            }
         })
+    }
+
+    private fun emitPlaybackError(message: String) {
+        _playbackError.value = PlaybackErrorEvent(id = SystemClock.elapsedRealtime(), message = message)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -217,7 +234,13 @@ class PlaybackService : Service() {
         @Suppress("UNUSED_PARAMETER") shuffleEnabled: Boolean = false,
     ) {
         val items = parseQueue(queueJson)
-        if (items.isEmpty()) return
+        if (items.isEmpty()) {
+            if (isQueueJsonCorrupt(queueJson, items.size)) {
+                Logger.e("PlaybackService", "loadQueue: cola no vacía en JSON pero 0 items válidos tras parseo")
+                emitPlaybackError(getString(R.string.player_queue_load_error))
+            }
+            return
+        }
         exoPlayer.shuffleModeEnabled = false
         val idx = startIndex.coerceIn(0, items.lastIndex)
         exoPlayer.setMediaItems(items, idx, startPositionMs.coerceAtLeast(0L))
@@ -460,5 +483,8 @@ class PlaybackService : Service() {
 
         private val _state = MutableStateFlow(PlaybackState())
         val state: StateFlow<PlaybackState> = _state.asStateFlow()
+
+        private val _playbackError = MutableStateFlow<PlaybackErrorEvent?>(null)
+        val playbackError: StateFlow<PlaybackErrorEvent?> = _playbackError.asStateFlow()
     }
 }
