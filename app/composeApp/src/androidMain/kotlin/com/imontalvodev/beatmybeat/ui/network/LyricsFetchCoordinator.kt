@@ -2,6 +2,7 @@ package com.imontalvodev.beatmybeat.ui.network
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,7 +35,10 @@ object LyricsFetchCoordinator {
             if (existing.isActive) return existing.await()
         }
 
-        val deferred = scope.async {
+        // LAZY: el cuerpo (incluida la llamada bloqueante de red) no arranca hasta que alguien
+        // haga await()/start(). Si perdemos la carrera de putIfAbsent, cancel() aquí no deja
+        // ningún permiso del semáforo adquirido ni ninguna llamada HTTP en curso que cancelar.
+        val deferred = scope.async(start = CoroutineStart.LAZY) {
             limiter.withPermit {
                 LyricsFetcher.fetch(appContext, request, skipCache)
             }

@@ -9,10 +9,19 @@ object VersionCompare {
     fun parseSegments(version: String): List<Int> {
         val normalized = version.trim().removePrefix("v").removePrefix("V")
         if (normalized.isBlank()) return listOf(0)
-        return normalized.split('.', '-', '_')
-            .mapNotNull { segment ->
-                segment.takeWhile { it.isDigit() }.toIntOrNull()
-            }
+        val parts = normalized.split('.', '-', '_')
+
+        // Recortar solo el sufijo no numérico final (p. ej. "-beta", "-rc1"), como antes.
+        // Un segmento no numérico intercalado entre segmentos numéricos ("1.a.2") ya NO
+        // desaparece: cuenta como 0 en su posición, para no desalinear los segmentos
+        // siguientes y comparar en la dirección equivocada.
+        var end = parts.size
+        while (end > 0 && parts[end - 1].takeWhile { it.isDigit() }.toIntOrNull() == null) {
+            end--
+        }
+
+        return parts.subList(0, end)
+            .map { segment -> segment.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
             .ifEmpty { listOf(0) }
     }
 

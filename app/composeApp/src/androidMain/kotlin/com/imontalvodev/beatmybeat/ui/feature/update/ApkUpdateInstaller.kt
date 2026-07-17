@@ -55,6 +55,19 @@ object ApkUpdateInstaller {
                     clearPending(context)
                     showToast(context, R.string.update_download_failed)
                 }
+                DownloadManager.STATUS_PAUSED -> {
+                    // La mayoría de pausas (esperando wifi/red/reintento) las resuelve el propio
+                    // DownloadManager solo; no tocar el pending id o se pierde el progreso. Solo
+                    // PAUSED_UNKNOWN no tiene reintento automático esperable: limpiar en vez de
+                    // dejar el pending id y el receiver enganchados para siempre.
+                    val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                    val reason = if (reasonIndex >= 0) cursor.getInt(reasonIndex) else -1
+                    if (reason == DownloadManager.PAUSED_UNKNOWN) {
+                        runCatching { downloadManager.remove(downloadId) }
+                        clearPending(context)
+                        showToast(context, R.string.update_download_failed)
+                    }
+                }
             }
         }
     }

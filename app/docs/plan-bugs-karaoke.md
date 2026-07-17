@@ -24,14 +24,14 @@
 |---|---|---|---|---|
 | 6 | Sin verificación de integridad/identidad del APK antes de instalar; `findApkDownloadUrl` caía al primer `.apk` del release si no había uno con el nombre esperado | `ui/network/ReleaseUpdateClient.kt:78-97`, `ui/feature/update/ApkUpdateInstaller.kt:82-89` | **Alta (seguridad)** | ✅ Fijado |
 | 7 | Fallback a URI `file://` sin `FileProvider` declarado → `FileUriExposedException` en Android moderno, tragado en silencio | `ui/feature/update/ApkUpdateInstaller.kt:54-69` | **Alta (seguridad)** | ✅ Fijado |
-| 8 | `VersionCompare.parseSegments` descarta segmentos no numéricos en vez de tratarlos como 0 → dirección de comparación incorrecta con tags raros | `core/VersionCompare.kt:12-16` | Media | Pendiente |
-| 9 | `StorageSettings.saveToCustomTree` deja archivo truncado si falla la copia (sin cleanup, a diferencia de `saveToDefaultPublicFolder`) | `ui/storage/StorageSettings.kt:142-158` | Media | Pendiente |
-| 10 | Descarga de actualización puede quedar atascada para siempre (pausada/cancelada desde Downloads del sistema no limpia el pending id ni desregistra el receiver) | `ui/feature/update/ApkUpdateInstaller.kt:34-50` | Baja | Pendiente |
-| 11 | `Mp4TagWriter` inserta `udta/meta/ilst` como átomo top-level en vez de hijo de `moov` → tag "se escribe con éxito" pero la mayoría de reproductores no lo leen | `ui/network/Mp4TagWriter.kt:121-144` | Alta (rompe feature clave) | Pendiente |
-| 12 | `parseTopLevelAtoms` no maneja tamaño de átomo 0/1 (EOF/extendido) → corta el escaneo antes de tiempo, inserta el tag después de `mdat` | `ui/network/Mp4TagWriter.kt:148-158` | Media | Pendiente |
-| 13 | TOCTOU en deduplicación de peticiones de letras: `scope.async{}` arranca antes de comprobar `putIfAbsent`, cancelar el `Deferred` perdedor no interrumpe la llamada OkHttp ya en curso | `ui/network/LyricsFetchCoordinator.kt:33-47` | Media | Pendiente |
-| 14 | Fallos de escritura en caché de letras silenciosos (`runCatching` sin log ni feedback) | `ui/network/LyricsCache.kt:75-89` | Baja | Pendiente |
-| 15 | Lote de letras sin timeout agregado; una pista lenta bloquea el batch entero minutos | `ui/network/LrcLibApi.kt:62-81`, `service/LyricsBatchService.kt:71-132` | Baja | Pendiente |
+| 8 | `VersionCompare.parseSegments` descarta segmentos no numéricos en vez de tratarlos como 0 → dirección de comparación incorrecta con tags raros | `core/VersionCompare.kt:12-16` | Media | ✅ Fijado (Fase G) |
+| 9 | `StorageSettings.saveToCustomTree` deja archivo truncado si falla la copia (sin cleanup, a diferencia de `saveToDefaultPublicFolder`) | `ui/storage/StorageSettings.kt:142-158` | Media | ✅ Fijado (Fase G) |
+| 10 | Descarga de actualización puede quedar atascada para siempre (pausada/cancelada desde Downloads del sistema no limpia el pending id ni desregistra el receiver) | `ui/feature/update/ApkUpdateInstaller.kt:34-50` | Baja | ✅ Fijado (Fase G) |
+| 11 | `Mp4TagWriter` inserta `udta/meta/ilst` como átomo top-level en vez de hijo de `moov` → tag "se escribe con éxito" pero la mayoría de reproductores no lo leen | `ui/network/Mp4TagWriter.kt:121-144` | Alta (rompe feature clave) | ✅ Fijado (Fase G) |
+| 12 | `parseTopLevelAtoms` no maneja tamaño de átomo 0/1 (EOF/extendido) → corta el escaneo antes de tiempo, inserta el tag después de `mdat` | `ui/network/Mp4TagWriter.kt:148-158` | Media | ✅ Fijado (Fase G) |
+| 13 | TOCTOU en deduplicación de peticiones de letras: `scope.async{}` arranca antes de comprobar `putIfAbsent`, cancelar el `Deferred` perdedor no interrumpe la llamada OkHttp ya en curso | `ui/network/LyricsFetchCoordinator.kt:33-47` | Media | ✅ Fijado (Fase G) |
+| 14 | Fallos de escritura en caché de letras silenciosos (`runCatching` sin log ni feedback) | `ui/network/LyricsCache.kt:75-89` | Baja | ✅ Fijado (Fase G) |
+| 15 | Lote de letras sin timeout agregado; una pista lenta bloquea el batch entero minutos | `ui/network/LrcLibApi.kt:62-81`, `service/LyricsBatchService.kt:71-132` | Baja | ✅ Fijado (Fase G) |
 
 ### 1. Errores de reproducción no capturados
 
@@ -254,27 +254,46 @@ centrado + resaltado por línea).
 **Riesgo:** medio-alto. Nueva superficie de permisos, gestión de recursos de audio concurrente
 (reproducción + grabación), y necesidad de mezcla de audio si se decide combinar voz + pista.
 
-### Fase G — Corrección de tags MP4 y robustez de letras (prioridad media-alta)
+### Fase G — Corrección de tags MP4 y robustez de letras (prioridad media-alta) ✅ Completada
 
 **Objetivo:** arreglar bugs 8-15 (ronda 2). Prioridad alta dentro de la fase para 11-12: el escritor de
-tags MP4 reporta éxito pero el resultado no es válido, lo cual es más grave que un simple fallo visible.
+tags MP4 reportaba éxito pero el resultado no era válido, lo cual es más grave que un simple fallo visible.
 
-1. `Mp4TagWriter`: mover el bloque `udta/meta/ilst` a hijo de `moov` (no top-level) y hacer que
-   `parseTopLevelAtoms` maneje tamaño `0` (hasta EOF) y `1` (tamaño extendido de 64 bits) en vez de
-   abortar el escaneo.
-2. `VersionCompare.parseSegments`: mapear segmentos no numéricos a `0` en vez de descartarlos con
-   `mapNotNull`.
-3. `StorageSettings.saveToCustomTree`: envolver la copia en try/finally que borre el documento
-   destino si falla, igual que `saveToDefaultPublicFolder`.
-4. `ApkUpdateInstaller.handleDownloadFinished`: manejar también estados no terminales/cancelados de
-   `DownloadManager` (limpiar pending id + receiver, mostrar error) en vez de solo `STATUS_SUCCESSFUL`/`STATUS_FAILED`.
-5. `LyricsFetchCoordinator`: evitar que dos corrutinas concurrentes por la misma pista lancen ambas la
-   llamada de red (comprobar `putIfAbsent` antes de lanzar el `async`, no después).
-6. `LyricsCache.putEntry`: loguear (`Logger.e`) el fallo de escritura en vez de tragarlo en silencio.
-7. `LrcLibApi`/`LyricsBatchService`: cap de tiempo por pista en el batch, o cancelación entre sub-peticiones.
+1. **`Mp4TagWriter`** (11+12, acoplados): `replaceOrInsertUdta` ahora localiza `moov`, busca/reemplaza
+   `udta` **entre sus hijos** (no a nivel raíz) y, si no existe, lo inserta como último hijo de `moov`
+   parcheando los 4 bytes de tamaño de `moov` para reflejar el nuevo contenido. El parser de átomos
+   (`parseAtoms`, generalizado desde `parseTopLevelAtoms` para poder acotarse a un rango, usado tanto a
+   nivel raíz como dentro de `moov`) ahora maneja tamaño `0` (átomo hasta el final del rango que lo
+   contiene) y tamaño `1` (tamaño real de 64 bits en los 8 bytes siguientes al header), en vez de cortar
+   el escaneo. Si el archivo no tiene `moov` (corrupto/no-MP4), `write()` lanza excepción explícita en
+   vez de escribir un tag no válido — el llamador (`AudioDownloader`) ya lo trata como *best-effort* con
+   `runCatching` + fallback a `meta.json`.
+2. **`VersionCompare.parseSegments`**: solo se recorta el sufijo no numérico **final** (`-beta`, `-rc1`,
+   como antes); un segmento no numérico intercalado (`1.a.2`) ya no desaparece, cuenta como `0` en su
+   posición para no desalinear los segmentos siguientes.
+3. **`StorageSettings.saveToCustomTree`**: copia envuelta en try/finally que borra el `DocumentFile`
+   destino si la copia no se completó, igual que ya hacía `saveToDefaultPublicFolder`.
+4. **`ApkUpdateInstaller.handleDownloadFinished`**: nuevo caso `STATUS_PAUSED` — si `COLUMN_REASON` es
+   `PAUSED_UNKNOWN` (sin reintento automático esperable) limpia pending id + receiver y avisa al
+   usuario; el resto de pausas (cola wifi/red/reintento) se dejan intactas porque `DownloadManager` las
+   resuelve solo.
+5. **`LyricsFetchCoordinator`**: `scope.async` pasa a `CoroutineStart.LAZY` — el cuerpo (semáforo +
+   llamada HTTP bloqueante) ya no arranca hasta que alguien hace `await()`; si la corrutina pierde la
+   carrera de `putIfAbsent`, `cancel()` ahora es gratis (nunca llegó a ejecutar nada).
+6. **`LyricsCache.putEntry`**: `runCatching { ... }.onFailure { Logger.e(...) }` — el fallo de escritura
+   sigue sin ser fatal para el llamador, pero ya queda registrado.
+7. **`LrcLibApi.fetchLyrics`**: presupuesto acumulado de 20s (`MAX_FETCH_BUDGET_MS`) para toda la
+   búsqueda de una pista (todas las combinaciones título×artista); al agotarse, aborta con
+   `failure("Timeout", null)` en vez de seguir encadenando llamadas.
 
-**Riesgo:** medio. 11-12 tocan un parser binario propio (mayor riesgo de regresión, requiere probar
-con archivos reales tageados antes/después); el resto son cambios localizados y de bajo riesgo.
+**Riesgo:** medio, materializado en tests — 11-12 tocaban un parser binario propio (mayor riesgo de
+regresión).
+
+**Tests:** `ui/network/Mp4TagWriterTest.kt` (3 tests: inserta `udta` como hijo de `moov`, reemplaza sin
+duplicar, lanza si no hay `moov` — construye MP4s mínimos sintéticos y los re-verifica con un parser de
+átomos independiente del de producción). `core/VersionCompareTest.kt` ampliado con 2 casos de regresión
+para el bug 8. 4-7 y 9-10 dependen de `DownloadManager`/`ContentResolver`/coroutines reales — verificados
+manualmente, no por unit test JVM.
 
 ---
 
@@ -289,7 +308,7 @@ con archivos reales tageados antes/después); el resto son cambios localizados y
 | D | Karaoke: resaltado por palabra | Baja | — | Pendiente |
 | E | Karaoke: tono/velocidad | Baja | Fase D (mismo overlay) | Pendiente |
 | F | Karaoke: grabación | Media-Alta | Validación de Fases D-E | Pendiente |
-| G | Tags MP4 + robustez letras/update | Media | — | Pendiente |
+| G | Tags MP4 + robustez letras/update | Media | — | ✅ Completada |
 
 ---
 

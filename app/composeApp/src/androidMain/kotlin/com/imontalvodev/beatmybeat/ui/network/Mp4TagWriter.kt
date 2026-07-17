@@ -115,45 +115,90 @@ object Mp4TagWriter {
     // -------------------------------------------------------------------------
 
     /**
-     * Recorre los átomos de nivel raíz buscando 'udta'. Si lo encuentra lo
-     * reemplaza. Si no, inserta el bloque antes de 'mdat'.
+     * El spec MP4/iTunes exige que 'udta' (con 'meta/ilst' dentro) sea HIJO de 'moov', no un átomo
+     * de nivel raíz — un 'udta' top-level es ignorado por la inmensa mayoría de reproductores/
+     * MediaMetadataRetriever. Localizamos 'moov', buscamos 'udta' entre sus hijos (para
+     * reemplazarlo) y si no existe lo insertamos como último hijo de 'moov', parcheando el tamaño
+     * de 'moov' para reflejar el nuevo contenido.
      */
     private fun replaceOrInsertUdta(src: ByteArray, udtaBytes: ByteArray): ByteArray {
-        val atoms = parseTopLevelAtoms(src)
+        val topAtoms = parseAtoms(src, 0, src.size)
+        val moovAtom = topAtoms.firstOrNull { it.name == "moov" }
+            ?: throw Exception("Archivo MP4 sin átomo 'moov': no se pueden escribir tags")
 
-        val udtaAtom = atoms.firstOrNull { it.name == "udta" }
-        if (udtaAtom != null) {
-            // Reemplazar el udta existente
-            val out = ByteArrayOutputStream(src.size - udtaAtom.size + udtaBytes.size)
-            out.write(src, 0, udtaAtom.offset)
-            out.write(udtaBytes)
-            val after = udtaAtom.offset + udtaAtom.size
-            out.write(src, after, src.size - after)
-            return out.toByteArray()
+        val moovChildren = parseAtoms(src, moovAtom.offset + moovAtom.headerSize, moovAtom.offset + moovAtom.size)
+        val existingUdta = moovChildren.firstOrNull { it.name == "udta" }
+
+        val spliceStart: Int
+        val spliceEnd: Int
+        if (existingUdta != null) {
+            spliceStart = existingUdta.offset
+            spliceEnd = existingUdta.offset + existingUdta.size
+        } else {
+            // Insertar como último hijo, justo antes del cierre de 'moov'.
+            val insertAt = moovAtom.offset + moovAtom.size
+            spliceStart = insertAt
+            spliceEnd = insertAt
         }
 
-        // Insertar antes de mdat (o al final si no hay mdat)
-        val mdatAtom = atoms.firstOrNull { it.name == "mdat" }
-        val insertAt = mdatAtom?.offset ?: src.size
+        val delta = udtaBytes.size - (spliceEnd - spliceStart)
+        val newMoovSize = moovAtom.size + delta
+        require(newMoovSize.toLong() <= UInt.MAX_VALUE.toLong()) { "moov excede el tamaño de átomo de 32 bits" }
 
-        val out = ByteArrayOutputStream(src.size + udtaBytes.size)
-        out.write(src, 0, insertAt)
+        val out = ByteArrayOutputStream(src.size + delta)
+        out.write(src, 0, spliceStart)
         out.write(udtaBytes)
-        out.write(src, insertAt, src.size - insertAt)
-        return out.toByteArray()
+        out.write(src, spliceEnd, src.size - spliceEnd)
+        val result = out.toByteArray()
+
+        // 'moov' usa siempre header de 32 bits en la práctica de esta app (nunca lo escribimos con
+        // tamaño extendido); parchear los 4 bytes de tamaño en su offset original, que cae dentro
+        // del prefijo sin modificar (moovAtom.offset < spliceStart siempre).
+        writeUInt32BigEndian(result, moovAtom.offset, newMoovSize)
+        return result
     }
 
-    private data class Atom(val name: String, val offset: Int, val size: Int)
+    private fun writeUInt32BigEndian(data: ByteArray, offset: Int, value: Int) {
+        data[offset] = ((value ushr 24) and 0xFF).toByte()
+        data[offset + 1] = ((value ushr 16) and 0xFF).toByte()
+        data[offset + 2] = ((value ushr 8) and 0xFF).toByte()
+        data[offset + 3] = (value and 0xFF).toByte()
+    }
 
-    private fun parseTopLevelAtoms(data: ByteArray): List<Atom> {
+    private data class Atom(val name: String, val offset: Int, val size: Int, val headerSize: Int)
+
+    /**
+     * Recorre los átomos dentro de `[rangeStart, rangeEnd)`. Maneja tamaño `0` (el átomo se
+     * extiende hasta el final del rango que lo contiene — válido para el último átomo del
+     * archivo/contenedor) y tamaño `1` (tamaño real de 64 bits en los 8 bytes siguientes al
+     * header de 8 bytes), en vez de tratarlos como inválidos.
+     */
+    private fun parseAtoms(data: ByteArray, rangeStart: Int, rangeEnd: Int): List<Atom> {
         val atoms = mutableListOf<Atom>()
-        var pos = 0
-        while (pos + 8 <= data.size) {
-            val size = ByteBuffer.wrap(data, pos, 4).int
+        var pos = rangeStart
+        while (pos + 8 <= rangeEnd) {
+            val size32 = ByteBuffer.wrap(data, pos, 4).int
             val name = String(data, pos + 4, 4, Charsets.ISO_8859_1)
-            if (size < 8) break // átomo inválido o de tamaño 0 (fin)
-            atoms.add(Atom(name, pos, size))
-            pos += size
+            val headerSize: Int
+            val size: Long = when {
+                size32 == 0 -> {
+                    headerSize = 8
+                    (rangeEnd - pos).toLong()
+                }
+                size32 == 1 -> {
+                    if (pos + 16 > rangeEnd) break
+                    headerSize = 16
+                    ByteBuffer.wrap(data, pos + 8, 8).long
+                }
+                size32 < 8 -> break // átomo realmente inválido
+                else -> {
+                    headerSize = 8
+                    size32.toLong() and 0xFFFFFFFFL
+                }
+            }
+            if (size < headerSize || pos + size > rangeEnd || size > Int.MAX_VALUE) break
+            atoms.add(Atom(name, pos, size.toInt(), headerSize))
+            pos += size.toInt()
         }
         return atoms
     }

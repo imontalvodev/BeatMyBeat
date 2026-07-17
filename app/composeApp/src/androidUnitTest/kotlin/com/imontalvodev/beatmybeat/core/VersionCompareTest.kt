@@ -33,4 +33,19 @@ class VersionCompareTest {
     fun parseSegments_ignoresSuffix() {
         assertEquals(listOf(1, 0, 1), VersionCompare.parseSegments("1.0.1-beta"))
     }
+
+    @Test
+    fun parseSegments_nonNumericSegmentInTheMiddleCountsAsZero_doesNotDisappear() {
+        // Regresión: antes "1.a.2" perdía el segmento "a" por completo (mapNotNull) y quedaba
+        // como [1, 2], desalineado frente a versiones de 3 segmentos.
+        assertEquals(listOf(1, 0, 2), VersionCompare.parseSegments("1.a.2"))
+    }
+
+    @Test
+    fun isNewer_nonNumericMiddleSegment_comparesInCorrectDirection() {
+        // Antes: compare("1.a.2", "1.0.3") comparaba [1,2] vs [1,0,3] y decía que 1.a.2 era más
+        // nueva. Con el segmento alineado a 0, debe ser correctamente más antigua.
+        assertFalse(VersionCompare.isNewer("1.a.2", "1.0.3"))
+        assertTrue(VersionCompare.isNewer("1.0.3", "1.a.2"))
+    }
 }
