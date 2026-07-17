@@ -87,7 +87,6 @@
     <string name="theme_current_color">Trenutna boja:</string>
     <string name="theme_accent">Naglasak</string>
     <string name="profile_avatar_cd">Avatar</string>
-    <string name="profile_change_photo">Promijeni profilnu sliku</string>
     <string name="profile_change_language">Promijeni jezik</string>
     <string name="profile_song_location">Lokacija pjesama</string>
     <string name="profile_open_song_folder">Otvori mapu pjesama</string>
@@ -256,7 +255,6 @@
     <string name="player_edit_playlist_invalid_name">Unesi valjani naziv.</string>
     <string name="player_save_button">Spremi</string>
     <string name="player_create_playlist_button">Stvori</string>
-    <string name="player_action_hide">Sakrij</string>
     <string name="player_edit_playlist_menu">Uredi naziv</string>
     <string name="player_delete_playlist_menu">Obriši playlistu</string>
     <string name="player_default_playlist_name">Moja playlista</string>

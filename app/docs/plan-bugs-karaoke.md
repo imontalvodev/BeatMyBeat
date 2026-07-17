@@ -223,13 +223,20 @@ producción con datos reales.
 peticiones HTTP reales) — no hay Robolectric ni MockWebServer en el proyecto para simularlos en
 `androidUnitTest`. Verificado manualmente en emulador + `assembleDebug`/`testDebugUnitTest` en verde.
 
-### Fase C — UX de feedback y limpieza de TODOs (prioridad media)
+### Fase C — UX de feedback y limpieza de TODOs (prioridad media) ✅ Completada
 
-1. Decidir: implementar "cambiar foto" en `ProfileScreen` u ocultar la opción de la UI.
-2. Decidir: implementar "ocultar canción" en `PlayerLibraryUi` u ocultar el control.
-3. Exponer progreso por chunk en la UI de descarga (`DownloadProgressOverlay.kt`).
+1. **"Cambiar foto" en `ProfileScreen`:** decisión del usuario → eliminada. Se quitó el `clickable`
+   TODO del logo, el texto `profile_change_photo` y su string en las 6 locales. El espaciado
+   (`ProfileLayout.logoToPhotoSpacing`, ahora sin uso) se absorbió en `headerToListSpacing`.
+2. **"Ocultar canción" en `PlayerLibraryUi`:** decisión del usuario → eliminada del menú de 3 puntos
+   (`TrackOverflowMenu`: parámetro `onHide`, `DropdownMenuItem` y string `player_action_hide` en las
+   6 locales). Ya existe "Eliminar del teléfono" para quitar una canción.
+3. **Progreso por chunk en la UI de descarga:** ya resuelto sin querer al arreglar el bug 3 en Fase B
+   — `AudioDownloader` ya reporta `fraction` por chunk y `AnalyzeScreen`/`ActiveDownloadProgressSection`
+   ya lo pintan. No hizo falta ningún cambio.
 
-**Riesgo:** bajo. Cambios de UI aislados, sin dependencias entre sí.
+**Riesgo:** bajo. Cambios de UI aislados, sin dependencias entre sí. `assembleDebug` y
+`testDebugUnitTest` (58/59, solo el fallo preexistente) en verde.
 
 ### Fase D — Modo Karaoke: base de letras (prioridad media, sin dependencias nuevas)
 
@@ -314,7 +321,7 @@ manualmente, no por unit test JVM.
 | A | Errores de reproducción/cola visibles | Baja | — | ✅ Completada |
 | A2 | Seguridad update/instalación de APK | Baja-Media | — | ✅ Completada |
 | B | Condiciones de carrera (library sync, download job, chunks HTTP) | Baja-Media | — | ✅ Completada |
-| C | Feedback UX + TODOs pendientes | Baja | Fase A (reutiliza Snackbar) | Pendiente |
+| C | Feedback UX + TODOs pendientes | Baja | Fase A (reutiliza Snackbar) | ✅ Completada |
 | D | Karaoke: resaltado por palabra | Baja | — | Pendiente |
 | E | Karaoke: tono/velocidad | Baja | Fase D (mismo overlay) | Pendiente |
 | F | Karaoke: grabación | Media-Alta | Validación de Fases D-E | Pendiente |

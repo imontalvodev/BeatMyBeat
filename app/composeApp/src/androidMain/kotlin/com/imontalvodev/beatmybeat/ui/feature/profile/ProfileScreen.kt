@@ -126,15 +126,6 @@ fun ProfileScreen(
             AppLogo(
                 size = layout.profileLogoSize,
                 innerPaddingFraction = 0.06f,
-                modifier = Modifier.clickable { /* TODO: cambiar foto */ },
-            )
-
-            Spacer(modifier = Modifier.height(layout.logoToPhotoSpacing))
-
-            Text(
-                text = stringResource(R.string.profile_change_photo),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
 
             Spacer(modifier = Modifier.height(layout.headerToListSpacing))
@@ -291,7 +282,6 @@ private data class ProfileLayout(
     val miniBrandLogoSize: Dp,
     val profileLogoSize: Dp,
     val brandToLogoSpacing: Dp,
-    val logoToPhotoSpacing: Dp,
     val headerToListSpacing: Dp,
     val bottomScrollPadding: Dp,
 )
@@ -323,11 +313,10 @@ private fun profileLayoutFor(maxHeight: Dp, maxWidth: Dp): ProfileLayout {
             else -> 156.dp
         },
         brandToLogoSpacing = if (veryCompactHeight) 8.dp else if (compactHeight) 12.dp else 20.dp,
-        logoToPhotoSpacing = if (veryCompactHeight) 6.dp else 12.dp,
         headerToListSpacing = when {
-            veryCompactHeight -> 16.dp
-            compactHeight -> 24.dp
-            else -> 48.dp
+            veryCompactHeight -> 24.dp
+            compactHeight -> 36.dp
+            else -> 60.dp
         },
         bottomScrollPadding = 16.dp,
     )

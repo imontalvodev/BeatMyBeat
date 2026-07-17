@@ -292,7 +292,6 @@ internal fun TrackRow(
                     onPlayNext = onPlayNext,
                     onToggleFavorite = onToggleFavorite,
                     onAddToPlaylist = onAddToPlaylist,
-                    onHide = { /* TODO */ },
                     onDeleteFromDevice = onDeleteFromDevice,
                     isFavorite = isFavorite,
                     showRemoveFromPlaylist = showRemoveFromPlaylist,
@@ -416,7 +415,6 @@ internal fun TrackOverflowMenu(
     onPlayNext: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
-    onHide: () -> Unit,
     onDeleteFromDevice: () -> Unit,
     isFavorite: Boolean,
     showRemoveFromPlaylist: Boolean,
@@ -452,10 +450,6 @@ internal fun TrackOverflowMenu(
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.player_action_playlist)) },
                 onClick = { expanded = false; onAddToPlaylist() },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_action_hide)) },
-                onClick = { expanded = false; onHide() },
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.player_action_delete)) },

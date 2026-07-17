@@ -87,7 +87,6 @@
     <string name="theme_current_color">Aktuelle Farbe:</string>
     <string name="theme_accent">Akzent</string>
     <string name="profile_avatar_cd">Avatar</string>
-    <string name="profile_change_photo">Profilbild ändern</string>
     <string name="profile_change_language">Sprache ändern</string>
     <string name="profile_song_location">Speicherort der Songs</string>
     <string name="profile_open_song_folder">Song-Ordner öffnen</string>
@@ -256,7 +255,6 @@
     <string name="player_edit_playlist_invalid_name">Gib einen gültigen Namen ein.</string>
     <string name="player_save_button">Speichern</string>
     <string name="player_create_playlist_button">Erstellen</string>
-    <string name="player_action_hide">Ausblenden</string>
     <string name="player_edit_playlist_menu">Namen bearbeiten</string>
     <string name="player_delete_playlist_menu">Playlist löschen</string>
     <string name="player_default_playlist_name">Meine Playlist</string>
