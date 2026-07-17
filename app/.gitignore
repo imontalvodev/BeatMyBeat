@@ -28,3 +28,8 @@ composeApp/release/
 *.keystore
 signing.properties
 keystore.properties
+
+# Claude Code (config local — no versionar)
+CLAUDE.md
+.claudeignore
+.claude/
