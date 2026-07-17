@@ -19,8 +19,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.imontalvodev.beatmybeat.ui.network.LrcLine
@@ -99,17 +102,44 @@ fun SyncedLyricsView(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = line.text,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = fontSize,
-                            fontWeight = fontWeight,
-                            lineHeight = 22.sp,
-                        ),
-                        color = color,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (isActive && line.words.isNotEmpty()) {
+                        // Solo se resalta palabra a palabra cuando la fuente trae timestamps
+                        // reales; ver LrcLine.words. Sin eso no hay forma de saber qué se está
+                        // cantando en cada instante sin adivinar (y adivinar se desincroniza).
+                        val highlightLen = LrcParser.karaokeHighlightLength(line, adjustedMs)
+                        val sungColor = primary
+                        val upcomingColor = primary.copy(alpha = 0.45f)
+                        val annotated = buildAnnotatedString {
+                            withStyle(SpanStyle(color = sungColor)) {
+                                append(line.text.substring(0, highlightLen))
+                            }
+                            withStyle(SpanStyle(color = upcomingColor)) {
+                                append(line.text.substring(highlightLen))
+                            }
+                        }
+                        Text(
+                            text = annotated,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = fontSize,
+                                fontWeight = fontWeight,
+                                lineHeight = 22.sp,
+                            ),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Text(
+                            text = line.text,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = fontSize,
+                                fontWeight = fontWeight,
+                                lineHeight = 22.sp,
+                            ),
+                            color = color,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }

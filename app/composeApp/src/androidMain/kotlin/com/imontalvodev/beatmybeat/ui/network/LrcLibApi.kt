@@ -85,7 +85,12 @@ object LrcLibApi {
                     }
                 }
 
-                searchAndFetch(title, artist, durationSeconds)?.let { return it }
+                searchAndFetch(title, artist, durationSeconds, deadline)?.let { return it }
+
+                if (SystemClock.elapsedRealtime() >= deadline) {
+                    Logger.w(LOG_TAG, "fetchLyrics: presupuesto de tiempo agotado, abortando búsqueda")
+                    return failure("Timeout", null)
+                }
 
                 // /api/get es lento: solo una vez con la combinación principal.
                 if (titleIndex == 0 && artistIndex == 0 && durationSeconds > 0) {
@@ -126,6 +131,7 @@ object LrcLibApi {
         trackName: String,
         artistName: String,
         durationSeconds: Int,
+        deadline: Long,
     ): LyricsResponse? {
         if (artistName.isBlank()) return null
 
@@ -139,6 +145,12 @@ object LrcLibApi {
         var bestUrl: String? = null
 
         for (params in attempts) {
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                // Un intento previo (p. ej. un timeout de red) ya agotó el presupuesto: no merece
+                // la pena lanzar otra petición /search igual de lenta, mejor dejar hueco para
+                // /api/get o la siguiente variante de título/artista.
+                break
+            }
             val url = "$BASE_URL/search".toHttpUrl().newBuilder().apply {
                 params.forEach { (key, value) -> addQueryParameter(key, value) }
             }.build()
@@ -251,10 +263,14 @@ object LrcLibApi {
                 .build()
             client.newCall(req).execute().use { res ->
                 val body = res.body?.string().orEmpty()
-                if (!res.isSuccessful) return null
+                if (!res.isSuccessful) {
+                    Logger.w(LOG_TAG, "HTTP ${res.code} for $url")
+                    return null
+                }
                 body.takeIf { it.isNotBlank() }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Logger.e(LOG_TAG, "request failed for $url", e)
             null
         }
     }

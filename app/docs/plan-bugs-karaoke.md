@@ -2,7 +2,7 @@
 
 > Diagnóstico realizado sobre el código fuente actual (`androidMain`): reproducción (`PlaybackService`,
 > `PlayerViewModel`), descargas (`AudioDownloader`, `SongDownloadService`) y letras sincronizadas
-> (`LrcParser`, `SyncedLyricsView`). Complementa a [`mejoras.md`](mejoras.md) (que cubre pulido visual
+> (`LrcParser`, `SyncedLyricsView`). Complementa a `[mejoras.md](mejoras.md)` (que cubre pulido visual
 > con librerías M3/Coil/Shimmer, ya implementado en Fases 1–3); este documento cubre **corrección de
 > bugs de fondo**, **feedback de usuario** y el **diseño del Modo Karaoke**.
 
@@ -10,28 +10,32 @@
 
 ## Diagnóstico: bugs encontrados
 
-| # | Bug | Archivo | Severidad | Estado |
-|---|---|---|---|---|
-| 1 | Errores de ExoPlayer no capturados | `service/PlaybackService.kt:109-137` | Alta | ✅ Fijado (Fase A) |
-| 2 | Cola corrupta = Play silencioso | `service/PlaybackService.kt:219-220,417-435` | Alta | ✅ Fijado (Fase A) |
-| 3 | Descarga por chunks sin validar rango HTTP | `ui/network/AudioDownloader.kt:130-160` | Media | ✅ Fijado (Fase B) |
-| 4 | Race condition en `syncLibrary` | `ui/feature/player/PlayerViewModel.kt:66-80` | Media | ✅ Fijado (Fase B) |
-| 5 | Race condition en `downloadJob` | `service/SongDownloadService.kt:249-263` | Media | ✅ Fijado (Fase B) |
+
+| #   | Bug                                        | Archivo                                      | Severidad | Estado            |
+| --- | ------------------------------------------ | -------------------------------------------- | --------- | ----------------- |
+| 1   | Errores de ExoPlayer no capturados         | `service/PlaybackService.kt:109-137`         | Alta      | ✅ Fijado (Fase A) |
+| 2   | Cola corrupta = Play silencioso            | `service/PlaybackService.kt:219-220,417-435` | Alta      | ✅ Fijado (Fase A) |
+| 3   | Descarga por chunks sin validar rango HTTP | `ui/network/AudioDownloader.kt:130-160`      | Media     | ✅ Fijado (Fase B) |
+| 4   | Race condition en `syncLibrary`            | `ui/feature/player/PlayerViewModel.kt:66-80` | Media     | ✅ Fijado (Fase B) |
+| 5   | Race condition en `downloadJob`            | `service/SongDownloadService.kt:249-263`     | Media     | ✅ Fijado (Fase B) |
+
 
 ### Ronda 2 — update/instalación de APK y pipeline de letras
 
-| # | Bug | Archivo | Severidad | Estado |
-|---|---|---|---|---|
-| 6 | Sin verificación de integridad/identidad del APK antes de instalar; `findApkDownloadUrl` caía al primer `.apk` del release si no había uno con el nombre esperado | `ui/network/ReleaseUpdateClient.kt:78-97`, `ui/feature/update/ApkUpdateInstaller.kt:82-89` | **Alta (seguridad)** | ✅ Fijado |
-| 7 | Fallback a URI `file://` sin `FileProvider` declarado → `FileUriExposedException` en Android moderno, tragado en silencio | `ui/feature/update/ApkUpdateInstaller.kt:54-69` | **Alta (seguridad)** | ✅ Fijado |
-| 8 | `VersionCompare.parseSegments` descarta segmentos no numéricos en vez de tratarlos como 0 → dirección de comparación incorrecta con tags raros | `core/VersionCompare.kt:12-16` | Media | ✅ Fijado (Fase G) |
-| 9 | `StorageSettings.saveToCustomTree` deja archivo truncado si falla la copia (sin cleanup, a diferencia de `saveToDefaultPublicFolder`) | `ui/storage/StorageSettings.kt:142-158` | Media | ✅ Fijado (Fase G) |
-| 10 | Descarga de actualización puede quedar atascada para siempre (pausada/cancelada desde Downloads del sistema no limpia el pending id ni desregistra el receiver) | `ui/feature/update/ApkUpdateInstaller.kt:34-50` | Baja | ✅ Fijado (Fase G) |
-| 11 | `Mp4TagWriter` inserta `udta/meta/ilst` como átomo top-level en vez de hijo de `moov` → tag "se escribe con éxito" pero la mayoría de reproductores no lo leen | `ui/network/Mp4TagWriter.kt:121-144` | Alta (rompe feature clave) | ✅ Fijado (Fase G) |
-| 12 | `parseTopLevelAtoms` no maneja tamaño de átomo 0/1 (EOF/extendido) → corta el escaneo antes de tiempo, inserta el tag después de `mdat` | `ui/network/Mp4TagWriter.kt:148-158` | Media | ✅ Fijado (Fase G) |
-| 13 | TOCTOU en deduplicación de peticiones de letras: `scope.async{}` arranca antes de comprobar `putIfAbsent`, cancelar el `Deferred` perdedor no interrumpe la llamada OkHttp ya en curso | `ui/network/LyricsFetchCoordinator.kt:33-47` | Media | ✅ Fijado (Fase G) |
-| 14 | Fallos de escritura en caché de letras silenciosos (`runCatching` sin log ni feedback) | `ui/network/LyricsCache.kt:75-89` | Baja | ✅ Fijado (Fase G) |
-| 15 | Lote de letras sin timeout agregado; una pista lenta bloquea el batch entero minutos | `ui/network/LrcLibApi.kt:62-81`, `service/LyricsBatchService.kt:71-132` | Baja | ✅ Fijado (Fase G) |
+
+| #   | Bug                                                                                                                                                                                    | Archivo                                                                                    | Severidad                  | Estado            |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------- | ----------------- |
+| 6   | Sin verificación de integridad/identidad del APK antes de instalar; `findApkDownloadUrl` caía al primer `.apk` del release si no había uno con el nombre esperado                      | `ui/network/ReleaseUpdateClient.kt:78-97`, `ui/feature/update/ApkUpdateInstaller.kt:82-89` | **Alta (seguridad)**       | ✅ Fijado          |
+| 7   | Fallback a URI `file://` sin `FileProvider` declarado → `FileUriExposedException` en Android moderno, tragado en silencio                                                              | `ui/feature/update/ApkUpdateInstaller.kt:54-69`                                            | **Alta (seguridad)**       | ✅ Fijado          |
+| 8   | `VersionCompare.parseSegments` descarta segmentos no numéricos en vez de tratarlos como 0 → dirección de comparación incorrecta con tags raros                                         | `core/VersionCompare.kt:12-16`                                                             | Media                      | ✅ Fijado (Fase G) |
+| 9   | `StorageSettings.saveToCustomTree` deja archivo truncado si falla la copia (sin cleanup, a diferencia de `saveToDefaultPublicFolder`)                                                  | `ui/storage/StorageSettings.kt:142-158`                                                    | Media                      | ✅ Fijado (Fase G) |
+| 10  | Descarga de actualización puede quedar atascada para siempre (pausada/cancelada desde Downloads del sistema no limpia el pending id ni desregistra el receiver)                        | `ui/feature/update/ApkUpdateInstaller.kt:34-50`                                            | Baja                       | ✅ Fijado (Fase G) |
+| 11  | `Mp4TagWriter` inserta `udta/meta/ilst` como átomo top-level en vez de hijo de `moov` → tag "se escribe con éxito" pero la mayoría de reproductores no lo leen                         | `ui/network/Mp4TagWriter.kt:121-144`                                                       | Alta (rompe feature clave) | ✅ Fijado (Fase G) |
+| 12  | `parseTopLevelAtoms` no maneja tamaño de átomo 0/1 (EOF/extendido) → corta el escaneo antes de tiempo, inserta el tag después de `mdat`                                                | `ui/network/Mp4TagWriter.kt:148-158`                                                       | Media                      | ✅ Fijado (Fase G) |
+| 13  | TOCTOU en deduplicación de peticiones de letras: `scope.async{}` arranca antes de comprobar `putIfAbsent`, cancelar el `Deferred` perdedor no interrumpe la llamada OkHttp ya en curso | `ui/network/LyricsFetchCoordinator.kt:33-47`                                               | Media                      | ✅ Fijado (Fase G) |
+| 14  | Fallos de escritura en caché de letras silenciosos (`runCatching` sin log ni feedback)                                                                                                 | `ui/network/LyricsCache.kt:75-89`                                                          | Baja                       | ✅ Fijado (Fase G) |
+| 15  | Lote de letras sin timeout agregado; una pista lenta bloquea el batch entero minutos                                                                                                   | `ui/network/LrcLibApi.kt:62-81`, `service/LyricsBatchService.kt:71-132`                    | Baja                       | ✅ Fijado (Fase G) |
+
 
 ### 1. Errores de reproducción no capturados
 
@@ -129,8 +133,7 @@ de la corrutina (en `Dispatchers.IO`). La comprobación de identidad en el bloqu
 externa fuera visible, dejando `downloadJob` apuntando a un job obsoleto en vez de `null`, lo que
 corrompía comprobaciones posteriores de cancelación/progreso activo.
 
-**Fix aplicado:** misma técnica que en el bug 13 (`LyricsFetchCoordinator`) — `scope.launch(start =
-CoroutineStart.LAZY)`, se asigna `downloadJob = job` **antes** de llamar a `job.start()`, así el cuerpo
+**Fix aplicado:** misma técnica que en el bug 13 (`LyricsFetchCoordinator`) — `scope.launch(start = CoroutineStart.LAZY)`, se asigna `downloadJob = job` **antes** de llamar a `job.start()`, así el cuerpo
 (y su `finally`) nunca puede ejecutarse antes de que la asignación sea visible. Se añadió además
 `@Volatile` al campo para cubrir otras lecturas/escrituras cruzadas entre hilos (p. ej.
 `cancelActiveWork` desde el hilo principal).
@@ -143,25 +146,27 @@ CoroutineStart.LAZY)`, se asigna `downloadJob = job` **antes** de llamar a `job.
 `AndroidManifest.xml`, `res/xml/file_paths.xml`
 
 **Antes:**
+
 - `findApkDownloadUrl` caía al primer asset `.apk` del release de GitHub si no encontraba uno llamado
-  exactamente `BeatMyBeat.apk` — un asset inesperado (cuenta comprometida, CI con artefacto raro) se
-  habría ofrecido como actualización sin ningún filtro.
+exactamente `BeatMyBeat.apk` — un asset inesperado (cuenta comprometida, CI con artefacto raro) se
+habría ofrecido como actualización sin ningún filtro.
 - El instalador lanzaba `ACTION_VIEW` directo sobre la URI que diera `DownloadManager`, sin comprobar
-  que el paquete del APK descargado fuera realmente `com.imontalvodev.beatmybeat`, y con un fallback a
-  URI `file://` que en Android moderno lanza `FileUriExposedException` (tragada por `runCatching`, el
-  usuario solo veía "no se pudo instalar" sin explicación ni salida real).
+que el paquete del APK descargado fuera realmente `com.imontalvodev.beatmybeat`, y con un fallback a
+URI `file://` que en Android moderno lanza `FileUriExposedException` (tragada por `runCatching`, el
+usuario solo veía "no se pudo instalar" sin explicación ni salida real).
 
 **Fix aplicado:**
+
 1. `findApkDownloadUrl` ya **no tiene fallback**: solo acepta el asset llamado exactamente
-   `BeatMyBeat.apk` (case-insensitive). Cualquier otro `.apk` en el release se ignora.
+  `BeatMyBeat.apk` (case-insensitive). Cualquier otro `.apk` en el release se ignora.
 2. `ApkUpdateInstaller` copia el APK descargado (vía `DownloadManager.openDownloadedFile`, gestionado
-   por el sistema, fuera del alcance de otras apps) a caché **privada** de la app, verifica con
+  por el sistema, fuera del alcance de otras apps) a caché **privada** de la app, verifica con
    `PackageManager.getPackageArchiveInfo` que su `packageName` coincide con `context.packageName`, y
    solo entonces lo expone al instalador mediante un `FileProvider` (URI `content://`, con permisos
    de lectura acotados y revocables) — se añadió el `<provider>` correspondiente al Manifest y
    `res/xml/file_paths.xml`.
 3. Si la copia falla o el `packageName` no coincide, se borra el archivo y se muestra el error
-   existente (`update_install_failed`) — ya no hay instalación silenciosa de un APK no verificado ni
+  existente (`update_install_failed`) — ya no hay instalación silenciosa de un APK no verificado ni
    crash por `file://` expuesto.
 
 **Tests:** `ui/network/ReleaseUpdateClientTest.kt` (6 tests) cubre `findApkDownloadUrl`, incluyendo el
@@ -173,11 +178,13 @@ reales — se valida manualmente en el emulador, no por unit test JVM.
 
 ## Mejoras UX detectadas
 
-| Mejora | Justificación | Archivo(s) |
-|---|---|---|
-| Feedback visible de error de reproducción/descarga | Bugs 1-3 dejan al usuario sin ninguna señal cuando algo falla | `PlaybackService.kt`, `AudioDownloader.kt`, capa UI (Snackbar) |
-| Completar o retirar funciones a medio implementar | `ProfileScreen.kt:129` (cambiar foto) y `PlayerLibraryUi.kt:295` (ocultar canción) son `TODO` pero potencialmente visibles/clicables | `ProfileScreen.kt`, `PlayerLibraryUi.kt` |
-| Progreso granular de descarga por chunks | Ya existe la lógica de chunks; exponerlo mejora la percepción de velocidad | `AudioDownloader.kt`, `DownloadProgressBus.kt` |
+
+| Mejora                                             | Justificación                                                                                                                        | Archivo(s)                                                     |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Feedback visible de error de reproducción/descarga | Bugs 1-3 dejan al usuario sin ninguna señal cuando algo falla                                                                        | `PlaybackService.kt`, `AudioDownloader.kt`, capa UI (Snackbar) |
+| Completar o retirar funciones a medio implementar  | `ProfileScreen.kt:129` (cambiar foto) y `PlayerLibraryUi.kt:295` (ocultar canción) son `TODO` pero potencialmente visibles/clicables | `ProfileScreen.kt`, `PlayerLibraryUi.kt`                       |
+| Progreso granular de descarga por chunks           | Ya existe la lógica de chunks; exponerlo mejora la percepción de velocidad                                                           | `AudioDownloader.kt`, `DownloadProgressBus.kt`                 |
+
 
 ---
 
@@ -216,7 +223,7 @@ producción con datos reales.
 1. `PlayerViewModel.syncLibrary`: cancelar job previo (`Job` guardado en propiedad).
 2. `SongDownloadService.downloadJob`: `CoroutineStart.LAZY` + `@Volatile` (ver detalle bug 5).
 3. `AudioDownloader`: validar `code == 206` antes de aceptar un chunk; `200` solo se acepta como
-   descarga completa en la primera iteración.
+  descarga completa en la primera iteración.
 
 **Riesgo:** bajo-medio. Cambios localizados. Sin tests JVM: los tres tocan `Context`/`Service`/red real
 (`PlayerViewModel` necesita `Application`, `SongDownloadService` es un `Service`, `AudioDownloader` hace
@@ -226,35 +233,52 @@ peticiones HTTP reales) — no hay Robolectric ni MockWebServer en el proyecto p
 ### Fase C — UX de feedback y limpieza de TODOs (prioridad media) ✅ Completada
 
 1. **"Cambiar foto" en `ProfileScreen`:** decisión del usuario → eliminada. Se quitó el `clickable`
-   TODO del logo, el texto `profile_change_photo` y su string en las 6 locales. El espaciado
+  TODO del logo, el texto `profile_change_photo` y su string en las 6 locales. El espaciado
    (`ProfileLayout.logoToPhotoSpacing`, ahora sin uso) se absorbió en `headerToListSpacing`.
 2. **"Ocultar canción" en `PlayerLibraryUi`:** decisión del usuario → eliminada del menú de 3 puntos
-   (`TrackOverflowMenu`: parámetro `onHide`, `DropdownMenuItem` y string `player_action_hide` en las
+  (`TrackOverflowMenu`: parámetro `onHide`, `DropdownMenuItem` y string `player_action_hide` en las
    6 locales). Ya existe "Eliminar del teléfono" para quitar una canción.
 3. **Progreso por chunk en la UI de descarga:** ya resuelto sin querer al arreglar el bug 3 en Fase B
-   — `AudioDownloader` ya reporta `fraction` por chunk y `AnalyzeScreen`/`ActiveDownloadProgressSection`
+  — `AudioDownloader` ya reporta `fraction` por chunk y `AnalyzeScreen`/`ActiveDownloadProgressSection`
    ya lo pintan. No hizo falta ningún cambio.
 
 **Riesgo:** bajo. Cambios de UI aislados, sin dependencias entre sí. `assembleDebug` y
 `testDebugUnitTest` (58/59, solo el fallo preexistente) en verde.
 
-### Fase D — Modo Karaoke: base de letras (prioridad media, sin dependencias nuevas)
+### Fase D — Modo Karaoke: base de letras (prioridad media, sin dependencias nuevas) 
 
 Reutiliza infraestructura ya existente: `LrcParser.kt` (parser LRC) y `SyncedLyricsView.kt` (scroll
 centrado + resaltado por línea).
 
-1. Extender `LrcLine` para soportar timestamps por palabra (formato LRC enriquecido
-   `<mm:ss.xx>palabra`) cuando la fuente los provea (LRCLIB soporta "enhanced LRC" en parte de su catálogo).
-2. Si no hay timestamps por palabra, interpolar el resaltado dentro de la línea por proporción de
-   caracteres respecto a la duración de la línea (fallback determinista, sin red adicional).
-3. Modificar `SyncedLyricsView` para pintar el resaltado intra-línea (no solo la línea completa).
+1. `LrcLine` ahora tiene `words: List<LrcWord>` (vacío si la fuente no trae timestamps por palabra).
+  `LrcParser.parse` detecta marcas `<mm:ss.xx>palabra` (LRC "enhanced", formato que LRCLIB soporta en
+   parte de su catálogo) dentro de una línea y las extrae; el texto plano de la línea (`LrcLine.text`)
+   sigue siendo el mismo de siempre (unión de las palabras, sin marcas). `toPlainText` también limpia
+   las marcas `<...>` además de las `[...]` ya soportadas.
+2. Nuevo `LrcParser.karaokeHighlightLength(line, lineEndMs, positionMs)`: si la línea trae `words`,
+  el resaltado avanza por palabra (busca la última palabra cuyo `startMs <= positionMs`); si no,
+   interpola linealmente por proporción de caracteres entre `line.startMs` y `lineEndMs` (fallback
+   determinista, sin red adicional). `lineEndMs` es el `startMs` de la línea siguiente o, si es la
+   última línea del LRC, un estimado (`LrcParser.estimatedLineEndMs`: ~150ms/carácter con un suelo de
+   2000ms) para que el resaltado de la última línea no se quede congelado en 0%.
+3. `SyncedLyricsView` pinta la línea activa con un `AnnotatedString` de dos tramos de color (cantado en
+  `primary`, pendiente en `primary` atenuado) en vez de un color sólido; las líneas pasadas/futuras
+   mantienen el resaltado por línea completa de antes.
 
 **Riesgo:** bajo. Extiende modelos y composables existentes sin nuevas dependencias externas.
+
+**Tests:** `ui/network/LrcParserTest.kt` (9 tests) — parseo LRC plano sin cambios de comportamiento,
+extracción de timestamps por palabra (incluyendo texto inicial sin marca propia), `toPlainText` con
+marcas de palabra, y todos los casos límite de `karaokeHighlightLength`/`estimatedLineEndMs` (antes del
+inicio, en/después del fin, interpolación por caracteres, límites por palabra). `SyncedLyricsView` es
+Compose puro sin Robolectric en el proyecto — verificación visual pendiente en emulador (letras
+"enhanced" de LRCLIB si el beta tester encuentra una pista con esa cobertura; si no, se ve el fallback
+por interpolación de caracteres con cualquier letra sincronizada normal).
 
 ### Fase E — Modo Karaoke: control de tono y velocidad (prioridad media)
 
 1. Exponer `PlaybackParameters(speed, pitch)` de ExoPlayer (soporte nativo, sin librería adicional) en
-   `PlayerViewModel`/`PlayerScreen`.
+  `PlayerViewModel`/`PlayerScreen`.
 2. Añadir control deslizante de tono en el overlay expandido del reproductor, activo solo en Modo Karaoke.
 
 **Riesgo:** bajo. API nativa de Media3/ExoPlayer ya en uso.
@@ -276,8 +300,8 @@ centrado + resaltado por línea).
 **Objetivo:** arreglar bugs 8-15 (ronda 2). Prioridad alta dentro de la fase para 11-12: el escritor de
 tags MP4 reportaba éxito pero el resultado no era válido, lo cual es más grave que un simple fallo visible.
 
-1. **`Mp4TagWriter`** (11+12, acoplados): `replaceOrInsertUdta` ahora localiza `moov`, busca/reemplaza
-   `udta` **entre sus hijos** (no a nivel raíz) y, si no existe, lo inserta como último hijo de `moov`
+1. `**Mp4TagWriter**` (11+12, acoplados): `replaceOrInsertUdta` ahora localiza `moov`, busca/reemplaza
+  `udta` **entre sus hijos** (no a nivel raíz) y, si no existe, lo inserta como último hijo de `moov`
    parcheando los 4 bytes de tamaño de `moov` para reflejar el nuevo contenido. El parser de átomos
    (`parseAtoms`, generalizado desde `parseTopLevelAtoms` para poder acotarse a un rango, usado tanto a
    nivel raíz como dentro de `moov`) ahora maneja tamaño `0` (átomo hasta el final del rango que lo
@@ -285,22 +309,22 @@ tags MP4 reportaba éxito pero el resultado no era válido, lo cual es más grav
    el escaneo. Si el archivo no tiene `moov` (corrupto/no-MP4), `write()` lanza excepción explícita en
    vez de escribir un tag no válido — el llamador (`AudioDownloader`) ya lo trata como *best-effort* con
    `runCatching` + fallback a `meta.json`.
-2. **`VersionCompare.parseSegments`**: solo se recorta el sufijo no numérico **final** (`-beta`, `-rc1`,
-   como antes); un segmento no numérico intercalado (`1.a.2`) ya no desaparece, cuenta como `0` en su
+2. `**VersionCompare.parseSegments**`: solo se recorta el sufijo no numérico **final** (`-beta`, `-rc1`,
+  como antes); un segmento no numérico intercalado (`1.a.2`) ya no desaparece, cuenta como `0` en su
    posición para no desalinear los segmentos siguientes.
-3. **`StorageSettings.saveToCustomTree`**: copia envuelta en try/finally que borra el `DocumentFile`
-   destino si la copia no se completó, igual que ya hacía `saveToDefaultPublicFolder`.
-4. **`ApkUpdateInstaller.handleDownloadFinished`**: nuevo caso `STATUS_PAUSED` — si `COLUMN_REASON` es
-   `PAUSED_UNKNOWN` (sin reintento automático esperable) limpia pending id + receiver y avisa al
+3. `**StorageSettings.saveToCustomTree**`: copia envuelta en try/finally que borra el `DocumentFile`
+  destino si la copia no se completó, igual que ya hacía `saveToDefaultPublicFolder`.
+4. `**ApkUpdateInstaller.handleDownloadFinished**`: nuevo caso `STATUS_PAUSED` — si `COLUMN_REASON` es
+  `PAUSED_UNKNOWN` (sin reintento automático esperable) limpia pending id + receiver y avisa al
    usuario; el resto de pausas (cola wifi/red/reintento) se dejan intactas porque `DownloadManager` las
    resuelve solo.
-5. **`LyricsFetchCoordinator`**: `scope.async` pasa a `CoroutineStart.LAZY` — el cuerpo (semáforo +
-   llamada HTTP bloqueante) ya no arranca hasta que alguien hace `await()`; si la corrutina pierde la
+5. `**LyricsFetchCoordinator**`: `scope.async` pasa a `CoroutineStart.LAZY` — el cuerpo (semáforo +
+  llamada HTTP bloqueante) ya no arranca hasta que alguien hace `await()`; si la corrutina pierde la
    carrera de `putIfAbsent`, `cancel()` ahora es gratis (nunca llegó a ejecutar nada).
-6. **`LyricsCache.putEntry`**: `runCatching { ... }.onFailure { Logger.e(...) }` — el fallo de escritura
-   sigue sin ser fatal para el llamador, pero ya queda registrado.
-7. **`LrcLibApi.fetchLyrics`**: presupuesto acumulado de 20s (`MAX_FETCH_BUDGET_MS`) para toda la
-   búsqueda de una pista (todas las combinaciones título×artista); al agotarse, aborta con
+6. `**LyricsCache.putEntry**`: `runCatching { ... }.onFailure { Logger.e(...) }` — el fallo de escritura
+  sigue sin ser fatal para el llamador, pero ya queda registrado.
+7. `**LrcLibApi.fetchLyrics**`: presupuesto acumulado de 20s (`MAX_FETCH_BUDGET_MS`) para toda la
+  búsqueda de una pista (todas las combinaciones título×artista); al agotarse, aborta con
    `failure("Timeout", null)` en vez de seguir encadenando llamadas.
 
 **Riesgo:** medio, materializado en tests — 11-12 tocaban un parser binario propio (mayor riesgo de
@@ -316,16 +340,18 @@ manualmente, no por unit test JVM.
 
 ## Resumen priorizado
 
-| Fase | Contenido | Complejidad | Depende de | Estado |
-|---|---|---|---|---|
-| A | Errores de reproducción/cola visibles | Baja | — | ✅ Completada |
-| A2 | Seguridad update/instalación de APK | Baja-Media | — | ✅ Completada |
-| B | Condiciones de carrera (library sync, download job, chunks HTTP) | Baja-Media | — | ✅ Completada |
-| C | Feedback UX + TODOs pendientes | Baja | Fase A (reutiliza Snackbar) | ✅ Completada |
-| D | Karaoke: resaltado por palabra | Baja | — | Pendiente |
-| E | Karaoke: tono/velocidad | Baja | Fase D (mismo overlay) | Pendiente |
-| F | Karaoke: grabación | Media-Alta | Validación de Fases D-E | Pendiente |
-| G | Tags MP4 + robustez letras/update | Media | — | ✅ Completada |
+
+| Fase | Contenido                                                        | Complejidad | Depende de                  | Estado       |
+| ---- | ---------------------------------------------------------------- | ----------- | --------------------------- | ------------ |
+| A    | Errores de reproducción/cola visibles                            | Baja        | —                           | ✅ Completada |
+| A2   | Seguridad update/instalación de APK                              | Baja-Media  | —                           | ✅ Completada |
+| B    | Condiciones de carrera (library sync, download job, chunks HTTP) | Baja-Media  | —                           | ✅ Completada |
+| C    | Feedback UX + TODOs pendientes                                   | Baja        | Fase A (reutiliza Snackbar) | ✅ Completada |
+| D    | Karaoke: resaltado por palabra                                   | Baja        | —                           | ✅ Completada |
+| E    | Karaoke: tono/velocidad                                          | Baja        | Fase D (mismo overlay)      | Pendiente    |
+| F    | Karaoke: grabación                                               | Media-Alta  | Validación de Fases D-E     | Pendiente    |
+| G    | Tags MP4 + robustez letras/update                                | Media       | —                           | ✅ Completada |
+
 
 ---
 
