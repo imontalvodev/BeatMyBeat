@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
@@ -63,8 +64,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         data class AlreadyExists(val id: Long) : RenamePlaylistResult
     }
 
+    private var syncJob: Job? = null
+
     fun syncLibrary(auto: Boolean) {
-        viewModelScope.launch {
+        // Cancelar un sync anterior en curso: sin esto, dos syncLibrary solapados (auto-sync
+        // inicial + pull-to-refresh) escriben _tracks/playlists desde corrutinas independientes y
+        // la que termine última "gana", pudiendo pisar un escaneo más reciente con datos viejos.
+        syncJob?.cancel()
+        syncJob = viewModelScope.launch {
             _librarySyncing.value = true
             try {
                 val scanned = withContext(Dispatchers.IO) { scanner.scanAudio() }

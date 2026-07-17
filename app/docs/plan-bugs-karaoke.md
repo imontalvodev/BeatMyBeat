@@ -14,9 +14,9 @@
 |---|---|---|---|---|
 | 1 | Errores de ExoPlayer no capturados | `service/PlaybackService.kt:109-137` | Alta | ✅ Fijado (Fase A) |
 | 2 | Cola corrupta = Play silencioso | `service/PlaybackService.kt:219-220,417-435` | Alta | ✅ Fijado (Fase A) |
-| 3 | Descarga por chunks sin validar rango HTTP | `ui/network/AudioDownloader.kt:130-160` | Media | Pendiente |
-| 4 | Race condition en `syncLibrary` | `ui/feature/player/PlayerViewModel.kt:66-80` | Media | Pendiente |
-| 5 | Race condition en `downloadJob` | `service/SongDownloadService.kt:249-263` | Media | Pendiente |
+| 3 | Descarga por chunks sin validar rango HTTP | `ui/network/AudioDownloader.kt:130-160` | Media | ✅ Fijado (Fase B) |
+| 4 | Race condition en `syncLibrary` | `ui/feature/player/PlayerViewModel.kt:66-80` | Media | ✅ Fijado (Fase B) |
+| 5 | Race condition en `downloadJob` | `service/SongDownloadService.kt:249-263` | Media | ✅ Fijado (Fase B) |
 
 ### Ronda 2 — update/instalación de APK y pipeline de letras
 
@@ -74,39 +74,42 @@ datos previos no vacíos, emitir un estado de error explícito en vez de retorna
 
 ---
 
-### 3. Descarga por chunks no valida el rango HTTP devuelto
+### 3. Descarga por chunks no valida el rango HTTP devuelto (✅ Fijado — Fase B)
 
 **Archivo:** `ui/network/AudioDownloader.kt:130-160`
 
-El bucle de descarga por chunks acepta cualquier respuesta 2xx (`isSuccessful`, línea 142) sin
-comprobar `code == 206` ni validar que el rango devuelto coincide con el solicitado.
+El bucle de descarga por chunks aceptaba cualquier respuesta 2xx (`isSuccessful`) sin comprobar
+`code == 206` ni validar que el rango devuelto coincide con el solicitado.
 
 **Escenario de fallo:** si el CDN o un proxy intermedio ignora el header `Range` y devuelve el archivo
-completo con `200 OK` en cada petición, el bucle escribe el archivo entero repetidamente (el offset
+completo con `200 OK` en cada petición, el bucle escribía el archivo entero repetidamente (el offset
 avanza el tamaño completo de la respuesta) → archivo de salida duplicado/corrupto que falla al
 reproducir o al escribir metadatos (`Mp4TagWriter`).
 
-**Fix propuesto:** verificar `code == 206` y que el header `Content-Range` de la respuesta coincide con
-el rango pedido; si no, reintentar sin rango (descarga completa) en vez de acumular datos incorrectos.
+**Fix aplicado:** cada chunk debe venir con `code == 206`, salvo la primera iteración (`offset == 0`),
+donde un `200` significa "el servidor no soporta rangos": esa única respuesta se trata como el archivo
+completo y se detiene ahí (sin más iteraciones). Un `200` en cualquier iteración **posterior**
+(offset > 0) aborta la descarga entera (`totalWritten = 0`) en vez de seguir acumulando datos
+duplicados — cae en la ruta de error `ZeroBytes` ya existente.
 
 ---
 
-### 4. Condición de carrera en `syncLibrary`
+### 4. Condición de carrera en `syncLibrary` (✅ Fijado — Fase B)
 
 **Archivo:** `ui/feature/player/PlayerViewModel.kt:66-80`
 
-No se cancela el job anterior antes de lanzar un nuevo `syncLibrary`. `_tracks`, `_librarySyncing` y
+No se cancelaba el job anterior antes de lanzar un nuevo `syncLibrary`. `_tracks`, `_librarySyncing` y
 las playlists son estado mutable compartido escrito desde corrutinas independientes.
 
 **Escenario de fallo:** el auto-sync inicial todavía corre y el usuario hace pull-to-refresh; la
 corrutina que termine última "gana", pudiendo sobrescribir un escaneo reciente con datos obsoletos.
 
-**Fix propuesto:**
+**Fix aplicado:**
 
 ```kotlin
 private var syncJob: Job? = null
 
-fun syncLibrary() {
+fun syncLibrary(auto: Boolean) {
     syncJob?.cancel()
     syncJob = viewModelScope.launch { /* ... */ }
 }
@@ -114,20 +117,23 @@ fun syncLibrary() {
 
 ---
 
-### 5. Condición de carrera en `downloadJob`
+### 5. Condición de carrera en `downloadJob` (✅ Fijado — Fase B)
 
 **Archivo:** `service/SongDownloadService.kt:249-263`
 
 `downloadJob` es un `var` plano leído/escrito tanto por el hilo que lanza la descarga como desde dentro
 de la corrutina (en `Dispatchers.IO`). La comprobación de identidad en el bloque `finally`
-(`downloadJob === this.coroutineContext[Job]`) compite con la asignación externa `downloadJob = job`.
+(`downloadJob === this.coroutineContext[Job]`) competía con la asignación externa `downloadJob = job`.
 
-**Escenario de fallo:** un fallo muy rápido puede ejecutar el `finally` antes de que la asignación
-externa sea visible, dejando `downloadJob` apuntando a un job obsoleto en vez de `null`, lo que
-corrompe comprobaciones posteriores de cancelación/progreso activo.
+**Escenario de fallo:** un fallo muy rápido podía ejecutar el `finally` antes de que la asignación
+externa fuera visible, dejando `downloadJob` apuntando a un job obsoleto en vez de `null`, lo que
+corrompía comprobaciones posteriores de cancelación/progreso activo.
 
-**Fix propuesto:** usar `AtomicReference<Job?>` o `Mutex` para el acceso a `downloadJob`, o eliminar la
-comparación de identidad y usar un `job.isActive` centralizado.
+**Fix aplicado:** misma técnica que en el bug 13 (`LyricsFetchCoordinator`) — `scope.launch(start =
+CoroutineStart.LAZY)`, se asigna `downloadJob = job` **antes** de llamar a `job.start()`, así el cuerpo
+(y su `finally`) nunca puede ejecutarse antes de que la asignación sea visible. Se añadió además
+`@Volatile` al campo para cubrir otras lecturas/escrituras cruzadas entre hilos (p. ej.
+`cancelActiveWork` desde el hilo principal).
 
 ---
 
@@ -202,16 +208,20 @@ en `PlayerScreen`/`AnalyzeScreen` (`Snackbar` global queda reservado a flujos de
 **Riesgo:** bajo. Cambios acotados a la ruta de instalación de updates, sin afectar reproducción/descarga
 de música. Tests: `ui/network/ReleaseUpdateClientTest.kt`.
 
-### Fase B — Concurrencia (prioridad media)
+### Fase B — Concurrencia (prioridad media) ✅ Completada
 
 **Objetivo:** eliminar las dos condiciones de carrera detectadas antes de que se manifiesten en
 producción con datos reales.
 
 1. `PlayerViewModel.syncLibrary`: cancelar job previo (`Job` guardado en propiedad).
-2. `SongDownloadService.downloadJob`: sustituir por `AtomicReference` o `Mutex`.
-3. `AudioDownloader`: validar `code == 206` y `Content-Range` antes de aceptar un chunk.
+2. `SongDownloadService.downloadJob`: `CoroutineStart.LAZY` + `@Volatile` (ver detalle bug 5).
+3. `AudioDownloader`: validar `code == 206` antes de aceptar un chunk; `200` solo se acepta como
+   descarga completa en la primera iteración.
 
-**Riesgo:** bajo-medio. Cambios localizados, cubrir con test unitario donde ya existe suite (`androidUnitTest`).
+**Riesgo:** bajo-medio. Cambios localizados. Sin tests JVM: los tres tocan `Context`/`Service`/red real
+(`PlayerViewModel` necesita `Application`, `SongDownloadService` es un `Service`, `AudioDownloader` hace
+peticiones HTTP reales) — no hay Robolectric ni MockWebServer en el proyecto para simularlos en
+`androidUnitTest`. Verificado manualmente en emulador + `assembleDebug`/`testDebugUnitTest` en verde.
 
 ### Fase C — UX de feedback y limpieza de TODOs (prioridad media)
 
@@ -303,7 +313,7 @@ manualmente, no por unit test JVM.
 |---|---|---|---|---|
 | A | Errores de reproducción/cola visibles | Baja | — | ✅ Completada |
 | A2 | Seguridad update/instalación de APK | Baja-Media | — | ✅ Completada |
-| B | Condiciones de carrera (library sync, download job, chunks HTTP) | Baja-Media | — | Pendiente |
+| B | Condiciones de carrera (library sync, download job, chunks HTTP) | Baja-Media | — | ✅ Completada |
 | C | Feedback UX + TODOs pendientes | Baja | Fase A (reutiliza Snackbar) | Pendiente |
 | D | Karaoke: resaltado por palabra | Baja | — | Pendiente |
 | E | Karaoke: tono/velocidad | Baja | Fase D (mismo overlay) | Pendiente |

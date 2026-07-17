@@ -126,6 +126,12 @@ object AudioDownloader {
             val chunkSize = 1_048_576L
             var offset = 0L
             var totalWritten = 0L
+            // Si un CDN/proxy ignora el header Range y responde 200 con el archivo completo en
+            // cada iteración, el offset avanzaría el tamaño completo de la respuesta y el bucle
+            // escribiría el archivo entero varias veces -> salida duplicada/corrupta. Solo se
+            // acepta 200 (sin rango) en la primera iteración, tratando esa respuesta como el
+            // archivo completo; un 200 en cualquier iteración posterior aborta la descarga.
+            var rangeUnsupportedMidDownload = false
 
             FileOutputStream(tempFile).use { out ->
                 while (totalBytes < 0 || offset < totalBytes) {
@@ -144,6 +150,22 @@ object AudioDownloader {
                         chunkResp.close()
                         break
                     }
+
+                    if (chunkResp.code != 206) {
+                        if (offset == 0L && chunkResp.code == 200) {
+                            val bytes = chunkBody.bytes()
+                            chunkResp.close()
+                            out.write(bytes)
+                            totalWritten += bytes.size
+                            Logger.d("NewPipeStream", "Servidor sin soporte de Range: archivo completo en una respuesta (${bytes.size}B)")
+                            break
+                        }
+                        Logger.e("NewPipeStream", "Chunk sin Range tras offset>0 (code=${chunkResp.code}), abortando descarga")
+                        chunkResp.close()
+                        rangeUnsupportedMidDownload = true
+                        break
+                    }
+
                     val bytes = chunkBody.bytes()
                     chunkResp.close()
                     if (bytes.isEmpty()) break
@@ -157,6 +179,10 @@ object AudioDownloader {
                     if (bytes.size < chunkSize) break
                 }
                 out.flush()
+            }
+
+            if (rangeUnsupportedMidDownload) {
+                totalWritten = 0L
             }
 
             Logger.d("NewPipeStream", "Download complete: ${totalWritten}B")
