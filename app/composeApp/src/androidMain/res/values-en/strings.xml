@@ -203,6 +203,8 @@
     <string name="player_prev_cd">Previous</string>
     <string name="player_next_cd">Next</string>
     <string name="player_audio_permission_denied_snack">Music permission denied. You will only see BeatMyBeat downloads.</string>
+    <string name="player_playback_error">Couldn\'t play the song. The file may have been moved, deleted, or use an unsupported format.</string>
+    <string name="player_queue_load_error">Couldn\'t load the playback queue.</string>
     <string name="player_lyrics_select_song">Select a song</string>
     <string name="player_lyrics_unavailable">Lyrics are not available for this song</string>
     <string name="player_lyrics_tap_download">Tap to download lyrics (internet required).</string>

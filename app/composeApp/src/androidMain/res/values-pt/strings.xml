@@ -206,6 +206,8 @@
     <string name="player_prev_cd">Anterior</string>
     <string name="player_next_cd">Seguinte</string>
     <string name="player_audio_permission_denied_snack">Permissão de música negada. Só verá downloads do BeatMyBeat.</string>
+    <string name="player_playback_error">Não foi possível reproduzir a música. O ficheiro pode ter sido movido, apagado ou ter um formato não suportado.</string>
+    <string name="player_queue_load_error">Não foi possível carregar a lista de reprodução.</string>
     <string name="player_lyrics_select_song">Selecione uma música</string>
     <string name="player_lyrics_unavailable">Letra não disponível para esta música</string>
     <string name="player_lyrics_tap_download">Toque para baixar a letra (requer internet).</string>

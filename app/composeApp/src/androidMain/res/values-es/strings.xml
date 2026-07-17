@@ -145,6 +145,8 @@
     <string name="player_prev_cd">Anterior</string>
     <string name="player_next_cd">Siguiente</string>
     <string name="player_audio_permission_denied_snack">Permiso de música denegado. Solo verás descargas de BeatMyBeat.</string>
+    <string name="player_playback_error">No se pudo reproducir la canción. El archivo puede haberse movido, borrado o tener un formato no compatible.</string>
+    <string name="player_queue_load_error">No se pudo cargar la lista de reproducción.</string>
     <string name="player_lyrics_select_song">Selecciona una canción</string>
     <string name="player_lyrics_unavailable">No hay letra disponible para esta canción</string>
     <string name="player_lyrics_tap_download">Toca para descargar la letra (necesitas internet).</string>
