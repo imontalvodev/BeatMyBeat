@@ -219,6 +219,12 @@
     <string name="player_karaoke_mode_line_sync">Karaoke način · po retku</string>
     <string name="player_karaoke_enter_cd">Uključi karaoke način</string>
     <string name="player_karaoke_exit_cd">Izađi iz karaoke načina</string>
+    <string name="player_karaoke_tuning_summary">Visina %1$s · %2$s</string>
+    <string name="player_karaoke_tuning_reset">Poništi</string>
+    <string name="player_karaoke_pitch_label">Visina tona</string>
+    <string name="player_karaoke_speed_label">Brzina</string>
+    <string name="player_karaoke_pitch_a11y">Visina tona %1$s polutonova</string>
+    <string name="player_karaoke_speed_a11y">Brzina %1$s</string>
     <string name="player_lyrics_tap_load">Dodirni za učitavanje teksta</string>
     <string name="player_lyrics_loading">Učitavanje teksta…</string>
     <string name="player_lyrics_refresh">Pretraži ponovo</string>

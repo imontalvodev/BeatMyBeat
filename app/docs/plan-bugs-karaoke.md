@@ -255,6 +255,13 @@ centrado + resaltado por línea).
    parte de su catálogo) dentro de una línea y las extrae; el texto plano de la línea (`LrcLine.text`)
    sigue siendo el mismo de siempre (unión de las palabras, sin marcas). `toPlainText` también limpia
    las marcas `<...>` además de las `[...]` ya soportadas.
+> ⚠️ **Deriva doc/código detectada en Fase E:** el punto 2 describe una firma
+> `karaokeHighlightLength(line, lineEndMs, positionMs)` con fallback por interpolación de caracteres.
+> El código real es `karaokeHighlightLength(line, positionMs)` y **solo** resalta por palabra cuando la
+> fuente trae timestamps reales (ver comentario en `SyncedLyricsView.kt`). Como buena parte del catálogo
+> de LRCLIB no es LRC "enhanced", el Modo Karaoke degrada a resaltado por línea completa en muchas
+> pistas — de ahí la etiqueta "Modo karaoke · por línea" añadida en Fase E.
+
 2. Nuevo `LrcParser.karaokeHighlightLength(line, lineEndMs, positionMs)`: si la línea trae `words`,
   el resaltado avanza por palabra (busca la última palabra cuyo `startMs <= positionMs`); si no,
    interpola linealmente por proporción de caracteres entre `line.startMs` y `lineEndMs` (fallback
@@ -275,13 +282,51 @@ Compose puro sin Robolectric en el proyecto — verificación visual pendiente e
 "enhanced" de LRCLIB si el beta tester encuentra una pista con esa cobertura; si no, se ve el fallback
 por interpolación de caracteres con cualquier letra sincronizada normal).
 
-### Fase E — Modo Karaoke: control de tono y velocidad (prioridad media)
+### Fase E — Modo Karaoke: conmutador de modo, tono y velocidad (prioridad media) ✅ Completada
 
-1. Exponer `PlaybackParameters(speed, pitch)` de ExoPlayer (soporte nativo, sin librería adicional) en
-  `PlayerViewModel`/`PlayerScreen`.
-2. Añadir control deslizante de tono en el overlay expandido del reproductor, activo solo en Modo Karaoke.
+**Conmutador de modo** (previo a tono/velocidad: sin un Modo Karaoke explícito no hay dónde colgar los
+controles). Referencias analizadas: Rhythm, Metrolist, OuterTune — ninguna trata el karaoke como pantalla
+aparte, sino como estado de presentación del reproductor.
 
-**Riesgo:** bajo. API nativa de Media3/ExoPlayer ya en uso.
+1. `PlayerViewModel.karaokeMode: StateFlow<Boolean>` — vive en la sesión (sobrevive a plegar el overlay,
+  cambio de canción y rotación), **no** se guarda en `prefs`: al reabrir la app se vuelve al modo escucha.
+2. Botón de micrófono en la fila superior de `ExpandedPlayerOverlay`, visible solo si hay letra
+  sincronizada (`AnimatedVisibility`), tintado con `primary` cuando está activo — misma convención que
+   shuffle/repeat.
+3. Auto-apagado: `LaunchedEffect(hasSyncedLyrics, karaokeMode)` desactiva el modo si la pista no tiene
+  LRC. El render usa `karaokeActive = karaokeMode && hasSyncedLyrics` para que no haya ni un frame con
+   modo activo y letra vacía.
+4. Layout: la carátula colapsa con peso animado `1f → 0.001f` + alpha (Compose exige peso > 0, de ahí el
+  valor mínimo en vez de un `if`); la letra sube a 28sp activa / 20sp resto vía los nuevos parámetros
+   `activeFontSize`/`inactiveFontSize` de `SyncedLyricsView` (defaults 18/15sp: modo escucha sin cambios).
+   `lineHeight` pasa a derivarse del tamaño (`fontSize * 1.35f`) — con 22sp fijo el texto grande se solapaba.
+5. Etiqueta de modo con 3 estados: "Letra sincronizada" / "Modo karaoke" / "Modo karaoke · por línea",
+  este último cuando el LRC no trae timestamps por palabra, para que el resaltado por línea no se lea
+   como un fallo de sincronía.
+
+**Tono y velocidad:**
+
+6. `PlaybackService.setPlaybackTuning(speed, pitch)` aplica `PlaybackParameters` (soporte nativo de
+  ExoPlayer, sin librería adicional). Rangos en el companion: velocidad 0.5–1.5x, tono ±6 semitonos.
+7. `KaraokeTuning` (nuevo) convierte semitonos ↔ ratio de tono (`2^(n/12)`): el slider habla en semitonos
+  porque es la unidad de quien canta; `PlaybackParameters.pitch` es un multiplicador de frecuencia.
+   `pitch` va desacoplado de `speed`, así que transportar la canción no la acelera.
+8. Estado en `PlayerViewModel` (`karaokePitchSemitones`, `karaokeSpeed`), aplicado por un
+  `LaunchedEffect(boundService, karaokeMode, ...)` que **fuerza valores neutros fuera del Modo Karaoke**:
+   el ajuste se conserva para cuando el usuario vuelva a entrar, pero nunca tiñe la escucha normal. La
+   dependencia de `boundService` reaplica el ajuste si el servicio muere y se vuelve a bindar.
+9. UI: fila compacta plegable dentro de la tarjeta de controles, visible solo con `karaokeActive`. Muestra
+  los valores actuales sin desplegar y ofrece "Restablecer" solo cuando el ajuste no es neutro. El slider
+   de tono usa `steps = 11` (13 posiciones, -6..+6) para que el tono caiga siempre en un semitono exacto.
+
+**Riesgo:** bajo. API nativa de Media3/ExoPlayer ya en uso; el resto son cambios de UI aislados.
+
+**Tests:** `ui/feature/player/KaraokeTuningTest.kt` (8 tests) — conversión semitonos→ratio, reciprocidad
+de subir/bajar el mismo intervalo, recorte al rango de `PlaybackService` y formato de etiquetas. El
+conmutador y el layout son Compose puro sin Robolectric en el proyecto: **verificación visual pendiente en
+emulador** (animación de colapso de la carátula, letra a 28sp, y que el tono suene sin acelerar).
+
+**Strings:** 9 nuevas en las 6 locales (`values`, `-es`, `-en`, `-de`, `-pt`, `-hr`).
 
 ### Fase F — Modo Karaoke: grabación (prioridad baja, mayor coste)
 
@@ -348,7 +393,7 @@ manualmente, no por unit test JVM.
 | B    | Condiciones de carrera (library sync, download job, chunks HTTP) | Baja-Media  | —                           | ✅ Completada |
 | C    | Feedback UX + TODOs pendientes                                   | Baja        | Fase A (reutiliza Snackbar) | ✅ Completada |
 | D    | Karaoke: resaltado por palabra                                   | Baja        | —                           | ✅ Completada |
-| E    | Karaoke: tono/velocidad                                          | Baja        | Fase D (mismo overlay)      | Pendiente    |
+| E    | Karaoke: conmutador de modo + tono/velocidad                     | Baja        | Fase D (mismo overlay)      | ✅ Completada |
 | F    | Karaoke: grabación                                               | Media-Alta  | Validación de Fases D-E     | Pendiente    |
 | G    | Tags MP4 + robustez letras/update                                | Media       | —                           | ✅ Completada |
 

@@ -227,6 +227,12 @@
     <string name="player_karaoke_mode_line_sync">Modo karaoke · por línea</string>
     <string name="player_karaoke_enter_cd">Activar modo karaoke</string>
     <string name="player_karaoke_exit_cd">Salir del modo karaoke</string>
+    <string name="player_karaoke_tuning_summary">Tono %1$s · %2$s</string>
+    <string name="player_karaoke_tuning_reset">Restablecer</string>
+    <string name="player_karaoke_pitch_label">Tono</string>
+    <string name="player_karaoke_speed_label">Velocidad</string>
+    <string name="player_karaoke_pitch_a11y">Tono %1$s semitonos</string>
+    <string name="player_karaoke_speed_a11y">Velocidad %1$s</string>
     <string name="player_lyrics_tap_load">Pulsa para cargar letra</string>
     <string name="player_lyrics_loading">Cargando letra…</string>
     <string name="player_lyrics_refresh">Volver a buscar</string>

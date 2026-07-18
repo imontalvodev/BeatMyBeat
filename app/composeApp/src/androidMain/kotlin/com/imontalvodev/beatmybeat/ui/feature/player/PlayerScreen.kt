@@ -317,6 +317,8 @@ fun PlayerScreen(
 
     val shuffleOn by viewModel.shuffleEnabled.collectAsState()
     val karaokeMode by viewModel.karaokeMode.collectAsState()
+    val karaokePitchSemitones by viewModel.karaokePitchSemitones.collectAsState()
+    val karaokeSpeed by viewModel.karaokeSpeed.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
     var queueRepeatSnapshot by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
@@ -426,6 +428,26 @@ fun PlayerScreen(
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF
             RepeatMode.LIST -> Player.REPEAT_MODE_ALL
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        }
+    }
+
+    /**
+     * Aplica tono/velocidad al player. Fuera del Modo Karaoke se fuerzan los valores neutros:
+     * el ajuste sigue guardado en el ViewModel, pero no debe teñir la escucha normal.
+     * Depende de [boundService] para reaplicarse si el servicio muere y se vuelve a bindar.
+     */
+    LaunchedEffect(boundService, karaokeMode, karaokePitchSemitones, karaokeSpeed) {
+        val svc = boundService ?: return@LaunchedEffect
+        if (karaokeMode) {
+            svc.setPlaybackTuning(
+                speed = karaokeSpeed,
+                pitch = KaraokeTuning.pitchRatio(karaokePitchSemitones),
+            )
+        } else {
+            svc.setPlaybackTuning(
+                speed = KaraokeTuning.NEUTRAL_SPEED,
+                pitch = KaraokeTuning.NEUTRAL_PITCH,
+            )
         }
     }
 
@@ -2076,6 +2098,11 @@ fun PlayerScreen(
                     },
                     karaokeMode = karaokeMode,
                     onKaraokeModeChange = { viewModel.setKaraokeMode(it) },
+                    karaokePitchSemitones = karaokePitchSemitones,
+                    karaokeSpeed = karaokeSpeed,
+                    onKaraokePitchChange = { viewModel.setKaraokePitchSemitones(it) },
+                    onKaraokeSpeedChange = { viewModel.setKaraokeSpeed(it) },
+                    onResetKaraokeTuning = { viewModel.resetKaraokeTuning() },
                 )
             }
 

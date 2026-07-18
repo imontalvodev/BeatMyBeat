@@ -69,6 +69,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.outlined.Loop
@@ -165,6 +166,101 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.random.Random
 
+/**
+ * Tono y velocidad del Modo Karaoke (Fase E). Plegado por defecto: se abre desde la fila
+ * compacta, que ya muestra los valores actuales para no obligar a desplegar solo por mirar.
+ */
+@Composable
+private fun KaraokeTuningControls(
+    pitchSemitones: Float,
+    speed: Float,
+    onPitchChange: (Float) -> Unit,
+    onSpeedChange: (Float) -> Unit,
+    onReset: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val neutral = KaraokeTuning.isNeutral(pitchSemitones, speed)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = { expanded = !expanded }) {
+                Icon(
+                    imageVector = Icons.Filled.Tune,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (neutral) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    else MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = stringResource(
+                        R.string.player_karaoke_tuning_summary,
+                        KaraokeTuning.semitoneLabel(pitchSemitones),
+                        KaraokeTuning.speedLabel(speed),
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (neutral) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    else MaterialTheme.colorScheme.primary,
+                )
+            }
+            AnimatedVisibility(visible = !neutral) {
+                TextButton(onClick = onReset) {
+                    Text(
+                        text = stringResource(R.string.player_karaoke_tuning_reset),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                val pitchA11y = stringResource(
+                    R.string.player_karaoke_pitch_a11y,
+                    KaraokeTuning.semitoneLabel(pitchSemitones),
+                )
+                Text(
+                    text = stringResource(R.string.player_karaoke_pitch_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+                Slider(
+                    value = pitchSemitones,
+                    onValueChange = onPitchChange,
+                    valueRange = KaraokeTuning.MIN_SEMITONES..KaraokeTuning.MAX_SEMITONES,
+                    // 12 pasos internos = 13 posiciones (-6..+6): el tono siempre cae en un
+                    // semitono exacto, no en valores intermedios desafinados.
+                    steps = 11,
+                    modifier = Modifier.semantics { contentDescription = pitchA11y },
+                )
+
+                val speedA11y = stringResource(
+                    R.string.player_karaoke_speed_a11y,
+                    KaraokeTuning.speedLabel(speed),
+                )
+                Text(
+                    text = stringResource(R.string.player_karaoke_speed_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+                Slider(
+                    value = speed,
+                    onValueChange = onSpeedChange,
+                    valueRange = PlaybackService.MIN_PLAYBACK_SPEED..PlaybackService.MAX_PLAYBACK_SPEED,
+                    modifier = Modifier.semantics { contentDescription = speedA11y },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 internal fun ExpandedPlayerOverlay(
     modifier: Modifier,
@@ -191,6 +287,11 @@ internal fun ExpandedPlayerOverlay(
     onDeleteLyrics: () -> Unit,
     karaokeMode: Boolean,
     onKaraokeModeChange: (Boolean) -> Unit,
+    karaokePitchSemitones: Float,
+    karaokeSpeed: Float,
+    onKaraokePitchChange: (Float) -> Unit,
+    onKaraokeSpeedChange: (Float) -> Unit,
+    onResetKaraokeTuning: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val expandedPlayScale by animateFloatAsState(
@@ -568,6 +669,18 @@ internal fun ExpandedPlayerOverlay(
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
                         }
+                    }
+
+                    // Fase E: tono y velocidad. Solo en karaoke y plegado por defecto, para no
+                    // competir con los controles de transporte.
+                    AnimatedVisibility(visible = karaokeActive) {
+                        KaraokeTuningControls(
+                            pitchSemitones = karaokePitchSemitones,
+                            speed = karaokeSpeed,
+                            onPitchChange = onKaraokePitchChange,
+                            onSpeedChange = onKaraokeSpeedChange,
+                            onReset = onResetKaraokeTuning,
+                        )
                     }
                 }
             }

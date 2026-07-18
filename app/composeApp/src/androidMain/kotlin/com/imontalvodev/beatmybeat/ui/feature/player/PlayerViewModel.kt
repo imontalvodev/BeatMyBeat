@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.imontalvodev.beatmybeat.service.PlaybackService
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.data.MediaStoreScanner
 import org.json.JSONArray
@@ -334,6 +335,33 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setKaraokeMode(enabled: Boolean) {
         _karaokeMode.value = enabled
+    }
+
+    /**
+     * Ajuste de tono (semitonos) y velocidad del Modo Karaoke. Mismo ciclo de vida que
+     * [karaokeMode]. Los valores se conservan al salir del modo — la UI aplica 1.0/1.0 al
+     * player mientras el karaoke está apagado, así que salir del modo devuelve el audio
+     * original sin perder el ajuste que el usuario ya había encontrado.
+     */
+    private val _karaokePitchSemitones = MutableStateFlow(KaraokeTuning.NEUTRAL_SEMITONES)
+    val karaokePitchSemitones: StateFlow<Float> = _karaokePitchSemitones.asStateFlow()
+
+    private val _karaokeSpeed = MutableStateFlow(KaraokeTuning.NEUTRAL_SPEED)
+    val karaokeSpeed: StateFlow<Float> = _karaokeSpeed.asStateFlow()
+
+    fun setKaraokePitchSemitones(semitones: Float) {
+        _karaokePitchSemitones.value =
+            semitones.coerceIn(KaraokeTuning.MIN_SEMITONES, KaraokeTuning.MAX_SEMITONES)
+    }
+
+    fun setKaraokeSpeed(speed: Float) {
+        _karaokeSpeed.value =
+            speed.coerceIn(PlaybackService.MIN_PLAYBACK_SPEED, PlaybackService.MAX_PLAYBACK_SPEED)
+    }
+
+    fun resetKaraokeTuning() {
+        _karaokePitchSemitones.value = KaraokeTuning.NEUTRAL_SEMITONES
+        _karaokeSpeed.value = KaraokeTuning.NEUTRAL_SPEED
     }
 
     // ── Cola de reproducción unificada (JSON) ───────────────────────────────

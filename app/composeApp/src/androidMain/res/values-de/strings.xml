@@ -219,6 +219,12 @@
     <string name="player_karaoke_mode_line_sync">Karaoke-Modus · zeilenweise</string>
     <string name="player_karaoke_enter_cd">Karaoke-Modus aktivieren</string>
     <string name="player_karaoke_exit_cd">Karaoke-Modus beenden</string>
+    <string name="player_karaoke_tuning_summary">Tonhöhe %1$s · %2$s</string>
+    <string name="player_karaoke_tuning_reset">Zurücksetzen</string>
+    <string name="player_karaoke_pitch_label">Tonhöhe</string>
+    <string name="player_karaoke_speed_label">Geschwindigkeit</string>
+    <string name="player_karaoke_pitch_a11y">Tonhöhe %1$s Halbtöne</string>
+    <string name="player_karaoke_speed_a11y">Geschwindigkeit %1$s</string>
     <string name="player_lyrics_tap_load">Tippen, um Lyrics zu laden</string>
     <string name="player_lyrics_loading">Lyrics werden geladen…</string>
     <string name="player_lyrics_refresh">Erneut suchen</string>

@@ -219,6 +219,12 @@
     <string name="player_karaoke_mode_line_sync">Modo karaoke · por linha</string>
     <string name="player_karaoke_enter_cd">Ativar modo karaoke</string>
     <string name="player_karaoke_exit_cd">Sair do modo karaoke</string>
+    <string name="player_karaoke_tuning_summary">Tom %1$s · %2$s</string>
+    <string name="player_karaoke_tuning_reset">Repor</string>
+    <string name="player_karaoke_pitch_label">Tom</string>
+    <string name="player_karaoke_speed_label">Velocidade</string>
+    <string name="player_karaoke_pitch_a11y">Tom %1$s semitons</string>
+    <string name="player_karaoke_speed_a11y">Velocidade %1$s</string>
     <string name="player_lyrics_tap_load">Toque para carregar letra</string>
     <string name="player_lyrics_loading">A carregar letra…</string>
     <string name="player_lyrics_refresh">Pesquisar de novo</string>
