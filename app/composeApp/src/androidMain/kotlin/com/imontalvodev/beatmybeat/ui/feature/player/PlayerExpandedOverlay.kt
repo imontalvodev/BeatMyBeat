@@ -22,6 +22,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -34,6 +36,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -53,6 +56,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -111,7 +115,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
@@ -150,6 +156,9 @@ import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
+import com.imontalvodev.beatmybeat.ui.theme.AppText
+import com.imontalvodev.beatmybeat.ui.theme.Radius
+import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
@@ -357,7 +366,7 @@ internal fun ExpandedPlayerOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(1f)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = Spacing.xl, vertical = Spacing.md),
         ) {
             val plainScroll = rememberScrollState()
             val readySyncedLrc = (lyricsState as? LyricsUiState.Ready)?.syncedLrc
@@ -409,64 +418,63 @@ internal fun ExpandedPlayerOverlay(
                     .fillMaxWidth()
                     .weight(1f, fill = true),
             ) {
-                // En karaoke la carátula cede su espacio a la letra. El peso no puede llegar a 0
-                // (Compose lo exige > 0), así que colapsa a un valor despreciable + alpha 0.
-                val artworkWeight by animateFloatAsState(
-                    targetValue = if (karaokeActive) 0.001f else 1f,
-                    animationSpec = tween(320),
-                    label = "karaoke_artwork_weight",
-                )
-                val artworkAlpha by animateFloatAsState(
-                    targetValue = if (karaokeActive) 0f else 1f,
-                    animationSpec = tween(220),
-                    label = "karaoke_artwork_alpha",
-                )
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(artworkWeight, fill = true)
-                        .alpha(artworkAlpha),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
+                // La carátula es cuadrada (aspectRatio 1:1) en vez de rellenar el hueco que
+                // sobre: una portada no es un rectángulo arbitrario y recortarla la desfigura.
+                // Al no llevar weight, AnimatedVisibility sí puede colapsarla de verdad en
+                // karaoke — no hace falta el truco del peso mínimo.
+                AnimatedVisibility(
+                    visible = !karaokeActive,
+                    enter = fadeIn(tween(220)) + expandVertically(tween(320)),
+                    exit = fadeOut(tween(160)) + shrinkVertically(tween(320)),
                 ) {
-                    if (artwork != null) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(ctx)
-                                .data(artwork)
-                                .crossfade(220)
-                                .build(),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            AppLogo(size = 200.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.lg, vertical = Spacing.sm)
+                            .aspectRatio(1f)
+                            .shadow(
+                                elevation = 24.dp,
+                                shape = RoundedCornerShape(Radius.xl),
+                            )
+                            .clip(RoundedCornerShape(Radius.xl))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (artwork != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(ctx)
+                                    .data(artwork)
+                                    .crossfade(220)
+                                    .build(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            AppLogo(size = 140.dp)
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(Spacing.lg))
 
                 Text(
                     text = (track?.title ?: "").toTitleCaseSimple(),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    style = if (karaokeActive) AppText.playerTitleCompact else AppText.playerTitle,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 Text(
                     text = (track?.artist ?: "").toDisplayArtist(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                    style = AppText.playerArtist,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(Spacing.md))
 
                 if ((canRefreshLyrics || canDeleteLyrics) && !karaokeActive) {
                     Row(
@@ -505,18 +513,20 @@ internal fun ExpandedPlayerOverlay(
                     }
                 }
 
-                Card(
+                // La letra vive en la misma capa que el resto: antes era una segunda tarjeta
+                // oscura compitiendo con la de la carátula. El fondo (blur + gradiente) ya da
+                // contraste suficiente para leerla.
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = true)
+                        .clip(RoundedCornerShape(Radius.lg))
                         .clickable(
                             enabled = canRefreshLyrics &&
                                 lyricsState is LyricsUiState.Empty &&
                                 !hasSyncedLyrics,
                             onClick = onRefreshLyrics,
                         ),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.30f)),
                 ) {
                     when {
                         hasSyncedLyrics -> {
@@ -532,8 +542,8 @@ internal fun ExpandedPlayerOverlay(
                                     text = modeLabel,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(top = 8.dp),
-                                    style = MaterialTheme.typography.labelSmall,
+                                        .padding(bottom = Spacing.sm),
+                                    style = AppText.meta,
                                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                                     textAlign = TextAlign.Center,
                                 )
@@ -561,27 +571,24 @@ internal fun ExpandedPlayerOverlay(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .verticalScroll(plainScroll)
-                                    .padding(16.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                                    .padding(horizontal = Spacing.sm, vertical = Spacing.md),
+                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 24.sp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 18.dp),
-            ) {
+            // Sin tarjeta: los controles descansan sobre el mismo fondo que el resto. La antigua
+            // Card negra con elevación 18dp era la tercera superficie apilada de la pantalla.
+            Box(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(bottom = Spacing.sm),
                 ) {
                     val currentMs = (position.coerceIn(0f, 1f) * durationMs).toInt()
                     var localDrag by remember { mutableStateOf<Float?>(null) }
@@ -613,15 +620,18 @@ internal fun ExpandedPlayerOverlay(
                     ) {
                         Text(
                             text = formatMs(currentMs),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                            style = AppText.meta,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         )
                         Text(
                             text = formatMs(durationMs),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                            style = AppText.meta,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -635,29 +645,50 @@ internal fun ExpandedPlayerOverlay(
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = onPrev) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        ) {
+                            IconButton(
+                                onClick = onPrev,
+                                modifier = Modifier.size(52.dp),
+                            ) {
                                 Icon(
                                     imageVector = Icons.Filled.SkipPrevious,
                                     contentDescription = stringResource(R.string.player_prev_cd),
                                     tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(34.dp),
                                 )
                             }
-                            IconButton(
-                                onClick = onTogglePlay,
-                                modifier = Modifier.scale(expandedPlayScale),
+                            // Play/pausa como botón relleno: es la única acción primaria de la
+                            // pantalla y antes pesaba visualmente igual que prev/next.
+                            val playPauseCd = stringResource(R.string.player_cd_play_pause)
+                            Box(
+                                modifier = Modifier
+                                    .size(68.dp)
+                                    .scale(expandedPlayScale)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .clickable(onClick = onTogglePlay)
+                                    .semantics { contentDescription = playPauseCd },
+                                contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                    contentDescription = stringResource(R.string.player_cd_play_pause),
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(36.dp),
                                 )
                             }
-                            IconButton(onClick = onNext) {
+                            IconButton(
+                                onClick = onNext,
+                                modifier = Modifier.size(52.dp),
+                            ) {
                                 Icon(
                                     imageVector = Icons.Filled.SkipNext,
                                     contentDescription = stringResource(R.string.player_next_cd),
                                     tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(34.dp),
                                 )
                             }
                         }

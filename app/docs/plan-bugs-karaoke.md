@@ -323,8 +323,9 @@ aparte, sino como estado de presentación del reproductor.
 
 **Tests:** `ui/feature/player/KaraokeTuningTest.kt` (8 tests) — conversión semitonos→ratio, reciprocidad
 de subir/bajar el mismo intervalo, recorte al rango de `PlaybackService` y formato de etiquetas. El
-conmutador y el layout son Compose puro sin Robolectric en el proyecto: **verificación visual pendiente en
-emulador** (animación de colapso de la carátula, letra a 28sp, y que el tono suene sin acelerar).
+conmutador y el layout son Compose puro sin Robolectric en el proyecto, así que van por verificación
+manual: **tono verificado en dispositivo** (transporta sin acelerar). Pendiente de confirmar la animación
+de colapso de la carátula y la legibilidad de la letra a 28sp.
 
 **Strings:** 9 nuevas en las 6 locales (`values`, `-es`, `-en`, `-de`, `-pt`, `-hr`).
 
