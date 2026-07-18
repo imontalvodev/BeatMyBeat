@@ -1861,12 +1861,24 @@ fun PlayerScreen(
                             sortOption,
                         )
                     }
+                    val activeListState = when (section) {
+                        PlayerSection.Songs -> songsListState
+                        PlayerSection.Favorites -> favoritesListState
+                        PlayerSection.Playlist -> playlistListState
+                    }
+                    // Rail A-Z (U3). Solo tiene sentido con la lista ordenada por nombre: con
+                    // cualquier otro orden las iniciales no serian monotonas y saltar a una
+                    // letra dejaria al usuario en un sitio arbitrario.
+                    val alphabetIndex = remember(tracksInSection, sortOption) {
+                        if (sortOption != SortOption.NAME_ASC && sortOption != SortOption.NAME_DESC) {
+                            emptyMap()
+                        } else {
+                            buildAlphabetIndex(tracksInSection.map { it.title })
+                        }
+                    }
+                    Row(modifier = Modifier.weight(1f)) {
                     LazyColumn(
-                        state = when (section) {
-                            PlayerSection.Songs -> songsListState
-                            PlayerSection.Favorites -> favoritesListState
-                            PlayerSection.Playlist -> playlistListState
-                        },
+                        state = activeListState,
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                         contentPadding = PaddingValues(bottom = 8.dp),
@@ -1988,6 +2000,17 @@ fun PlayerScreen(
                                         playlistId = pid,
                                         removeAllOccurrences = true,
                                     )
+                                }
+                            },
+                        )
+                    }
+                }
+                    if (alphabetIndex.size >= 2) {
+                        AlphabetFastScroller(
+                            letters = alphabetIndex.keys.toList(),
+                            onLetterSelected = { letter ->
+                                alphabetIndex[letter]?.let { target ->
+                                    uiScope.launch { activeListState.scrollToItem(target) }
                                 }
                             },
                         )

@@ -33,6 +33,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,6 +111,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -143,6 +145,9 @@ import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
+import com.imontalvodev.beatmybeat.ui.theme.AppText
+import com.imontalvodev.beatmybeat.ui.theme.Radius
+import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -191,21 +196,24 @@ internal fun TrackRow(
 ) {
     val selectedCountLabel = stringResource(R.string.player_selection_actions_cd)
     var suppressClickAfterLongPress by remember { mutableStateOf(false) }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                isCurrent && !selectionMode -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                else -> Color.Black.copy(alpha = 0.35f)
-            },
-        ),
+    // Las filas ya no son tarjetas. Una lista de tarjetas apiladas es lo que hacía que la
+    // biblioteca se viera densa: cada fila añadía un borde y una superficie más. Ahora la fila
+    // solo se tiñe cuando significa algo (seleccionada o sonando).
+    val rowBackground = when {
+        isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+        isCurrent && !selectionMode -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        else -> Color.Transparent
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.sm))
+            .background(rowBackground),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
@@ -234,24 +242,28 @@ internal fun TrackRow(
                     ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // 32dp era demasiado pequeña para que la portada se leyera como portada.
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
-                        .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(Radius.sm))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
-                    ArtworkThumbnail(track = track, sizeDp = 32)
+                    ArtworkThumbnail(track = track, sizeDp = 48)
                     when {
                         isSelected -> {
+                            // Velo derivado de la paleta, no un negro fijo: con un perfil de
+                            // fondo claro el negro se comía la miniatura.
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Check,
                                     contentDescription = stringResource(R.string.player_track_selected_cd),
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
                                 )
                             }
                         }
@@ -262,24 +274,27 @@ internal fun TrackRow(
                                     .border(
                                         width = 2.dp,
                                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
-                                        shape = RoundedCornerShape(8.dp),
+                                        shape = RoundedCornerShape(Radius.sm),
                                     ),
                             )
                         }
                     }
                 }
-                Spacer(modifier = Modifier.size(8.dp))
+                Spacer(modifier = Modifier.size(Spacing.md))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = track.title.toTitleCaseSimple(),
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSurface,
+                        // Era bodySmall (12sp) — el texto más importante de la lista y el más
+                        // pequeño de la pantalla.
+                        style = AppText.trackTitle,
+                        color = if (isCurrent) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = track.artist.toDisplayArtist(),
-                        style = MaterialTheme.typography.labelSmall,
+                        style = AppText.trackArtist,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -499,7 +514,7 @@ internal fun LibraryFiltersMenu(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics { contentDescription = filtersMenuA11y },
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(Radius.md),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         ) {
             Text(
@@ -671,7 +686,7 @@ internal fun PlaylistDetailHeader(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(Radius.md),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
         ),
@@ -755,8 +770,8 @@ internal fun PlaylistPickerBar(
     if (playlists.isEmpty()) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.25f)),
+            shape = RoundedCornerShape(Radius.md),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         ) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -804,12 +819,12 @@ internal fun PlaylistPickerBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onSelect(p.id) },
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(Radius.md),
                 colors = CardDefaults.cardColors(
                     containerColor = if (selected) {
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
                     } else {
-                        Color.Black.copy(alpha = 0.28f)
+                        MaterialTheme.colorScheme.surfaceContainerHigh
                     },
                 ),
                 border = androidx.compose.foundation.BorderStroke(
@@ -909,9 +924,10 @@ internal fun ActionPillButton(
         modifier = modifier
             .height(36.dp)
             .clickable(enabled = enabled) { onClick() },
-        shape = RoundedCornerShape(999.dp),
+        shape = RoundedCornerShape(Radius.pill),
         colors = CardDefaults.cardColors(
-            containerColor = if (enabled) Color.Black.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.18f),
+            containerColor = if (enabled) MaterialTheme.colorScheme.surfaceContainerHigh
+            else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f),
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
@@ -935,8 +951,8 @@ internal fun PrimaryPillButton(
             .fillMaxWidth()
             .height(34.dp)
             .clickable { onClick() },
-        shape = RoundedCornerShape(999.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(Radius.pill),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -944,6 +960,85 @@ internal fun PrimaryPillButton(
                 text = text,
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+/**
+ * Índice de la primera pista de cada inicial, para el rail A–Z (U3, tomado de Rhythm).
+ *
+ * Todo lo que no empiece por letra (números, símbolos) cae en `'#'`. Se conserva el orden de
+ * aparición: la lista ya viene ordenada, así que el mapa sale ordenado sin volver a ordenar nada.
+ *
+ * Función pura para poder testearla — el rail en sí es Compose y aquí no hay Robolectric.
+ */
+internal fun buildAlphabetIndex(titles: List<String>): Map<Char, Int> {
+    val index = LinkedHashMap<Char, Int>()
+    titles.forEachIndexed { position, title ->
+        val first = title.trim().firstOrNull() ?: return@forEachIndexed
+        val key = if (first.isLetter()) first.uppercaseChar() else '#'
+        if (!index.containsKey(key)) index[key] = position
+    }
+    return index
+}
+
+/**
+ * Rail de iniciales a la derecha de la lista. Se puede tocar o arrastrar: al arrastrar, la letra
+ * se deduce de la posición vertical del dedo sobre el rail, no de qué letra concreta se toca —
+ * si no, con 27 letras en pantalla habría que acertar una diana de pocos dp.
+ */
+@Composable
+internal fun AlphabetFastScroller(
+    letters: List<Char>,
+    onLetterSelected: (Char) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (letters.size < 2) return
+
+    var activeLetter by remember { mutableStateOf<Char?>(null) }
+    val currentLetters by rememberUpdatedState(letters)
+    val currentOnSelected by rememberUpdatedState(onLetterSelected)
+
+    fun letterAt(y: Float, height: Int): Char? {
+        if (height <= 0) return null
+        val slot = height.toFloat() / currentLetters.size
+        val idx = (y / slot).toInt().coerceIn(0, currentLetters.lastIndex)
+        return currentLetters[idx]
+    }
+
+    Column(
+        modifier = modifier
+            .width(24.dp)
+            .fillMaxHeight()
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragEnd = { activeLetter = null },
+                    onDragCancel = { activeLetter = null },
+                ) { change, _ ->
+                    letterAt(change.position.y, size.height)?.let { letter ->
+                        if (letter != activeLetter) {
+                            activeLetter = letter
+                            currentOnSelected(letter)
+                        }
+                    }
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    letterAt(offset.y, size.height)?.let(currentOnSelected)
+                }
+            },
+        verticalArrangement = Arrangement.SpaceEvenly,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        letters.forEach { letter ->
+            Text(
+                text = letter.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (letter == activeLetter) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -964,24 +1059,24 @@ internal fun LibraryEmptyState(
         Icon(
             imageVector = Icons.Filled.LibraryMusic,
             contentDescription = null,
-            modifier = Modifier.size(72.dp),
+            modifier = Modifier.size(88.dp),
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
         )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(Spacing.xl))
         Text(
             text = stringResource(R.string.player_empty_library_title),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            style = AppText.sectionHeader,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(Spacing.sm))
         Text(
             text = stringResource(R.string.player_empty_library_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
             textAlign = TextAlign.Center,
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(Spacing.xl))
         OutlinedButton(onClick = onOpenDownloader) {
             Text(stringResource(R.string.player_empty_library_cta))
         }

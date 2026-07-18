@@ -88,4 +88,30 @@ class LrcParserTest {
         // Mucho después: sigue siendo la línea completa (no hay palabra futura que reste).
         assertEquals(11, LrcParser.karaokeHighlightLength(line, positionMs = 60_000L))
     }
+
+    @Test
+    fun focusLineAtPosition_duranteLaIntro_enfocaLaPrimeraLinea() {
+        val lines = LrcParser.parse("[00:12.00]Primera\n[00:14.50]Segunda")
+
+        // Antes del primer timestamp no canta nadie...
+        assertEquals(-1, LrcParser.lineAtPosition(lines, 0L))
+        // ...pero la vista debe enfocar ya la primera linea.
+        assertEquals(0, LrcParser.focusLineAtPosition(lines, 0L))
+        assertEquals(0, LrcParser.focusLineAtPosition(lines, 11_999L))
+    }
+
+    @Test
+    fun focusLineAtPosition_conLineaSonando_coincideConLaActiva() {
+        val lines = LrcParser.parse("[00:12.00]Primera\n[00:14.50]Segunda")
+
+        assertEquals(0, LrcParser.focusLineAtPosition(lines, 12_000L))
+        assertEquals(1, LrcParser.focusLineAtPosition(lines, 14_500L))
+        assertEquals(1, LrcParser.focusLineAtPosition(lines, 99_000L))
+    }
+
+    @Test
+    fun focusLineAtPosition_sinLineas_devuelveMenosUno() {
+        assertEquals(-1, LrcParser.focusLineAtPosition(emptyList(), 0L))
+    }
+
 }

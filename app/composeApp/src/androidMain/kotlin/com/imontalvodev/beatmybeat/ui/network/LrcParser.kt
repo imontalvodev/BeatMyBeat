@@ -70,6 +70,21 @@ object LrcParser {
     }
 
     /**
+     * Línea sobre la que centrar la vista, que no siempre es la que suena.
+     *
+     * Durante la intro (antes del primer timestamp) [lineAtPosition] devuelve -1 porque todavía no
+     * canta nadie. Enfocar ahí la línea 0 hace que al arrancar la canción ya se lea la primera frase
+     * y la siguiente, en vez de una pantalla de líneas indistinguibles; y hace que al buscar hacia
+     * atrás hasta la intro la letra vuelva al principio en vez de quedarse clavada.
+     *
+     * Devuelve -1 solo si no hay líneas.
+     */
+    fun focusLineAtPosition(lines: List<LrcLine>, positionMs: Long): Int {
+        if (lines.isEmpty()) return -1
+        return lineAtPosition(lines, positionMs).coerceAtLeast(0)
+    }
+
+    /**
      * Número de caracteres de [LrcLine.text] ya "cantados" en [positionMs], solo cuando la línea
      * trae timestamps reales por palabra ([LrcLine.words]). Si no los trae, devuelve 0 siempre:
      * no hay interpolación de respaldo, para no mostrar un resaltado que no sigue el audio real.

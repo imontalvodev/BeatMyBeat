@@ -108,6 +108,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
@@ -145,6 +146,9 @@ import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
+import com.imontalvodev.beatmybeat.ui.theme.AppText
+import com.imontalvodev.beatmybeat.ui.theme.Radius
+import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
@@ -189,68 +193,38 @@ internal fun MiniPlayerBar(
     )
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 3.dp, bottomEnd = 3.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(
+            topStart = Radius.md,
+            topEnd = Radius.md,
+            bottomStart = 0.dp,
+            bottomEnd = 0.dp,
+        ),
+        // Antes Color.Black.copy(0.55f): con un perfil de fondo claro quedaba una barra oscura
+        // con texto oscuro encima. surfaceContainerHigh ya deriva del perfil del usuario.
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             var localDrag by remember { mutableStateOf<Float?>(null) }
             val sliderValue = localDrag ?: position
-            val previewMs = (sliderValue.coerceIn(0f, 1f) * durationMs).toInt()
-            Slider(
-                value = sliderValue,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(28.dp)
-                    .semantics {
-                        contentDescription = sliderAccessibilityLabel
-                    },
-                onValueChange = { v ->
-                    localDrag = v
-                    onSeekPreview(v)
-                },
-                onValueChangeFinished = {
-                    val target = localDrag ?: sliderValue
-                    onSeekCommit(target)
-                    localDrag = null
-                },
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = formatMs(previewMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                )
-                Text(
-                    text = formatMs(durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                )
-            }
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     modifier = Modifier
                         .weight(1f)
-                        .clickable(onClick = onOpenExpanded)
-                        .padding(vertical = 2.dp, horizontal = 2.dp),
+                        .clickable(onClick = onOpenExpanded),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
-                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(Radius.sm))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
                     ) {
                         val miniCtx = LocalContext.current
                         Crossfade(
@@ -270,21 +244,36 @@ internal fun MiniPlayerBar(
                                 )
                             } else {
                                 AppLogo(
-                                    size = 40.dp,
+                                    size = 44.dp,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.size(8.dp))
-                    Text(
-                        text = "${(track?.title ?: stringResource(R.string.player_no_song)).toTitleCaseSimple()} · ${(track?.artist ?: "").toDisplayArtist()}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Spacer(modifier = Modifier.size(Spacing.md))
+                    // Antes título y artista iban concatenados con "·" en una sola línea de
+                    // labelLarge. Separados hay jerarquía real y el título deja de competir
+                    // con el artista por el mismo ancho.
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = (track?.title ?: stringResource(R.string.player_no_song))
+                                .toTitleCaseSimple(),
+                            style = AppText.trackTitle,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val miniArtist = (track?.artist ?: "").toDisplayArtist()
+                        if (miniArtist.isNotBlank()) {
+                            Text(
+                                text = miniArtist,
+                                style = AppText.trackArtist,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
 
                 Box {
@@ -310,9 +299,9 @@ internal fun MiniPlayerBar(
                             modifier = Modifier
                                 .height(14.dp)
                                 .defaultMinSize(minWidth = 14.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(7.dp))
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(Radius.pill))
                                 .align(Alignment.TopEnd)
-                                .padding(horizontal = 3.dp, vertical = 1.dp),
+                                .padding(horizontal = Spacing.xs, vertical = 1.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
@@ -363,6 +352,28 @@ internal fun MiniPlayerBar(
                     )
                 }
             }
+
+            // Progreso al borde inferior. Sigue siendo un Slider (se puede buscar desde aquí,
+            // como antes), pero sin ocupar 28dp ni arrastrar la fila de tiempos: en una barra
+            // mini el tiempo exacto ya lo da el reproductor expandido.
+            Slider(
+                value = sliderValue,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .semantics {
+                        contentDescription = sliderAccessibilityLabel
+                    },
+                onValueChange = { v ->
+                    localDrag = v
+                    onSeekPreview(v)
+                },
+                onValueChangeFinished = {
+                    val target = localDrag ?: sliderValue
+                    onSeekCommit(target)
+                    localDrag = null
+                },
+            )
         }
     }
 }

@@ -268,6 +268,13 @@ centrado + resaltado por línea).
    determinista, sin red adicional). `lineEndMs` es el `startMs` de la línea siguiente o, si es la
    última línea del LRC, un estimado (`LrcParser.estimatedLineEndMs`: ~150ms/carácter con un suelo de
    2000ms) para que el resaltado de la última línea no se quede congelado en 0%.
+2b. **Estado de intro** (añadido durante el lavado de UI): antes del primer timestamp
+  `lineAtPosition` devuelve -1 y ninguna línea se destacaba — con intros de 15–30s la letra se veía
+   como un bloque plano, y al buscar hacia atrás hasta la intro se quedaba clavada donde estuviera.
+   Nuevo `LrcParser.focusLineAtPosition`: durante la intro enfoca la línea 0, que se pinta al tamaño
+   de la activa pero atenuada y en `SemiBold` en vez de `Bold` — se lee ya la primera frase y la
+   siguiente, sin fingir que alguien está cantando. Tests en `LrcParserTest` (3 casos).
+
 3. `SyncedLyricsView` pinta la línea activa con un `AnnotatedString` de dos tramos de color (cantado en
   `primary`, pendiente en `primary` atenuado) en vez de un color sólido; las líneas pasadas/futuras
    mantienen el resaltado por línea completa de antes.
@@ -324,8 +331,9 @@ aparte, sino como estado de presentación del reproductor.
 **Tests:** `ui/feature/player/KaraokeTuningTest.kt` (8 tests) — conversión semitonos→ratio, reciprocidad
 de subir/bajar el mismo intervalo, recorte al rango de `PlaybackService` y formato de etiquetas. El
 conmutador y el layout son Compose puro sin Robolectric en el proyecto, así que van por verificación
-manual: **tono verificado en dispositivo** (transporta sin acelerar). Pendiente de confirmar la animación
-de colapso de la carátula y la legibilidad de la letra a 28sp.
+manual: **tono verificado en dispositivo** (transporta sin acelerar) y **conmutador + layout de karaoke
+verificados en emulador** junto con el rediseño de la Fase U1 (ver
+`[plan-lavado-ui.md](plan-lavado-ui.md)`).
 
 **Strings:** 9 nuevas en las 6 locales (`values`, `-es`, `-en`, `-de`, `-pt`, `-hr`).
 

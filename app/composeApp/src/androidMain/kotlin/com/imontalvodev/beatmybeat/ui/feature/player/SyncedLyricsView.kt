@@ -50,16 +50,20 @@ fun SyncedLyricsView(
     if (lines.isEmpty()) return
 
     val adjustedMs = (positionMs + syncOffsetMs).coerceAtLeast(0L)
+    /** Línea que suena. -1 durante la intro, antes del primer timestamp. */
     val activeIndex = LrcParser.lineAtPosition(lines, adjustedMs)
+    /** Línea sobre la que centrar: en la intro es la primera, para que ya se lea. */
+    val focusIndex = LrcParser.focusLineAtPosition(lines, adjustedMs)
+    /** En intro la primera línea se muestra como "lo que viene", no como si ya sonara. */
+    val isIntro = activeIndex < 0
 
     val listState = rememberLazyListState()
     val primary = MaterialTheme.colorScheme.primary
     val onSurface = MaterialTheme.colorScheme.onSurface
 
-    LaunchedEffect(activeIndex, lines.size) {
-        if (activeIndex < 0) return@LaunchedEffect
-        val target = activeIndex.coerceIn(0, lines.lastIndex)
-        listState.animateScrollToItem(target)
+    LaunchedEffect(focusIndex, lines.size) {
+        if (focusIndex < 0) return@LaunchedEffect
+        listState.animateScrollToItem(focusIndex.coerceIn(0, lines.lastIndex))
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -81,19 +85,28 @@ fun SyncedLyricsView(
                 key = { index, line -> "${index}_${line.startMs}_${line.text.hashCode()}" },
             ) { index, line ->
                 val isActive = index == activeIndex
+                // Durante la intro, la primera línea se destaca como "próxima": mismo tamaño que
+                // la activa para que se lea de lejos, pero atenuada y sin negrita, porque todavía
+                // no se está cantando.
+                val isUpcoming = isIntro && index == focusIndex
                 val isPast = activeIndex >= 0 && index < activeIndex
                 val color by animateColorAsState(
                     targetValue = when {
                         isActive -> primary
+                        isUpcoming -> primary.copy(alpha = 0.70f)
                         isPast -> onSurface.copy(alpha = 0.45f)
                         else -> onSurface.copy(alpha = 0.65f)
                     },
                     animationSpec = tween(durationMillis = 180),
                     label = "lyric_line_color",
                 )
-                val fontSize = if (isActive) activeFontSize else inactiveFontSize
+                val fontSize = if (isActive || isUpcoming) activeFontSize else inactiveFontSize
                 val lineHeight = fontSize * 1.35f
-                val fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
+                val fontWeight = when {
+                    isActive -> FontWeight.Bold
+                    isUpcoming -> FontWeight.SemiBold
+                    else -> FontWeight.Normal
+                }
 
                 Box(
                     modifier = Modifier
