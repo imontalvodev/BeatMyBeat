@@ -880,8 +880,14 @@ fun PlayerScreen(
     // guardada hasta que el usuario lo dice: descartar la borra. Es lo que evita que la carpeta
     // se llene de tomas que nadie va a volver a oír.
 
-    /** Reproductor de la voz durante la revisión. La canción la sigue llevando ExoPlayer. */
+    /** Reproductor de la voz durante la revisión. La canción queda pausada mientras tanto. */
     var reviewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    /**
+     * ¿Está sonando la toma en revisión? Necesario para pintar reproducir/parar: la toma se
+     * escucha entera y sin él no habría forma de volver a oírla antes de decidir.
+     */
+    var reviewPlaying by remember { mutableStateOf(false) }
 
     fun releaseReviewPlayer() {
         reviewPlayer?.let { player ->
@@ -889,6 +895,33 @@ fun PlayerScreen(
             runCatching { player.release() }
         }
         reviewPlayer = null
+        reviewPlaying = false
+    }
+
+    /** Arranca la toma desde el principio. Suelta cualquier reproducción anterior. */
+    fun startReviewPlayback(file: File) {
+        releaseReviewPlayer()
+        runCatching {
+            MediaPlayer().apply {
+                setDataSource(file.absolutePath)
+                setOnCompletionListener { reviewPlaying = false }
+                prepare()
+                start()
+            }
+        }.onSuccess { player ->
+            reviewPlayer = player
+            reviewPlaying = true
+        }.onFailure { error ->
+            Logger.e("Karaoke", "No se pudo reproducir la toma", error)
+            showToast(resources.getString(R.string.karaoke_record_failed))
+        }
+    }
+
+    /** Reproducir/parar la toma en revisión, para poder oírla las veces que haga falta. */
+    fun toggleReviewPlayback() {
+        val state = viewModel.karaokeRecording.value
+        if (state !is PlayerViewModel.KaraokeRecordingState.Review) return
+        if (reviewPlaying) releaseReviewPlayer() else startReviewPlayback(state.session.file)
     }
 
     fun beginKaraokeRecording() {
@@ -938,26 +971,20 @@ fun PlayerScreen(
         }
         viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Review(session))
 
-        // Revisión: la canción vuelve al punto donde arrancó la toma y la voz se reproduce
-        // encima. No se mezcla ningún archivo — son dos reproductores arrancados a la vez.
-        // seekTo preserva el estado de reproduccion: si la cancion estaba pausada, seguiria
-        // pausada y la revision sonaria solo con la voz. Se fuerza a reproducir.
-        boundService?.seekTo(session.trackOffsetMs)
-        if (!isPlaying) {
-            context.sendPlaybackForegroundAction(PlaybackService.ACTION_PLAY)
+        // Revisión: suena SOLO la voz. La canción se pausa donde esté.
+        //
+        // Antes se rebobinaba a session.trackOffsetMs y se forzaba a reproducir, para oír la toma
+        // en contexto. En la práctica no dejaba oír nada: la canción tapa la voz, y si la toma
+        // arrancó al principio el rebobinado se lee como "se ha reiniciado sola". Además la
+        // grabación casi siempre lleva ya la canción colada por el micro (sin auriculares), así
+        // que superponerla otra vez la duplica desfasada.
+        //
+        // Así coincide con KaraokeTakesSheet, que ya reproducía las tomas solas. No se toca la
+        // posición de la canción: al guardar o descartar, sigue donde el usuario la dejó.
+        if (isPlaying) {
+            context.sendPlaybackForegroundAction(PlaybackService.ACTION_PAUSE)
         }
-        releaseReviewPlayer()
-        runCatching {
-            MediaPlayer().apply {
-                setDataSource(session.file.absolutePath)
-                prepare()
-                start()
-            }
-        }.onSuccess { player ->
-            reviewPlayer = player
-        }.onFailure { error ->
-            Logger.e("Karaoke", "No se pudo reproducir la toma", error)
-        }
+        startReviewPlayback(session.file)
     }
 
     fun saveKaraokeRecording() {
@@ -2312,6 +2339,8 @@ fun PlayerScreen(
                     karaokeRecording = karaokeRecording,
                     onStartRecording = { requestKaraokeRecording() },
                     onStopRecording = { stopKaraokeRecording() },
+                    reviewPlaying = reviewPlaying,
+                    onToggleReviewPlayback = { toggleReviewPlayback() },
                     onSaveRecording = { saveKaraokeRecording() },
                     onDiscardRecording = { discardKaraokeRecording() },
                     headphonesConnected = headphonesConnected,

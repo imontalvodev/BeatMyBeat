@@ -37,7 +37,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -70,6 +70,7 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SkipNext
@@ -129,7 +130,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalResources
@@ -193,9 +193,11 @@ private fun KaraokeRecordingControls(
     state: PlayerViewModel.KaraokeRecordingState,
     headphonesConnected: Boolean,
     savedTakeCount: Int,
+    reviewPlaying: Boolean,
     onOpenTakes: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    onToggleReview: () -> Unit,
     onSave: () -> Unit,
     onDiscard: () -> Unit,
 ) {
@@ -300,6 +302,25 @@ private fun KaraokeRecordingControls(
                 }
 
                 is PlayerViewModel.KaraokeRecordingState.Review -> {
+                    // La toma suena sola (la canción queda pausada) y se puede repetir: decidir
+                    // guardar o descartar tras una única escucha no es decidir.
+                    TextButton(onClick = onToggleReview) {
+                        Icon(
+                            imageVector = if (reviewPlaying) Icons.Filled.Stop
+                            else Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text(
+                            text = stringResource(
+                                if (reviewPlaying) R.string.karaoke_take_stop
+                                else R.string.karaoke_review_replay,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.sm))
                     TextButton(onClick = onDiscard) {
                         Icon(
                             imageVector = Icons.Filled.DeleteOutline,
@@ -462,6 +483,8 @@ internal fun ExpandedPlayerOverlay(
     karaokeRecording: PlayerViewModel.KaraokeRecordingState,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit,
+    reviewPlaying: Boolean,
+    onToggleReviewPlayback: () -> Unit,
     onSaveRecording: () -> Unit,
     onDiscardRecording: () -> Unit,
     headphonesConnected: Boolean,
@@ -508,7 +531,25 @@ internal fun ExpandedPlayerOverlay(
         )
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            // El overlay tapa la biblioteca, pero Compose NO bloquea los toques por dibujarse
+            // encima: un toque en una zona sin handler (la carátula, el fondo, los huecos) seguía
+            // bajando hasta la lista de detrás y reproducía la canción que hubiera en esa posición
+            // de pantalla. Se veía como "suena una canción al azar".
+            //
+            // Absorbe SOLO pulsaciones, no movimiento. Un consumidor genérico de eventos aquí
+            // rompe los sliders: se comía los desplazamientos que necesitan para pasar el umbral
+            // de arrastre, así que respondían al toque suelto pero no dejaban deslizar.
+            //
+            // Sin indicación visual: esto no es un botón, solo un tope para los toques.
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { /* absorbe el toque para que no llegue a la lista de detrás */ },
+            ),
+    ) {
         Spacer(
             Modifier
                 .fillMaxSize()
@@ -875,8 +916,10 @@ internal fun ExpandedPlayerOverlay(
                                 headphonesConnected = headphonesConnected,
                                 savedTakeCount = savedTakeCount,
                                 onOpenTakes = onOpenTakes,
+                                reviewPlaying = reviewPlaying,
                                 onStart = onStartRecording,
                                 onStop = onStopRecording,
+                                onToggleReview = onToggleReviewPlayback,
                                 onSave = onSaveRecording,
                                 onDiscard = onDiscardRecording,
                             )

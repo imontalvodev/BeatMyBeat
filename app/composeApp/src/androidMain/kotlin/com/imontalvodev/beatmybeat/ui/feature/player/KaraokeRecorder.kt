@@ -23,8 +23,9 @@ import java.io.File
  * archivo. Mezclar exigiría decodificar ambas pistas a PCM, sumarlas y recodificar con
  * MediaCodec/MediaMuxer — eso queda para la exportación, que es opcional.
  *
- * Para revisar la toma se reproducen la canción y la voz a la vez, sincronizadas por
- * [Session.trackOffsetMs], que es la posición de la canción en el instante en que empezó a grabar.
+ * Al revisar suena **solo la voz**, con la canción pausada: superponerla tapaba la toma en vez de
+ * ayudar a juzgarla. Aun así [Session.trackOffsetMs] se guarda, porque es el desfase que hará falta
+ * para alinear voz y canción cuando se implemente la exportación mezclada.
  */
 class KaraokeRecorder(private val context: Context) {
 
@@ -35,7 +36,11 @@ class KaraokeRecorder(private val context: Context) {
     data class Session(
         val file: File,
         val trackId: Long,
-        /** Posición de la canción (ms) cuando arrancó la grabación. */
+        /**
+         * Posición de la canción (ms) cuando arrancó la grabación. Hoy no se usa para reproducir
+         * —la revisión suena solo con la voz—, pero es el desfase necesario para la exportación
+         * mezclada, así que se conserva con la toma.
+         */
         val trackOffsetMs: Long,
         val startedAtMs: Long,
     )

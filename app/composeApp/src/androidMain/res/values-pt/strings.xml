@@ -226,6 +226,7 @@
     <string name="karaoke_takes_title">Gravações guardadas</string>
     <string name="karaoke_take_play">Reproduzir</string>
     <string name="karaoke_take_stop">Parar</string>
+    <string name="karaoke_review_replay">Ouvir</string>
     <string name="karaoke_take_delete">Apagar gravação</string>
     <string name="karaoke_take_deleted">Gravação apagada</string>
     <string name="karaoke_take_delete_failed">Não foi possível apagar</string>

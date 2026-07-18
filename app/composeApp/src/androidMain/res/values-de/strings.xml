@@ -226,6 +226,7 @@
     <string name="karaoke_takes_title">Gespeicherte Aufnahmen</string>
     <string name="karaoke_take_play">Abspielen</string>
     <string name="karaoke_take_stop">Stopp</string>
+    <string name="karaoke_review_replay">Anhören</string>
     <string name="karaoke_take_delete">Aufnahme löschen</string>
     <string name="karaoke_take_deleted">Aufnahme gelöscht</string>
     <string name="karaoke_take_delete_failed">Löschen fehlgeschlagen</string>

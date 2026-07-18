@@ -226,6 +226,7 @@
     <string name="karaoke_takes_title">Spremljene snimke</string>
     <string name="karaoke_take_play">Reproduciraj</string>
     <string name="karaoke_take_stop">Zaustavi</string>
+    <string name="karaoke_review_replay">Poslušaj</string>
     <string name="karaoke_take_delete">Obriši snimku</string>
     <string name="karaoke_take_deleted">Snimka obrisana</string>
     <string name="karaoke_take_delete_failed">Brisanje nije uspjelo</string>

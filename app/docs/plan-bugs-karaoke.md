@@ -469,9 +469,50 @@ o por `DocumentFile` según corresponda.
 **21** trajo de propina un fallo al arreglarlo: limpiar los temporales al entrar a la pantalla
 borraría el de una toma en estado `Review`, que todavía no se ha guardado. La limpieza solo corre si
 el estado es `Idle`.
-4. **Revisión sin mezclar archivos:** al parar, la canción vuelve a `trackOffsetMs` (la posición en
-   que arrancó la toma) y un `MediaPlayer` reproduce la voz encima. Dos reproductores arrancados a la
-   vez, coste cero. Oírse a capela no permite juzgar nada.
+
+### Ronda 5 — primera prueba en móvil real
+
+Primera vez que la Fase F y el rediseño U1 se ejecutan en un dispositivo, no en el emulador.
+**La grabación en sí funcionó a la primera.**
+
+| #  | Bug                                                                                              | Severidad | Estado   |
+| -- | ------------------------------------------------------------------------------------------------ | --------- | -------- |
+| 22 | Al parar de grabar, la canción se rebobinaba y arrancaba sola, tapando la toma que se quería oír | **Alta**  | ✅ Fijado |
+| 23 | Tocar la carátula del reproductor expandido reproducía otra canción                              | **Alta**  | ✅ Fijado |
+| 24 | Los sliders respondían al toque pero no dejaban arrastrar (introducido al arreglar el 23)        | **Alta**  | ✅ Fijado |
+
+**22** no era un fallo de cálculo del offset: era la revisión funcionando como se diseñó. Al parar se
+hacía `seekTo(session.trackOffsetMs)` y se forzaba a reproducir (esto último era el arreglo del bug
+20), con la voz encima. Si la toma arrancó al principio de la canción, `trackOffsetMs` ≈ 0 y el
+rebobinado se lee como "se ha reiniciado sola".
+
+La premisa "oírse a capela no permite juzgar nada" era falsa en la práctica: la canción tapa la voz,
+y sin auriculares la toma **ya lleva la canción colada por el micro**, así que superponerla la duplica
+desfasada. Ahora la canción se pausa donde esté y suena solo la voz — igual que `KaraokeTakesSheet`,
+que ya lo hacía así. Incoherencia que este bug destapó.
+
+Se añadió además un botón **Escuchar / Detener** en la revisión: la toma sonaba una sola vez y luego
+solo quedaban Guardar y Descartar. Decidir tras una única escucha no es decidir.
+
+`trackOffsetMs` se conserva aunque ya no se use para reproducir: es el desfase necesario para la
+exportación mezclada.
+
+**23** es el más instructivo. El overlay expandido es un `Box` sobre la biblioteca, y **Compose no
+bloquea los toques por dibujarse encima**: hace hit-testing en todo lo que se solape. La carátula no
+tiene `onClick`, así que el toque llegaba al `TrackRow` que hubiera en esa coordenada. No era
+aleatorio — era la canción que estaba justo debajo del dedo. Se perdió en el rediseño U1; señal de
+ello: `pointerInput` y `detectTapGestures` quedaron importados y sin usar en el fichero.
+
+**24** fue el primer intento de arreglar el 23: consumir en el root todos los eventos que ningún hijo
+usara. Demasiado bruto — se comía también los desplazamientos que un slider necesita para pasar el
+umbral de arrastre, así que respondían al toque suelto pero no dejaban deslizar. El arreglo bueno es
+`clickable(indication = null)`, que reclama **solo pulsaciones** y deja pasar el movimiento.
+
+Contrapartida asumida: un arrastre que empiece en zona muerta del overlay puede llegar a la lista de
+detrás y scrollearla. Es invisible y muy preferible a reproducir una canción al azar; bloquearlo
+también es exactamente lo que rompía los sliders.
+4. **Revisión:** suena solo la voz, con la canción pausada. Ver Ronda 5 (bug 22) — el diseño original
+   (canción rebobinada + voz encima) resultó inservible en el móvil.
 5. Estado `Idle` / `Recording` / `Review` en `PlayerViewModel`. La toma en revisión **existe en disco
    pero no está guardada**: descartar la borra.
 6. **Auriculares recomendados, nunca obligatorios.** Se puede grabar con o sin ellos. El aviso va

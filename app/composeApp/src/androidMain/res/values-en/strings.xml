@@ -223,6 +223,7 @@
     <string name="karaoke_takes_title">Saved takes</string>
     <string name="karaoke_take_play">Play</string>
     <string name="karaoke_take_stop">Stop</string>
+    <string name="karaoke_review_replay">Listen</string>
     <string name="karaoke_take_delete">Delete take</string>
     <string name="karaoke_take_deleted">Take deleted</string>
     <string name="karaoke_take_delete_failed">Could not delete</string>

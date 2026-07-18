@@ -165,6 +165,7 @@
     <string name="karaoke_takes_title">Tomas guardadas</string>
     <string name="karaoke_take_play">Reproducir</string>
     <string name="karaoke_take_stop">Detener</string>
+    <string name="karaoke_review_replay">Escuchar</string>
     <string name="karaoke_take_delete">Borrar toma</string>
     <string name="karaoke_take_deleted">Toma borrada</string>
     <string name="karaoke_take_delete_failed">No se pudo borrar</string>
