@@ -28,7 +28,10 @@ import java.io.File
  */
 class KaraokeRecorder(private val context: Context) {
 
-    /** Toma en curso o terminada, con lo necesario para reproducirla junto a la canción. */
+    /**
+     * Toma en curso o terminada. `file` es el **temporal privado**: la toma no llega a la carpeta
+     * pública del usuario hasta que pulsa Guardar (ver `KaraokeRecordings.publish`).
+     */
     data class Session(
         val file: File,
         val trackId: Long,
@@ -52,7 +55,7 @@ class KaraokeRecorder(private val context: Context) {
         if (isRecording) return current
 
         val startedAt = System.currentTimeMillis()
-        val file = KaraokeRecordings.newFile(context, trackId, startedAt)
+        val file = KaraokeRecordings.newTempFile(context, startedAt)
 
         val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             MediaRecorder(context)
@@ -120,10 +123,10 @@ class KaraokeRecorder(private val context: Context) {
         return session
     }
 
-    /** Cancela la toma en curso y borra el archivo. Para salir del modo sin dejar basura. */
+    /** Cancela la toma en curso y borra el temporal. Para salir del modo sin dejar basura. */
     fun cancel() {
         val session = stop()
-        session?.let { KaraokeRecordings.delete(it.file) }
+        session?.file?.let { file -> runCatching { file.delete() } }
     }
 
     companion object {

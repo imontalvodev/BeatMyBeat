@@ -191,7 +191,7 @@ fun ProfileScreen(
                         TextButton(onClick = {
                             deleteRecordingsOpen = false
                             scope.launch {
-                                withContext(Dispatchers.IO) { KaraokeRecordings.deleteAll(context) }
+                                withContext(Dispatchers.IO) { KaraokeRecordings.deleteAllSaved(context) }
                                 recordingsBytes = withContext(Dispatchers.IO) {
                                     KaraokeRecordings.totalBytes(context)
                                 }

@@ -1,77 +1,158 @@
 package com.imontalvodev.beatmybeat.ui.feature.player
 
+import android.content.ContentUris
 import android.content.Context
+import android.provider.MediaStore
 import com.imontalvodev.beatmybeat.core.Logger
+import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import java.io.File
 import java.util.Locale
+import java.util.regex.Pattern
 
 /**
- * Almacén de grabaciones de karaoke (Fase F).
+ * Grabaciones de karaoke (Fase F).
  *
- * Política de espacio acordada:
+ * **Dónde viven:** una toma se graba primero en caché privada (`MediaRecorder` necesita una ruta de
+ * archivo real) y **solo se publica en la carpeta pública del usuario al pulsar Guardar**, con
+ * [StorageSettings]. Descartar borra el temporal, así que una toma descartada nunca llega a
+ * ensuciar la carpeta de música.
  *
- * - **Voz sola**, mono AAC a 64 kbps: ~1,6 MB por toma de 3:30. Una canción descargada ocupa
- *   entre 3,5 y 7 MB, así que una grabación cuesta menos de la mitad que una canción.
- * - **Nada se guarda solo.** Al parar se escucha y se decide guardar o descartar; las tomas
- *   descartadas no llegan a ocupar. Es la palanca de espacio que más ahorra, y es gratis.
- * - Se guarda en almacenamiento **privado** de la app (`getExternalFilesDir`), así desinstalar
- *   limpia. Exportar a la carpeta pública es una acción explícita aparte.
- * - La mezcla voz+pista **no se persiste**: se generaría solo al exportar.
+ * **Cómo se llaman:** `REC-AAAA-MM-DD-HH-MM-SS.m4a`. El nombre no lleva el id de la canción —
+ * consecuencia de usar este formato — así que no se puede agrupar por pista a partir del nombre.
+ *
+ * **Por qué el prefijo importa:** al estar en la carpeta pública, el MediaScanner las indexa y
+ * aparecerían en la biblioteca mezcladas con la música. [isRecordingFileName] es el filtro que lo
+ * evita, y se aplica tanto al escanear (`MediaStoreScanner`) como al listar la carpeta
+ * personalizada (`StorageSettings`).
+ *
+ * **Espacio:** AAC mono 64 kbps, ~1,6 MB por toma de 3:30 — menos de la mitad que una canción
+ * descargada. La palanca real no es el bitrate sino que nada se guarda solo.
  */
 object KaraokeRecordings {
 
-    private const val DIR_NAME = "karaoke"
     private const val EXTENSION = "m4a"
     private const val LOG_TAG = "KaraokeRecordings"
+    private const val TEMP_DIR = "karaoke_tmp"
+
+    /** `REC-` + fecha y hora. El guion final del prefijo evita chocar con "RECuerdos.mp3". */
+    const val PREFIX = "REC-"
 
     /** Bitrate y canales de la grabación. Mono basta: un micro y un cantante. */
     const val BITRATE_BPS = 64_000
     const val CHANNELS = 1
     const val SAMPLE_RATE_HZ = 44_100
 
-    fun directory(context: Context): File =
-        File(context.getExternalFilesDir(null), DIR_NAME).apply { mkdirs() }
+    private val NAME_PATTERN: Pattern =
+        Pattern.compile("^REC-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}\\.[A-Za-z0-9]+$")
 
     /**
-     * Nombre de archivo para una toma. Lleva el id de la pista para poder listarlas por canción,
-     * y el instante para ordenarlas y no colisionar entre tomas de la misma canción.
+     * Nombre de una toma: `REC-AAAA-MM-DD-HH-MM-SS.m4a`, en hora local — es la que el usuario
+     * reconoce al ver el archivo en su carpeta.
      */
-    fun fileNameFor(trackId: Long, startedAtMs: Long): String = "track${trackId}_$startedAtMs.$EXTENSION"
-
-    /** Id de pista codificado en el nombre, o `null` si el nombre no sigue el formato. */
-    fun trackIdFromFileName(name: String): Long? {
-        if (!name.startsWith("track") || !name.endsWith(".$EXTENSION")) return null
-        return name.removePrefix("track").substringBefore('_').toLongOrNull()
+    fun fileNameFor(startedAtMs: Long): String {
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd-HH-mm-ss", Locale.US)
+            .format(java.util.Date(startedAtMs))
+        return "$PREFIX$stamp.$EXTENSION"
     }
 
-    /** Instante de grabación codificado en el nombre, o `null` si no sigue el formato. */
-    fun startedAtFromFileName(name: String): Long? {
-        if (!name.startsWith("track") || !name.endsWith(".$EXTENSION")) return null
-        return name.substringAfter('_', "").removeSuffix(".$EXTENSION").toLongOrNull()
+    /**
+     * ¿Es este archivo una grabación de karaoke nuestra?
+     *
+     * Se exige el formato completo de fecha y no solo el prefijo: un archivo del usuario llamado
+     * `REC-ensayo.m4a` debe seguir apareciendo en su biblioteca. Filtrar de más es peor que
+     * filtrar de menos — esconderle música propia es un fallo silencioso.
+     */
+    fun isRecordingFileName(displayName: String): Boolean =
+        NAME_PATTERN.matcher(displayName.trim()).matches()
+
+    /** Carpeta temporal privada donde graba `MediaRecorder` antes de publicar. */
+    private fun tempDirectory(context: Context): File =
+        File(context.cacheDir, TEMP_DIR).apply { mkdirs() }
+
+    fun newTempFile(context: Context, startedAtMs: Long): File =
+        File(tempDirectory(context), fileNameFor(startedAtMs))
+
+    /** Borra temporales huérfanos (app matada a media grabación). */
+    fun clearTemp(context: Context) {
+        tempDirectory(context).listFiles()?.forEach { runCatching { it.delete() } }
     }
 
-    fun newFile(context: Context, trackId: Long, startedAtMs: Long): File =
-        File(directory(context), fileNameFor(trackId, startedAtMs))
+    /**
+     * Publica una toma en la carpeta pública del usuario. Devuelve `true` si se guardó.
+     *
+     * No se pasan `title`/`artist`: la toma no es música de nadie, y rellenar esos campos la haría
+     * parecer una canción más en cualquier reproductor.
+     */
+    fun publish(context: Context, tempFile: File): Boolean {
+        if (!tempFile.exists() || tempFile.length() <= 0L) return false
+        val saved = runCatching {
+            StorageSettings.saveAudioFromFile(
+                context = context,
+                source = tempFile,
+                displayName = tempFile.name,
+            )
+        }.onFailure { Logger.e(LOG_TAG, "No se pudo publicar la grabación ${tempFile.name}", it) }
+            .getOrNull()
+        runCatching { tempFile.delete() }
+        return saved != null
+    }
 
-    /** Todas las tomas guardadas, de más reciente a más antigua. */
-    fun listAll(context: Context): List<File> =
-        directory(context).listFiles()
-            ?.filter { it.isFile && it.extension == EXTENSION }
-            ?.sortedByDescending { startedAtFromFileName(it.name) ?: it.lastModified() }
-            .orEmpty()
+    /** Una grabación guardada, ya en la carpeta del usuario. */
+    data class Saved(val id: Long, val displayName: String, val sizeBytes: Long)
 
-    /** Tomas de una canción concreta, de más reciente a más antigua. */
-    fun listForTrack(context: Context, trackId: Long): List<File> =
-        listAll(context).filter { trackIdFromFileName(it.name) == trackId }
+    /**
+     * Grabaciones guardadas, vía MediaStore. Se consulta por prefijo y luego se valida el nombre
+     * completo con [isRecordingFileName], porque `LIKE 'REC-%'` también casaría `REC-ensayo.m4a`.
+     */
+    fun listSaved(context: Context): List<Saved> {
+        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.SIZE,
+        )
+        return runCatching {
+            context.contentResolver.query(
+                collection,
+                projection,
+                "${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ?",
+                arrayOf("$PREFIX%"),
+                "${MediaStore.Audio.Media.DATE_ADDED} DESC",
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+                buildList {
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(nameCol).orEmpty()
+                        if (!isRecordingFileName(name)) continue
+                        add(
+                            Saved(
+                                id = cursor.getLong(idCol),
+                                displayName = name,
+                                sizeBytes = cursor.getLong(sizeCol),
+                            ),
+                        )
+                    }
+                }
+            }.orEmpty()
+        }.onFailure { Logger.e(LOG_TAG, "No se pudieron listar las grabaciones", it) }
+            .getOrDefault(emptyList())
+    }
 
-    /** Bytes ocupados por todas las grabaciones. Para mostrarlo en Perfil. */
-    fun totalBytes(context: Context): Long = listAll(context).sumOf { it.length() }
+    fun totalBytes(context: Context): Long = listSaved(context).sumOf { it.sizeBytes }
 
-    fun delete(file: File): Boolean = runCatching { file.delete() }
-        .onFailure { Logger.e(LOG_TAG, "No se pudo borrar la grabación ${file.name}", it) }
-        .getOrDefault(false)
-
-    fun deleteAll(context: Context): Int = listAll(context).count { delete(it) }
+    /** Borra todas las grabaciones guardadas. Devuelve cuántas se borraron. */
+    fun deleteAllSaved(context: Context): Int = listSaved(context).count { saved ->
+        runCatching {
+            val uri = ContentUris.withAppendedId(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                saved.id,
+            )
+            context.contentResolver.delete(uri, null, null) > 0
+        }.onFailure { Logger.e(LOG_TAG, "No se pudo borrar ${saved.displayName}", it) }
+            .getOrDefault(false)
+    }
 }
 
 /**

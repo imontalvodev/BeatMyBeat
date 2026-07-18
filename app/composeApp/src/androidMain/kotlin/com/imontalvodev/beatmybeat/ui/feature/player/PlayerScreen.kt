@@ -935,15 +935,29 @@ fun PlayerScreen(
 
     fun saveKaraokeRecording() {
         releaseReviewPlayer()
+        val state = karaokeRecording
         viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
-        showToast(resources.getString(R.string.karaoke_record_saved))
+        if (state !is PlayerViewModel.KaraokeRecordingState.Review) return
+        // Publicar es E/S: fuera del hilo principal. Solo aquí la toma sale del temporal privado
+        // y entra en la carpeta del usuario.
+        uiScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                KaraokeRecordings.publish(context, state.session.file)
+            }
+            showToast(
+                resources.getString(
+                    if (ok) R.string.karaoke_record_saved else R.string.karaoke_record_failed,
+                ),
+            )
+        }
     }
 
     fun discardKaraokeRecording() {
         releaseReviewPlayer()
         val state = karaokeRecording
         if (state is PlayerViewModel.KaraokeRecordingState.Review) {
-            KaraokeRecordings.delete(state.session.file)
+            // Solo se borra el temporal: nunca llegó a la carpeta del usuario.
+            runCatching { state.session.file.delete() }
         }
         viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
         showToast(resources.getString(R.string.karaoke_record_discarded))

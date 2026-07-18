@@ -412,8 +412,26 @@ comprimir nada.
    `VOICE_COMMUNICATION` — este último aplica el cancelador de eco del sistema, pensado para llamadas
    (mono de banda reducida, AGC agresivo), y para cantar suena mal. El eco se evita pidiendo
    auriculares, no degradando la voz.
-3. `KaraokeRecordings`: almacén en `getExternalFilesDir` (privado, se limpia al desinstalar), nombres
-   `track<id>_<instante>.m4a` para listar por canción, y contabilidad de tamaño.
+3. `KaraokeRecordings`: la toma se graba en **caché privada** (`MediaRecorder` necesita una ruta de
+   archivo real) y **solo se publica en la carpeta pública del usuario al pulsar Guardar**, vía
+   `StorageSettings` — la misma que usan las descargas. Descartar borra el temporal, así que una toma
+   descartada nunca llega a ensuciar la carpeta de música. Nombre: `REC-AAAA-MM-DD-HH-MM-SS.m4a`.
+
+   **Contrapartida asumida:** al vivir en la carpeta pública, las grabaciones **ya no se borran al
+   desinstalar** — pasan a ser archivos del usuario, visibles y compartibles desde cualquier
+   explorador. Es lo que se quería a cambio de poder sacarlas del teléfono sin cable.
+
+3b. **Filtro de biblioteca.** Al estar en la carpeta pública, el MediaScanner las indexa y saldrían
+   mezcladas con la música. `isRecordingFileName` se aplica en las **cuatro** rutas de escaneo de
+   `MediaStoreScanner` (colección de audio, colección de archivos, música privada de la app y
+   almacenamiento personalizado). Exige el patrón completo de fecha y no solo el prefijo: un
+   `REC-ensayo.m4a` del usuario debe seguir apareciendo en su biblioteca. **Filtrar de más es peor
+   que filtrar de menos** — esconderle música propia es un fallo silencioso y difícil de
+   diagnosticar. La consulta a MediaStore usa `LIKE 'REC-%'` por eficiencia y luego revalida el
+   nombre completo.
+
+   Sin id de canción en el nombre no se puede agrupar las tomas por pista; es consecuencia directa
+   del formato elegido.
 4. **Revisión sin mezclar archivos:** al parar, la canción vuelve a `trackOffsetMs` (la posición en
    que arrancó la toma) y un `MediaPlayer` reproduce la voz encima. Dos reproductores arrancados a la
    vez, coste cero. Oírse a capela no permite juzgar nada.
@@ -424,8 +442,10 @@ comprimir nada.
    es una barrera, no una recomendación. El estado se sigue con `AudioDeviceCallback`
    (`rememberHeadphonesConnected`) en vez de sondear, así que al enchufar los auriculares el aviso
    desaparece solo.
-7. En Perfil: espacio ocupado por las grabaciones y borrado con confirmación. Sin esto, la única
-   forma de recuperar el espacio sería desinstalar.
+7. En Perfil: espacio ocupado y borrado con confirmación, listando por MediaStore
+   (`listSaved`/`deleteAllSaved`). Ahora que los archivos son del usuario, esto deja de ser la única
+   vía para recuperar espacio — también puede borrarlos desde su explorador — pero sigue siendo la
+   cómoda.
 
 **Tests:** `ui/feature/player/KaraokeRecordingsTest.kt` (5) — codificación y lectura del nombre,
 archivos ajenos ignorados, presupuesto de tamaño por toma (falla si alguien sube el bitrate sin

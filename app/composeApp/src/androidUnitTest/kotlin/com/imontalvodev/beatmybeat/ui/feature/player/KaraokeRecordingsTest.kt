@@ -1,33 +1,53 @@
 package com.imontalvodev.beatmybeat.ui.feature.player
 
+import java.util.Calendar
 import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class KaraokeRecordingsTest {
 
     @Test
-    fun `el nombre codifica pista e instante`() {
-        val name = KaraokeRecordings.fileNameFor(trackId = 42L, startedAtMs = 1_700_000_000_000L)
-        assertEquals("track42_1700000000000.m4a", name)
+    fun `el nombre es REC mas fecha y hora`() {
+        // Hora local: es la que el usuario reconoce al ver el archivo en su carpeta.
+        val cal = Calendar.getInstance().apply {
+            set(2026, Calendar.JULY, 18, 11, 9, 57)
+            set(Calendar.MILLISECOND, 0)
+        }
+        assertEquals("REC-2026-07-18-11-09-57.m4a", KaraokeRecordings.fileNameFor(cal.timeInMillis))
     }
 
     @Test
-    fun `el nombre se puede volver a leer`() {
-        val name = KaraokeRecordings.fileNameFor(trackId = 42L, startedAtMs = 1_700_000_000_000L)
-        assertEquals(42L, KaraokeRecordings.trackIdFromFileName(name))
-        assertEquals(1_700_000_000_000L, KaraokeRecordings.startedAtFromFileName(name))
+    fun `un nombre generado se reconoce como grabacion`() {
+        val name = KaraokeRecordings.fileNameFor(System.currentTimeMillis())
+        assertTrue(KaraokeRecordings.isRecordingFileName(name))
     }
 
     @Test
-    fun `los archivos ajenos a la carpeta se ignoran`() {
-        // La carpeta es privada de la app, pero nada impide que caiga algo mas ahi.
-        assertNull(KaraokeRecordings.trackIdFromFileName("cancion.m4a"))
-        assertNull(KaraokeRecordings.trackIdFromFileName("track42_123.mp3"))
-        assertNull(KaraokeRecordings.trackIdFromFileName("trackABC_123.m4a"))
-        assertNull(KaraokeRecordings.startedAtFromFileName("track42.m4a"))
+    fun `la musica del usuario no se filtra`() {
+        // Filtrar de mas es peor que filtrar de menos: esconderle musica propia al usuario es un
+        // fallo silencioso y ademas cuesta de diagnosticar.
+        assertFalse(KaraokeRecordings.isRecordingFileName("REC-ensayo.m4a"))
+        assertFalse(KaraokeRecordings.isRecordingFileName("RECuerdos.mp3"))
+        assertFalse(KaraokeRecordings.isRecordingFileName("Rammstein - Du Hast.m4a"))
+        assertFalse(KaraokeRecordings.isRecordingFileName("REC.m4a"))
+        assertFalse(KaraokeRecordings.isRecordingFileName("REC-2026-07-18.m4a"))
+        assertFalse(KaraokeRecordings.isRecordingFileName(""))
+    }
+
+    @Test
+    fun `el prefijo por si solo no basta`() {
+        // La consulta a MediaStore usa LIKE 'REC-%', que casaria estos; por eso el nombre completo
+        // se vuelve a validar despues de la consulta.
+        assertFalse(KaraokeRecordings.isRecordingFileName("REC-mi cancion favorita.m4a"))
+        assertFalse(KaraokeRecordings.isRecordingFileName("REC-2026-07-18-11-09-57"))
+    }
+
+    @Test
+    fun `se reconoce con espacios alrededor`() {
+        assertTrue(KaraokeRecordings.isRecordingFileName("  REC-2026-07-18-11-09-57.m4a  "))
     }
 
     @Test
