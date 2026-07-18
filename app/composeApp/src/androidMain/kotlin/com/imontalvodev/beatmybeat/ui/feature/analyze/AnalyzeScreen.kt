@@ -60,6 +60,9 @@ import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchSource
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSongMetadata
 import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
 import com.imontalvodev.beatmybeat.service.SongDownloadService
+import com.imontalvodev.beatmybeat.ui.theme.AppText
+import com.imontalvodev.beatmybeat.ui.theme.Radius
+import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
@@ -195,7 +198,7 @@ fun AnalyzeScreen(
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(Radius.xl),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                     contentColor = MaterialTheme.colorScheme.onSurface,
@@ -281,7 +284,7 @@ fun AnalyzeScreen(
                             placeholder = { Text(stringResource(R.string.analyze_song_title_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(Radius.md),
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OutlinedTextField(
@@ -290,7 +293,7 @@ fun AnalyzeScreen(
                             placeholder = { Text(stringResource(R.string.analyze_artist_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(Radius.md),
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OutlinedTextField(
@@ -299,7 +302,7 @@ fun AnalyzeScreen(
                             placeholder = { Text(stringResource(R.string.analyze_album_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(Radius.md),
                         )
                     }
 
@@ -600,7 +603,7 @@ fun AnalyzeScreen(
                                                 .clickable(enabled = !downloadingSuggestion) {
                                                     selectedSuggestion = suggestion
                                                 },
-                                            shape = RoundedCornerShape(12.dp),
+                                            shape = RoundedCornerShape(Radius.sm),
                                             colors = CardDefaults.cardColors(
                                                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                                                 contentColor = MaterialTheme.colorScheme.onSurface,
@@ -627,20 +630,20 @@ fun AnalyzeScreen(
                                                             text = suggestion.title.ifBlank {
                                                                 stringResource(R.string.analyze_no_title)
                                                             },
-                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            style = AppText.trackTitle,
                                                             color = MaterialTheme.colorScheme.onSurface,
                                                         )
                                                         Text(
                                                             text = suggestion.artist.ifBlank {
                                                                 stringResource(R.string.analyze_unknown_artist)
                                                             },
-                                                            style = MaterialTheme.typography.bodySmall,
+                                                            style = AppText.trackArtist,
                                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                                         )
                                                         if (suggestion.durationText.isNotBlank()) {
                                                             Text(
                                                                 text = suggestion.durationText,
-                                                                style = MaterialTheme.typography.labelSmall,
+                                                                style = AppText.meta,
                                                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                                                             )
                                                         }
@@ -832,7 +835,7 @@ private fun UrlPreviewSection(
             Column {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = AppText.sectionHeader,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
@@ -861,7 +864,7 @@ private fun UrlPreviewSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(enabled = downloadEnabled) { onDownloadSingle(track) },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(Radius.sm),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                     contentColor = MaterialTheme.colorScheme.onSurface,
@@ -882,13 +885,13 @@ private fun UrlPreviewSection(
                     ) {
                         Text(
                             text = track.title,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = AppText.trackTitle,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                         )
                         Text(
                             text = track.artist,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = AppText.trackArtist,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             maxLines = 1,
                         )
@@ -915,7 +918,7 @@ private fun SearchSourceBadge(source: YouTubeSearchSource) {
     Text(
         text = label,
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(Radius.pill))
             .background(backgroundColor)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         style = MaterialTheme.typography.labelSmall,
@@ -928,8 +931,8 @@ private fun SuggestionThumbnail(url: String, contentDescription: String) {
     val context = LocalContext.current
     val placeholderColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
     val mod = Modifier
-        .size(54.dp)
-        .clip(RoundedCornerShape(10.dp))
+        .size(56.dp)
+        .clip(RoundedCornerShape(Radius.sm))
         .background(placeholderColor)
     if (url.isBlank()) {
         Box(modifier = mod)

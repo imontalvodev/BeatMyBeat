@@ -55,6 +55,11 @@ parezca del mismo sistema.
 | `PlayerMiniBar.kt`         | 2    | Contenedor de la barra + fondo de miniatura    |
 | `ThemeCustomizerScreen.kt` | 1    | Texto blanco fijo                              |
 
+> **Estado tras U2–U5: cerrado.** Los 14 usos están sustituidos por roles de `colorScheme`. El único
+> `Color.White` que queda fuera de `Theme.kt` es el tirador del círculo de tono del personalizador,
+> que es deliberado (ver Fase U5). Se añadieron de paso los 4 del sheet de cola en `PlayerScreen.kt`,
+> que no estaban asignados a ninguna fase.
+
 Todos son del tipo `Color.Black.copy(alpha = 0.35f)` o `Color.White.copy(alpha = 0.12f)`: asumen fondo
 oscuro. `ThemeProfilesStore` guarda ARGB arbitrario elegido por el usuario y solo valida contraste
 mínimo — **un perfil de fondo claro deja estos scrims oscuros encima, con el texto ilegible**. Se corrige
@@ -159,19 +164,39 @@ espacios por delante, títulos en blanco y conservación del orden en `NAME_DESC
 **Riesgo:** medio. Es la pantalla con más estados simultáneos (selección múltiple, descarga en curso,
 menús de overflow, skeletons). **Verificar cada estado, no solo la lista en reposo.**
 
-### Fase U4 — Descargas (prioridad media)
+### Fase U4 — Descargas ✅ Completada
 
-`AnalyzeScreen.kt` (976 líneas) + `DownloadProgressUi.kt`. Aplicar tokens, revisar `PrimaryTabRow`
-(único `TabRow` de la app) y dar a las tarjetas de resultado la misma forma y ritmo que las filas de
-biblioteca de U3. El progreso de descarga ya funciona bien por chunk (Fase B/C) — aquí es solo forma.
+`AnalyzeScreen.kt` + `DownloadProgressUi.kt`.
 
-**Riesgo:** bajo-medio. Depende de U3 para no inventar un segundo estilo de fila.
+1. Filas de resultado de búsqueda y de vista previa de URL alineadas con `TrackRow` de U3: título a
+   `AppText.trackTitle`, artista a `trackArtist`, duración a `meta`. Antes eran `bodyMedium`/`bodySmall`
+   — el mismo contenido con dos estilos distintos según la pantalla.
+2. Cabecera de la vista previa de URL: `titleSmall` → `AppText.sectionHeader`.
+3. Pista en descarga (`DownloadProgressUi`) con la misma jerarquía: es la tercera pantalla donde
+   aparece "título + artista" y ahora las tres coinciden.
+4. Miniatura de sugerencia 54 → 56dp con `Radius.sm`; badge de fuente (YouTube / YT Music) a `pill`,
+   que es la forma que le corresponde a una etiqueta.
+5. Radios `6`/`10`/`12`/`14`/`20`/`28`/`999` → tokens.
 
-### Fase U5 — Perfil y personalizador (prioridad baja)
+**Riesgo:** bajo-medio. Dependía de U3 para no inventar un segundo estilo de fila.
 
-`ProfileScreen.kt` (366) y `ThemeCustomizerScreen.kt` (488). Tokens, y quitar el `Color.White` fijo del
-personalizador — es especialmente irónico ahí. Cuidado: el personalizador **muestra** colores a
-propósito; hay que distinguir "color como dato" (correcto) de "color como estilo" (a tokenizar).
+### Fase U5 — Perfil y personalizador ✅ Completada
+
+`ProfileScreen.kt` y `ThemeCustomizerScreen.kt`.
+
+1. `ProfileOption`: etiqueta a `AppText.trackTitle`, subtítulo a `trackArtist`. Son filas de lista, así
+   que usan los mismos roles que las filas de canción — la coherencia es entre *formas*, no entre
+   contenidos.
+2. Cabeceras del personalizador (`titleMedium`, `titleSmall`) → `AppText.sectionHeader`.
+3. Radios `16`/`999` → `Radius.md` / `Radius.pill`.
+
+**El `Color.White` del personalizador se queda, a propósito.** No es estilo: es el tirador del círculo
+de tono, dibujado sobre un anillo de arcoíris a pantalla completa. Ahí el blanco es legible sobre
+cualquier matiz y no depende del tema de la app — es el caso "color como dato" que este plan
+distingue del "color como estilo". Tokenizarlo lo haría desaparecer sobre los amarillos.
+
+El swatch de color conserva su `RoundedCornerShape(4.dp)`: es una muestra de 24dp, y `Radius.sm` (12dp)
+la convertiría casi en un círculo. No se inventó un token para un caso único.
 
 **Riesgo:** bajo.
 
@@ -205,8 +230,8 @@ UI (no hay Robolectric en el proyecto) es justo el tipo de cambio que rompe algo
 | U1   | Reproductor expandido (piloto)         | Media       | U0         | ✅ Completada |
 | U2   | Mini reproductor                       | Baja        | U0         | ✅ Completada |
 | U3   | Biblioteca + scroll A–Z                | Media-Alta  | U0, U2     | ✅ Completada |
-| U4   | Descargas                              | Media       | U3         | Pendiente    |
-| U5   | Perfil + personalizador                | Baja        | U0         | Pendiente    |
+| U4   | Descargas                              | Media       | U3         | ✅ Completada |
+| U5   | Perfil + personalizador                | Baja        | U0         | ✅ Completada |
 | U6   | Movimiento y skeletons                 | Baja        | U2–U5      | Pendiente    |
 
 ---

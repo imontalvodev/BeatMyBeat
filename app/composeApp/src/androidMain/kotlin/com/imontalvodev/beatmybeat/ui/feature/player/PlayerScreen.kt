@@ -137,6 +137,7 @@ import androidx.palette.graphics.Palette
 import coil.compose.AsyncImage
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
+import com.imontalvodev.beatmybeat.ui.network.isLyricsNetworkFailure
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetchCoordinator
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
@@ -144,6 +145,7 @@ import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
+import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -827,9 +829,14 @@ fun PlayerScreen(
                             syncedLrc = res.syncedLrc,
                         )
                     } else {
-                        lyricsState = LyricsUiState.Empty(
-                            resources.getString(R.string.player_lyrics_unavailable),
-                        )
+                        // Un fallo de red no es lo mismo que "esta canción no tiene letra":
+                        // en el primer caso reintentar sirve de algo, en el segundo no.
+                        val message = if (isLyricsNetworkFailure(res.error)) {
+                            R.string.player_lyrics_network_error
+                        } else {
+                            R.string.player_lyrics_unavailable
+                        }
+                        lyricsState = LyricsUiState.Empty(resources.getString(message))
                     }
                 }
             } finally {
@@ -2219,7 +2226,7 @@ fun PlayerScreen(
                                     Box(
                                         modifier = Modifier
                                             .size(36.dp)
-                                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(Radius.sm)),
                                     ) {
                                         ArtworkThumbnail(track = currentTrack!!, sizeDp = 36)
                                     }
@@ -2276,7 +2283,7 @@ fun PlayerScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(12.dp),
                                         colors = CardDefaults.cardColors(
-                                            containerColor = Color.Black.copy(alpha = 0.28f),
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                         ),
                                     ) {
                                         Row(
@@ -2295,7 +2302,7 @@ fun PlayerScreen(
                                             Box(
                                                 modifier = Modifier
                                                     .size(34.dp)
-                                                    .background(Color.White.copy(alpha = 0.10f), RoundedCornerShape(7.dp)),
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(Radius.sm)),
                                             ) {
                                                 ArtworkThumbnail(track = t, sizeDp = 34)
                                             }
@@ -2406,7 +2413,7 @@ fun PlayerScreen(
                                             containerColor = if (selected) {
                                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                                             } else {
-                                                Color.Black.copy(alpha = 0.25f)
+                                                MaterialTheme.colorScheme.surfaceContainer
                                             },
                                         ),
                                     ) {

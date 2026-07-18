@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.beatmybeat.R
+import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -333,14 +334,14 @@ private fun ProfileOption(
         headlineContent = {
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                style = AppText.trackTitle,
             )
         },
         supportingContent = subtitle?.let { sub ->
             {
                 Text(
                     text = sub,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = AppText.trackArtist,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

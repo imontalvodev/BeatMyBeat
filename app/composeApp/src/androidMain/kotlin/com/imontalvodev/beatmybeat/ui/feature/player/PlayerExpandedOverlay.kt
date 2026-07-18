@@ -404,6 +404,26 @@ internal fun ExpandedPlayerOverlay(
                     }
                 }
                 Spacer(Modifier.weight(1f))
+                // Las acciones de letra viven aquí y no bajo el título: ocupaban una fila entera
+                // en mitad de la pantalla y dejaban a la letra con sitio para una sola frase.
+                if (canRefreshLyrics && !karaokeActive) {
+                    IconButton(onClick = onRefreshLyrics) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = stringResource(R.string.player_lyrics_refresh_cd),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        )
+                    }
+                }
+                if (canDeleteLyrics && !karaokeActive) {
+                    IconButton(onClick = onDeleteLyrics) {
+                        Icon(
+                            imageVector = Icons.Filled.DeleteOutline,
+                            contentDescription = stringResource(R.string.player_lyrics_delete_cd),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        )
+                    }
+                }
                 IconButton(onClick = onClose) {
                     Icon(
                         imageVector = Icons.Filled.KeyboardArrowDown,
@@ -424,13 +444,17 @@ internal fun ExpandedPlayerOverlay(
                 // karaoke — no hace falta el truco del peso mínimo.
                 AnimatedVisibility(
                     visible = !karaokeActive,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                     enter = fadeIn(tween(220)) + expandVertically(tween(320)),
                     exit = fadeOut(tween(160)) + shrinkVertically(tween(320)),
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Spacing.lg, vertical = Spacing.sm)
+                            // 0.74 del ancho, no el ancho entero: a pantalla completa la portada
+                            // cuadrada se comía más de la mitad del alto y a la letra le quedaba
+                            // sitio para una frase.
+                            .fillMaxWidth(0.74f)
+                            .padding(vertical = Spacing.sm)
                             .aspectRatio(1f)
                             .shadow(
                                 elevation = 24.dp,
@@ -476,43 +500,6 @@ internal fun ExpandedPlayerOverlay(
 
                 Spacer(modifier = Modifier.height(Spacing.md))
 
-                if ((canRefreshLyrics || canDeleteLyrics) && !karaokeActive) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (canRefreshLyrics) {
-                            TextButton(onClick = onRefreshLyrics) {
-                                Icon(
-                                    imageVector = Icons.Filled.Refresh,
-                                    contentDescription = stringResource(R.string.player_lyrics_refresh_cd),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = stringResource(R.string.player_lyrics_refresh),
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
-                        }
-                        if (canDeleteLyrics) {
-                            TextButton(onClick = onDeleteLyrics) {
-                                Icon(
-                                    imageVector = Icons.Filled.DeleteOutline,
-                                    contentDescription = stringResource(R.string.player_lyrics_delete_cd),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = stringResource(R.string.player_lyrics_delete),
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
-                        }
-                    }
-                }
-
                 // La letra vive en la misma capa que el resto: antes era una segunda tarjeta
                 // oscura compitiendo con la de la carátula. El fondo (blur + gradiente) ya da
                 // contraste suficiente para leerla.
@@ -520,6 +507,9 @@ internal fun ExpandedPlayerOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = true)
+                        // Suelo: por debajo de esto no caben ni la frase actual ni la siguiente,
+                        // que es justo lo que se quiere ver al arrancar la canción.
+                        .heightIn(min = 108.dp)
                         .clip(RoundedCornerShape(Radius.lg))
                         .clickable(
                             enabled = canRefreshLyrics &&
@@ -531,22 +521,23 @@ internal fun ExpandedPlayerOverlay(
                     when {
                         hasSyncedLyrics -> {
                             Column(modifier = Modifier.fillMaxSize()) {
-                                val modeLabel = when {
-                                    karaokeActive && hasWordTimings ->
-                                        stringResource(R.string.player_karaoke_mode)
-                                    karaokeActive ->
-                                        stringResource(R.string.player_karaoke_mode_line_sync)
-                                    else -> stringResource(R.string.player_lyrics_synced_mode)
+                                // La etiqueta de modo solo se muestra en karaoke. En escucha
+                                // normal decía "Letra sincronizada", que es evidente al verla
+                                // avanzar, y gastaba una fila que le hace falta a la letra.
+                                if (karaokeActive) {
+                                    Text(
+                                        text = stringResource(
+                                            if (hasWordTimings) R.string.player_karaoke_mode
+                                            else R.string.player_karaoke_mode_line_sync,
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = Spacing.sm),
+                                        style = AppText.meta,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                        textAlign = TextAlign.Center,
+                                    )
                                 }
-                                Text(
-                                    text = modeLabel,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = Spacing.sm),
-                                    style = AppText.meta,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-                                    textAlign = TextAlign.Center,
-                                )
                                 SyncedLyricsView(
                                     lines = syncedLines,
                                     positionMs = lyricsPositionMs,

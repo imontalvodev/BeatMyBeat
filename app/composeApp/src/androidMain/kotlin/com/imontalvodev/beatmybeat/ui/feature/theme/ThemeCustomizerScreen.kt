@@ -47,6 +47,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.imontalvodev.beatmybeat.R
+import com.imontalvodev.beatmybeat.ui.theme.AppText
+import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
@@ -146,14 +148,14 @@ fun ThemeCustomizerScreen(
             )
 
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(Radius.md),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
             ) {
                 Column(
                     modifier = Modifier.padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(stringResource(R.string.theme_saved_profiles), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.theme_saved_profiles), style = AppText.sectionHeader)
                     profiles.forEach { profile ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -437,7 +439,7 @@ private fun PreviewBlock(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = surface.copy(alpha = 0.9f)),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(Radius.md),
     ) {
         Column(
             modifier = Modifier
@@ -449,7 +451,7 @@ private fun PreviewBlock(
             Text(
                 text = if (section == ThemeCustomizerSection.Background) "Vista previa de fondo" else "Vista previa de texto",
                 color = onSurface,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                style = AppText.sectionHeader,
             )
             Text(
                 text = "Texto principal de ejemplo",
@@ -463,7 +465,7 @@ private fun PreviewBlock(
             )
             Box(
                 modifier = Modifier
-                    .background(primary.copy(alpha = 0.22f), RoundedCornerShape(999.dp))
+                    .background(primary.copy(alpha = 0.22f), RoundedCornerShape(Radius.pill))
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(stringResource(R.string.theme_accent), color = primary, style = MaterialTheme.typography.labelSmall)
