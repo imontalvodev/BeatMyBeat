@@ -19,10 +19,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.imontalvodev.beatmybeat.ui.theme.Motion
 import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 
@@ -37,21 +42,29 @@ fun SyncedLyricsView(
     modifier: Modifier = Modifier,
     /** Compensación fina audio/letra (ms). Positivo = la letra va un poco antes. */
     syncOffsetMs: Long = 0L,
+    /** Tamaño de la línea activa. Se sube en Modo Karaoke para lectura a distancia. */
+    activeFontSize: TextUnit = 18.sp,
+    /** Tamaño del resto de líneas. */
+    inactiveFontSize: TextUnit = 15.sp,
     onLineClick: ((Long) -> Unit)? = null,
 ) {
     if (lines.isEmpty()) return
 
     val adjustedMs = (positionMs + syncOffsetMs).coerceAtLeast(0L)
+    /** Línea que suena. -1 durante la intro, antes del primer timestamp. */
     val activeIndex = LrcParser.lineAtPosition(lines, adjustedMs)
+    /** Línea sobre la que centrar: en la intro es la primera, para que ya se lea. */
+    val focusIndex = LrcParser.focusLineAtPosition(lines, adjustedMs)
+    /** En intro la primera línea se muestra como "lo que viene", no como si ya sonara. */
+    val isIntro = activeIndex < 0
 
     val listState = rememberLazyListState()
     val primary = MaterialTheme.colorScheme.primary
     val onSurface = MaterialTheme.colorScheme.onSurface
 
-    LaunchedEffect(activeIndex, lines.size) {
-        if (activeIndex < 0) return@LaunchedEffect
-        val target = activeIndex.coerceIn(0, lines.lastIndex)
-        listState.animateScrollToItem(target)
+    LaunchedEffect(focusIndex, lines.size) {
+        if (focusIndex < 0) return@LaunchedEffect
+        listState.animateScrollToItem(focusIndex.coerceIn(0, lines.lastIndex))
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -73,18 +86,28 @@ fun SyncedLyricsView(
                 key = { index, line -> "${index}_${line.startMs}_${line.text.hashCode()}" },
             ) { index, line ->
                 val isActive = index == activeIndex
+                // Durante la intro, la primera línea se destaca como "próxima": mismo tamaño que
+                // la activa para que se lea de lejos, pero atenuada y sin negrita, porque todavía
+                // no se está cantando.
+                val isUpcoming = isIntro && index == focusIndex
                 val isPast = activeIndex >= 0 && index < activeIndex
                 val color by animateColorAsState(
                     targetValue = when {
                         isActive -> primary
+                        isUpcoming -> primary.copy(alpha = 0.70f)
                         isPast -> onSurface.copy(alpha = 0.45f)
                         else -> onSurface.copy(alpha = 0.65f)
                     },
-                    animationSpec = tween(durationMillis = 180),
+                    animationSpec = tween(durationMillis = Motion.QUICK),
                     label = "lyric_line_color",
                 )
-                val fontSize = if (isActive) 18.sp else 15.sp
-                val fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
+                val fontSize = if (isActive || isUpcoming) activeFontSize else inactiveFontSize
+                val lineHeight = fontSize * 1.35f
+                val fontWeight = when {
+                    isActive -> FontWeight.Bold
+                    isUpcoming -> FontWeight.SemiBold
+                    else -> FontWeight.Normal
+                }
 
                 Box(
                     modifier = Modifier
@@ -99,17 +122,44 @@ fun SyncedLyricsView(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = line.text,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = fontSize,
-                            fontWeight = fontWeight,
-                            lineHeight = 22.sp,
-                        ),
-                        color = color,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (isActive && line.words.isNotEmpty()) {
+                        // Solo se resalta palabra a palabra cuando la fuente trae timestamps
+                        // reales; ver LrcLine.words. Sin eso no hay forma de saber qué se está
+                        // cantando en cada instante sin adivinar (y adivinar se desincroniza).
+                        val highlightLen = LrcParser.karaokeHighlightLength(line, adjustedMs)
+                        val sungColor = primary
+                        val upcomingColor = primary.copy(alpha = 0.45f)
+                        val annotated = buildAnnotatedString {
+                            withStyle(SpanStyle(color = sungColor)) {
+                                append(line.text.substring(0, highlightLen))
+                            }
+                            withStyle(SpanStyle(color = upcomingColor)) {
+                                append(line.text.substring(highlightLen))
+                            }
+                        }
+                        Text(
+                            text = annotated,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = fontSize,
+                                fontWeight = fontWeight,
+                                lineHeight = lineHeight,
+                            ),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Text(
+                            text = line.text,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = fontSize,
+                                fontWeight = fontWeight,
+                                lineHeight = lineHeight,
+                            ),
+                            color = color,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }

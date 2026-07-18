@@ -2,6 +2,11 @@ package com.imontalvodev.beatmybeat.ui.network
 
 import android.os.SystemClock
 import com.imontalvodev.beatmybeat.core.Logger
+import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -70,6 +75,23 @@ object LrcLibApi {
 
         val deadline = SystemClock.elapsedRealtime() + MAX_FETCH_BUDGET_MS
 
+        return try {
+            searchAllCombinations(titles, artists, album, durationSeconds, deadline)
+        } catch (e: LyricsNetworkUnreachable) {
+            // Falla rapido: antes se seguian probando combinaciones hasta agotar los 20s de
+            // presupuesto, cuando ya se sabia que la red no contestaba.
+            Logger.w(LOG_TAG, "LRCLIB no alcanzable, se aborta la busqueda: ${e.cause?.javaClass?.simpleName}")
+            failure("Unreachable", null)
+        }
+    }
+
+    private fun searchAllCombinations(
+        titles: List<String>,
+        artists: List<String>,
+        album: String,
+        durationSeconds: Int,
+        deadline: Long,
+    ): LyricsResponse {
         for ((titleIndex, title) in titles.withIndex()) {
             for ((artistIndex, artist) in artists.withIndex()) {
                 if (SystemClock.elapsedRealtime() >= deadline) {
@@ -85,7 +107,12 @@ object LrcLibApi {
                     }
                 }
 
-                searchAndFetch(title, artist, durationSeconds)?.let { return it }
+                searchAndFetch(title, artist, durationSeconds, deadline)?.let { return it }
+
+                if (SystemClock.elapsedRealtime() >= deadline) {
+                    Logger.w(LOG_TAG, "fetchLyrics: presupuesto de tiempo agotado, abortando búsqueda")
+                    return failure("Timeout", null)
+                }
 
                 // /api/get es lento: solo una vez con la combinación principal.
                 if (titleIndex == 0 && artistIndex == 0 && durationSeconds > 0) {
@@ -126,6 +153,7 @@ object LrcLibApi {
         trackName: String,
         artistName: String,
         durationSeconds: Int,
+        deadline: Long,
     ): LyricsResponse? {
         if (artistName.isBlank()) return null
 
@@ -139,6 +167,12 @@ object LrcLibApi {
         var bestUrl: String? = null
 
         for (params in attempts) {
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                // Un intento previo (p. ej. un timeout de red) ya agotó el presupuesto: no merece
+                // la pena lanzar otra petición /search igual de lenta, mejor dejar hueco para
+                // /api/get o la siguiente variante de título/artista.
+                break
+            }
             val url = "$BASE_URL/search".toHttpUrl().newBuilder().apply {
                 params.forEach { (key, value) -> addQueryParameter(key, value) }
             }.build()
@@ -251,13 +285,37 @@ object LrcLibApi {
                 .build()
             client.newCall(req).execute().use { res ->
                 val body = res.body?.string().orEmpty()
-                if (!res.isSuccessful) return null
+                if (!res.isSuccessful) {
+                    Logger.w(LOG_TAG, "HTTP ${res.code} for $url")
+                    return null
+                }
                 body.takeIf { it.isNotBlank() }
             }
-        } catch (_: Exception) {
+        } catch (e: IOException) {
+            if (isUnreachable(e)) {
+                // Timeout/DNS/conexion rechazada: la red no responde. No es "esta cancion no
+                // tiene letra" — se propaga para abortar la busqueda entera en vez de gastar el
+                // presupuesto lanzando peticiones que van a fallar igual.
+                Logger.w(LOG_TAG, "red no disponible (${e.javaClass.simpleName}) para $url")
+                throw LyricsNetworkUnreachable(e)
+            }
+            Logger.e(LOG_TAG, "request failed for $url", e)
             null
         }
     }
+
+    /** Se lanza cuando LRCLIB no es alcanzable, para distinguirlo de "no hay resultados". */
+    internal class LyricsNetworkUnreachable(cause: IOException) : IOException(cause)
+
+    /**
+     * Un fallo de red por el que no merece la pena reintentar de inmediato: si la primera
+     * peticion agota su timeout de lectura, las siguientes van a hacer lo mismo.
+     */
+    private fun isUnreachable(e: IOException): Boolean =
+        e is SocketTimeoutException ||
+            e is InterruptedIOException ||
+            e is UnknownHostException ||
+            e is ConnectException
 
     private fun failure(error: String, message: String?): LyricsResponse =
         LyricsResponse(

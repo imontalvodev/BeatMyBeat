@@ -143,6 +143,7 @@ import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
+import com.imontalvodev.beatmybeat.ui.theme.Motion
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -195,7 +196,7 @@ internal fun ArtworkThumbnail(
         val fallback = R.drawable.logo
         Crossfade(
             targetState = imageData,
-            animationSpec = tween(200),
+            animationSpec = tween(Motion.STANDARD),
             label = "row_artwork_cf",
         ) { data ->
             AsyncImage(

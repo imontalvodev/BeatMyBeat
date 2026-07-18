@@ -67,8 +67,8 @@ android {
         applicationId = "com.imontalvodev.beatmybeat"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 6
+        versionName = "1.1"
     }
     buildFeatures {
         buildConfig = true
@@ -84,6 +84,40 @@ android {
         includeInBundle = false
     }
     buildTypes {
+        getByName("debug") {
+            // Debug y release conviven como apps distintas en el mismo dispositivo. Sin esto,
+            // instalar una build de debug sobre la release que se auto-actualizó falla con
+            // INSTALL_FAILED_UPDATE_INCOMPATIBLE (firmas distintas) y hay que desinstalar,
+            // perdiendo los datos de prueba. Con beta testers de por medio, eso pasa a menudo.
+            //
+            // Es seguro: la authority del FileProvider ya es "${applicationId}.fileprovider", y
+            // los intents a los servicios son explícitos (Intent(context, X::class.java)), así que
+            // las constantes de acción compartidas no se cruzan entre las dos instalaciones.
+            //
+            // Efecto secundario buscado: ApkUpdateInstaller rechaza un APK cuyo packageName no
+            // coincide con el propio, así que una build de debug ya no intentará auto-actualizarse
+            // a la release — cosa que de todos modos fallaría por firma.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+
+            // ffmpeg-kit trae libavcodec/libavformat/libavfilter compiladas para las cuatro ABIs:
+            // ~90 MB de los ~136 MB del APK de debug. Al desarrollar solo se usa una, y un APK de
+            // ese tamaño llega a no caber en el emulador
+            // ("Requested internal only, but not enough space").
+            //
+            // Release y F-Droid NO se tocan: ahí las cuatro ABIs son necesarias de verdad.
+            //
+            // Por defecto se dejan la del emulador (x86_64) y la de un móvil real (arm64-v8a).
+            // Para bajar aún más, apuntando solo al emulador:
+            //   ./gradlew installDebug -PdebugAbi=x86_64
+            ndk {
+                val requested = (project.findProperty("debugAbi") as String?)
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                abiFilters += requested ?: listOf("x86_64", "arm64-v8a")
+            }
+        }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true

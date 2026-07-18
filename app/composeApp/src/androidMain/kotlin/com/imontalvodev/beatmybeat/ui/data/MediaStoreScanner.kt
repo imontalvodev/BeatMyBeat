@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
+import com.imontalvodev.beatmybeat.ui.feature.player.KaraokeRecordings
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import java.io.File
 import java.util.Locale
@@ -231,6 +232,9 @@ class MediaStoreScanner(private val context: Context) {
                 val mimeType = cursor.optString(mimeTypeCol).lowercase(Locale.ROOT)
                 val displayName = cursor.optString(displayNameCol)
                 val displayNameLower = displayName.lowercase(Locale.ROOT)
+                // Las grabaciones de karaoke viven en la carpeta pública del usuario, así que el
+                // MediaScanner las indexa: sin esto saldrían en la biblioteca como una canción más.
+                if (KaraokeRecordings.isRecordingFileName(displayName)) continue
                 val absolutePath = cursor.optString(dataCol).lowercase(Locale.ROOT)
                 val relativePath = cursor.optString(relativePathCol).lowercase(Locale.ROOT)
                 val dateAddedSeconds = cursor.optLong(dateAddedCol)
@@ -315,6 +319,7 @@ class MediaStoreScanner(private val context: Context) {
 
                     val displayName = cursor.getString(displayNameCol).orEmpty()
                     val displayNameLower = displayName.lowercase(Locale.ROOT)
+                    if (KaraokeRecordings.isRecordingFileName(displayName)) continue
                     val mimeType = cursor.optString(mimeTypeCol).lowercase(Locale.ROOT)
                     val relativePath = cursor.optString(relativePathCol).lowercase(Locale.ROOT)
                     val absolutePath = cursor.optString(dataCol).lowercase(Locale.ROOT)
@@ -370,6 +375,7 @@ class MediaStoreScanner(private val context: Context) {
             if (!file.isFile) return@forEachIndexed
             val ext = file.extension.lowercase(Locale.ROOT)
             if (ext !in MUSIC_EXTENSIONS) return@forEachIndexed
+            if (KaraokeRecordings.isRecordingFileName(file.name)) return@forEachIndexed
 
             val uriString = file.toURI().toString()
             if (!knownUris.add(uriString)) return@forEachIndexed
@@ -439,6 +445,7 @@ class MediaStoreScanner(private val context: Context) {
         val customDocs = StorageSettings.listCustomAudioDocs(context)
         customDocs.forEachIndexed { index, doc ->
             val docName = doc.name?.lowercase(Locale.ROOT).orEmpty()
+            if (KaraokeRecordings.isRecordingFileName(doc.name.orEmpty())) return@forEachIndexed
             if (docName.isNotBlank() && knownDisplayNames.contains(docName)) return@forEachIndexed
 
             val uriString = doc.uri.toString()

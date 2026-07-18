@@ -14,6 +14,13 @@ data class LyricsCacheEntry(
     val syncedLrc: String? = null,
     val source: String? = null,
     val lrclibId: Long? = null,
+    /**
+     * `true` si LRCLIB llegó a contestar (con letra o con un "no la tengo"). `false` cuando la
+     * entrada se guardó sin haber podido preguntarle — p. ej. letra plana de lyrics.ovh tras un
+     * timeout. Sin esta marca, una caída pasajera de red condenaba a la pista a texto plano para
+     * siempre: la caché respondía y LRCLIB no se volvía a consultar nunca.
+     */
+    val lrclibChecked: Boolean = false,
 ) {
     fun hasAnyLyrics(): Boolean = plain.isNotBlank() || !syncedLrc.isNullOrBlank()
 
@@ -57,8 +64,15 @@ object LyricsCache {
                 val synced = obj.optString("syncedLrc").takeIf { it.isNotBlank() }
                 val source = obj.optString("source").takeIf { it.isNotBlank() }
                 val id = obj.optLong("lrclibId", 0L).takeIf { it > 0L }
-                LyricsCacheEntry(plain = plain, syncedLrc = synced, source = source, lrclibId = id)
-                    .takeIf { it.hasAnyLyrics() }
+                LyricsCacheEntry(
+                    plain = plain,
+                    syncedLrc = synced,
+                    source = source,
+                    lrclibId = id,
+                    // Las entradas antiguas no llevan la marca: se tratan como "no consultado",
+                    // así que se reintenta LRCLIB una vez y a partir de ahí ya queda marcada.
+                    lrclibChecked = obj.optBoolean("lrclibChecked", false),
+                ).takeIf { it.hasAnyLyrics() }
             }.getOrNull()
         }
         val legacy = legacyFileFor(context, title, artist)
@@ -83,6 +97,7 @@ object LyricsCache {
                 entry.syncedLrc?.let { put("syncedLrc", it) }
                 entry.source?.let { put("source", it) }
                 entry.lrclibId?.let { put("lrclibId", it) }
+                put("lrclibChecked", entry.lrclibChecked)
             }
             jsonFile.writeText(obj.toString())
             legacyFileFor(context, title, artist).delete()
@@ -91,7 +106,14 @@ object LyricsCache {
         }
     }
 
-    fun putFromResponse(context: Context, title: String, artist: String, response: LyricsResponse) {
+    fun putFromResponse(
+        context: Context,
+        title: String,
+        artist: String,
+        response: LyricsResponse,
+        /** `true` solo si LRCLIB llegó a responder; ver [LyricsCacheEntry.lrclibChecked]. */
+        lrclibChecked: Boolean = false,
+    ) {
         if (!response.success) return
         putEntry(
             context,
@@ -102,6 +124,7 @@ object LyricsCache {
                 syncedLrc = response.syncedLrc,
                 source = response.source,
                 lrclibId = response.lrclibId,
+                lrclibChecked = lrclibChecked,
             ),
         )
     }
