@@ -85,6 +85,21 @@ android {
     }
     buildTypes {
         getByName("debug") {
+            // Debug y release conviven como apps distintas en el mismo dispositivo. Sin esto,
+            // instalar una build de debug sobre la release que se auto-actualizó falla con
+            // INSTALL_FAILED_UPDATE_INCOMPATIBLE (firmas distintas) y hay que desinstalar,
+            // perdiendo los datos de prueba. Con beta testers de por medio, eso pasa a menudo.
+            //
+            // Es seguro: la authority del FileProvider ya es "${applicationId}.fileprovider", y
+            // los intents a los servicios son explícitos (Intent(context, X::class.java)), así que
+            // las constantes de acción compartidas no se cruzan entre las dos instalaciones.
+            //
+            // Efecto secundario buscado: ApkUpdateInstaller rechaza un APK cuyo packageName no
+            // coincide con el propio, así que una build de debug ya no intentará auto-actualizarse
+            // a la release — cosa que de todos modos fallaría por firma.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+
             // ffmpeg-kit trae libavcodec/libavformat/libavfilter compiladas para las cuatro ABIs:
             // ~90 MB de los ~136 MB del APK de debug. Al desarrollar solo se usa una, y un APK de
             // ese tamaño llega a no caber en el emulador

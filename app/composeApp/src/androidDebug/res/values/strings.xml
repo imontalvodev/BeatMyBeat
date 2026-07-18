@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Nombre distinto en el lanzador para las builds de debug. Con debug y release instaladas a la
+      vez (applicationIdSuffix ".debug"), dos iconos idénticos serían indistinguibles: al reportar
+      un fallo, un beta tester no sabría cuál de las dos estaba usando.
+    -->
+    <string name="app_name">BeatMyBeat Debug</string>
+</resources>
