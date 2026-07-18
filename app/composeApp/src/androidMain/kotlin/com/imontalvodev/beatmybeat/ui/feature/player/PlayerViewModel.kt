@@ -323,6 +323,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _shuffleEnabled.value = enabled
     }
 
+    /**
+     * Modo karaoke del reproductor expandido. Persiste entre canciones dentro de la sesión
+     * (sobrevive a plegar el overlay y a cambios de configuración), pero no se guarda en
+     * preferencias: al reabrir la app se vuelve al modo de escucha normal. La UI lo desactiva
+     * sola si la pista actual no tiene letra sincronizada — ver ExpandedPlayerOverlay.
+     */
+    private val _karaokeMode = MutableStateFlow(false)
+    val karaokeMode: StateFlow<Boolean> = _karaokeMode.asStateFlow()
+
+    fun setKaraokeMode(enabled: Boolean) {
+        _karaokeMode.value = enabled
+    }
+
     // ── Cola de reproducción unificada (JSON) ───────────────────────────────
 
     fun loadPlaybackQueueSnapshot(): PlaybackQueueSnapshot? {

@@ -24,6 +24,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.imontalvodev.beatmybeat.ui.network.LrcLine
@@ -40,6 +41,10 @@ fun SyncedLyricsView(
     modifier: Modifier = Modifier,
     /** Compensación fina audio/letra (ms). Positivo = la letra va un poco antes. */
     syncOffsetMs: Long = 0L,
+    /** Tamaño de la línea activa. Se sube en Modo Karaoke para lectura a distancia. */
+    activeFontSize: TextUnit = 18.sp,
+    /** Tamaño del resto de líneas. */
+    inactiveFontSize: TextUnit = 15.sp,
     onLineClick: ((Long) -> Unit)? = null,
 ) {
     if (lines.isEmpty()) return
@@ -86,7 +91,8 @@ fun SyncedLyricsView(
                     animationSpec = tween(durationMillis = 180),
                     label = "lyric_line_color",
                 )
-                val fontSize = if (isActive) 18.sp else 15.sp
+                val fontSize = if (isActive) activeFontSize else inactiveFontSize
+                val lineHeight = fontSize * 1.35f
                 val fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
 
                 Box(
@@ -122,7 +128,7 @@ fun SyncedLyricsView(
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontSize = fontSize,
                                 fontWeight = fontWeight,
-                                lineHeight = 22.sp,
+                                lineHeight = lineHeight,
                             ),
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
@@ -133,7 +139,7 @@ fun SyncedLyricsView(
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontSize = fontSize,
                                 fontWeight = fontWeight,
-                                lineHeight = 22.sp,
+                                lineHeight = lineHeight,
                             ),
                             color = color,
                             textAlign = TextAlign.Center,

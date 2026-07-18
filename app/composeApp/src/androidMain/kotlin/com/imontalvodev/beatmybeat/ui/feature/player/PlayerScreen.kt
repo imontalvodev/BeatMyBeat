@@ -316,6 +316,7 @@ fun PlayerScreen(
     val playlistListState = rememberLazyListState()
 
     val shuffleOn by viewModel.shuffleEnabled.collectAsState()
+    val karaokeMode by viewModel.karaokeMode.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
     var queueRepeatSnapshot by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
@@ -2073,6 +2074,8 @@ fun PlayerScreen(
                     onDeleteLyrics = {
                         currentTrack?.let { deleteLyricsForTrack(it) }
                     },
+                    karaokeMode = karaokeMode,
+                    onKaraokeModeChange = { viewModel.setKaraokeMode(it) },
                 )
             }
 

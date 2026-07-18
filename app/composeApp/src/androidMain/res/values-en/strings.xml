@@ -254,6 +254,10 @@
     <string name="analyze_url_download_all">DOWNLOAD ALL (%1$d)</string>
     <string name="analyze_url_download_single">DOWNLOAD</string>
     <string name="player_lyrics_synced_mode">Synced lyrics</string>
+    <string name="player_karaoke_mode">Karaoke mode</string>
+    <string name="player_karaoke_mode_line_sync">Karaoke mode · line sync</string>
+    <string name="player_karaoke_enter_cd">Turn on karaoke mode</string>
+    <string name="player_karaoke_exit_cd">Exit karaoke mode</string>
     <string name="player_lyrics_tap_load">Tap to load lyrics</string>
     <string name="player_lyrics_loading">Loading lyrics…</string>
     <string name="player_lyrics_refresh">Search again</string>

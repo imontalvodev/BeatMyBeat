@@ -215,6 +215,10 @@
     <string name="player_lyrics_unavailable">Für diesen Song sind keine Lyrics verfügbar</string>
     <string name="player_lyrics_tap_download">Tippen, um Lyrics herunterzuladen (Internet erforderlich).</string>
     <string name="player_lyrics_synced_mode">Synchronisierte Lyrics</string>
+    <string name="player_karaoke_mode">Karaoke-Modus</string>
+    <string name="player_karaoke_mode_line_sync">Karaoke-Modus · zeilenweise</string>
+    <string name="player_karaoke_enter_cd">Karaoke-Modus aktivieren</string>
+    <string name="player_karaoke_exit_cd">Karaoke-Modus beenden</string>
     <string name="player_lyrics_tap_load">Tippen, um Lyrics zu laden</string>
     <string name="player_lyrics_loading">Lyrics werden geladen…</string>
     <string name="player_lyrics_refresh">Erneut suchen</string>

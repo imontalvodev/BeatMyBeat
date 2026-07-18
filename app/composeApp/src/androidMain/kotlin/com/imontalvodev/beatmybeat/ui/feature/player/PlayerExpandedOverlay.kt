@@ -58,6 +58,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -126,6 +128,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -186,6 +189,8 @@ internal fun ExpandedPlayerOverlay(
     canDeleteLyrics: Boolean,
     onRefreshLyrics: () -> Unit,
     onDeleteLyrics: () -> Unit,
+    karaokeMode: Boolean,
+    onKaraokeModeChange: (Boolean) -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val expandedPlayScale by animateFloatAsState(
@@ -253,10 +258,42 @@ internal fun ExpandedPlayerOverlay(
                 .zIndex(1f)
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
+            val plainScroll = rememberScrollState()
+            val readySyncedLrc = (lyricsState as? LyricsUiState.Ready)?.syncedLrc
+            val syncedLines = remember(readySyncedLrc) {
+                readySyncedLrc?.let { LrcParser.parse(it) }.orEmpty()
+            }
+            val hasSyncedLyrics = syncedLines.isNotEmpty()
+            // Sin timestamps por palabra el resaltado avanza línea a línea; se avisa en la UI
+            // para que el usuario no lo lea como un fallo de sincronía (ver LrcLine.words).
+            val hasWordTimings = remember(syncedLines) { syncedLines.any { it.words.isNotEmpty() } }
+
+            // El modo karaoke vive en el ViewModel y sobrevive al cambio de canción, pero no
+            // tiene sentido sin letra sincronizada: en ese caso se apaga solo.
+            LaunchedEffect(hasSyncedLyrics, karaokeMode) {
+                if (karaokeMode && !hasSyncedLyrics) onKaraokeModeChange(false)
+            }
+            val karaokeActive = karaokeMode && hasSyncedLyrics
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                AnimatedVisibility(visible = hasSyncedLyrics) {
+                    IconButton(onClick = { onKaraokeModeChange(!karaokeMode) }) {
+                        Icon(
+                            imageVector = if (karaokeActive) Icons.Filled.Mic else Icons.Filled.MicOff,
+                            contentDescription = stringResource(
+                                if (karaokeActive) R.string.player_karaoke_exit_cd
+                                else R.string.player_karaoke_enter_cd,
+                            ),
+                            tint = if (karaokeActive) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+                Spacer(Modifier.weight(1f))
                 IconButton(onClick = onClose) {
                     Icon(
                         imageVector = Icons.Filled.KeyboardArrowDown,
@@ -266,22 +303,28 @@ internal fun ExpandedPlayerOverlay(
                 }
             }
 
-            val plainScroll = rememberScrollState()
-            val readySyncedLrc = (lyricsState as? LyricsUiState.Ready)?.syncedLrc
-            val syncedLines = remember(readySyncedLrc) {
-                readySyncedLrc?.let { LrcParser.parse(it) }.orEmpty()
-            }
-            val hasSyncedLyrics = syncedLines.isNotEmpty()
-
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = true),
             ) {
+                // En karaoke la carátula cede su espacio a la letra. El peso no puede llegar a 0
+                // (Compose lo exige > 0), así que colapsa a un valor despreciable + alpha 0.
+                val artworkWeight by animateFloatAsState(
+                    targetValue = if (karaokeActive) 0.001f else 1f,
+                    animationSpec = tween(320),
+                    label = "karaoke_artwork_weight",
+                )
+                val artworkAlpha by animateFloatAsState(
+                    targetValue = if (karaokeActive) 0f else 1f,
+                    animationSpec = tween(220),
+                    label = "karaoke_artwork_alpha",
+                )
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = true),
+                        .weight(artworkWeight, fill = true)
+                        .alpha(artworkAlpha),
                     shape = RoundedCornerShape(22.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.55f)),
                 ) {
@@ -324,7 +367,7 @@ internal fun ExpandedPlayerOverlay(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                if (canRefreshLyrics || canDeleteLyrics) {
+                if ((canRefreshLyrics || canDeleteLyrics) && !karaokeActive) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End,
@@ -377,8 +420,15 @@ internal fun ExpandedPlayerOverlay(
                     when {
                         hasSyncedLyrics -> {
                             Column(modifier = Modifier.fillMaxSize()) {
+                                val modeLabel = when {
+                                    karaokeActive && hasWordTimings ->
+                                        stringResource(R.string.player_karaoke_mode)
+                                    karaokeActive ->
+                                        stringResource(R.string.player_karaoke_mode_line_sync)
+                                    else -> stringResource(R.string.player_lyrics_synced_mode)
+                                }
                                 Text(
-                                    text = stringResource(R.string.player_lyrics_synced_mode),
+                                    text = modeLabel,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(top = 8.dp),
@@ -392,6 +442,8 @@ internal fun ExpandedPlayerOverlay(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .weight(1f),
+                                    activeFontSize = if (karaokeActive) 28.sp else 18.sp,
+                                    inactiveFontSize = if (karaokeActive) 20.sp else 15.sp,
                                     onLineClick = onSeekToLyricsPosition,
                                 )
                             }

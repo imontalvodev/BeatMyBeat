@@ -215,6 +215,10 @@
     <string name="player_lyrics_unavailable">Letra não disponível para esta música</string>
     <string name="player_lyrics_tap_download">Toque para baixar a letra (requer internet).</string>
     <string name="player_lyrics_synced_mode">Letra sincronizada</string>
+    <string name="player_karaoke_mode">Modo karaoke</string>
+    <string name="player_karaoke_mode_line_sync">Modo karaoke · por linha</string>
+    <string name="player_karaoke_enter_cd">Ativar modo karaoke</string>
+    <string name="player_karaoke_exit_cd">Sair do modo karaoke</string>
     <string name="player_lyrics_tap_load">Toque para carregar letra</string>
     <string name="player_lyrics_loading">A carregar letra…</string>
     <string name="player_lyrics_refresh">Pesquisar de novo</string>

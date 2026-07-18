@@ -215,6 +215,10 @@
     <string name="player_lyrics_unavailable">Tekst nije dostupan za ovu pjesmu</string>
     <string name="player_lyrics_tap_download">Dodirni za preuzimanje teksta (potreban internet).</string>
     <string name="player_lyrics_synced_mode">Sinkronizirani tekst</string>
+    <string name="player_karaoke_mode">Karaoke način</string>
+    <string name="player_karaoke_mode_line_sync">Karaoke način · po retku</string>
+    <string name="player_karaoke_enter_cd">Uključi karaoke način</string>
+    <string name="player_karaoke_exit_cd">Izađi iz karaoke načina</string>
     <string name="player_lyrics_tap_load">Dodirni za učitavanje teksta</string>
     <string name="player_lyrics_loading">Učitavanje teksta…</string>
     <string name="player_lyrics_refresh">Pretraži ponovo</string>
