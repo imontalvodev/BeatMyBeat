@@ -290,4 +290,8 @@
     <string name="player_lyrics_deleted">Lyrics deleted</string>
     <string name="player_lyrics_refresh_cd">Search for lyrics again</string>
     <string name="player_lyrics_delete_cd">Delete saved lyrics</string>
+    <plurals name="karaoke_saved_takes">
+        <item quantity="one">%1$d saved take</item>
+        <item quantity="other">%1$d saved takes</item>
+    </plurals>
 </resources>

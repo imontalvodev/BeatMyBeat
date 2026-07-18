@@ -134,6 +134,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -191,6 +192,7 @@ import kotlin.random.Random
 private fun KaraokeRecordingControls(
     state: PlayerViewModel.KaraokeRecordingState,
     headphonesConnected: Boolean,
+    savedTakeCount: Int,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onSave: () -> Unit,
@@ -228,6 +230,21 @@ private fun KaraokeRecordingControls(
                                 text = stringResource(R.string.karaoke_headphones_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(bottom = Spacing.xs),
+                            )
+                        }
+                        // Tomas ya guardadas de esta canción: la relación no está en el nombre
+                        // del archivo sino en KaraokeRecordingIndex.
+                        AnimatedVisibility(visible = savedTakeCount > 0) {
+                            Text(
+                                text = pluralStringResource(
+                                    R.plurals.karaoke_saved_takes,
+                                    savedTakeCount,
+                                    savedTakeCount,
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(bottom = Spacing.xs),
                             )
@@ -444,6 +461,7 @@ internal fun ExpandedPlayerOverlay(
     onSaveRecording: () -> Unit,
     onDiscardRecording: () -> Unit,
     headphonesConnected: Boolean,
+    savedTakeCount: Int,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val expandedPlayScale by animateFloatAsState(
@@ -850,6 +868,7 @@ internal fun ExpandedPlayerOverlay(
                             KaraokeRecordingControls(
                                 state = karaokeRecording,
                                 headphonesConnected = headphonesConnected,
+                                savedTakeCount = savedTakeCount,
                                 onStart = onStartRecording,
                                 onStop = onStopRecording,
                                 onSave = onSaveRecording,

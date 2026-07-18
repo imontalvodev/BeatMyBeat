@@ -83,8 +83,8 @@ object KaraokeRecordings {
      * No se pasan `title`/`artist`: la toma no es música de nadie, y rellenar esos campos la haría
      * parecer una canción más en cualquier reproductor.
      */
-    fun publish(context: Context, tempFile: File): Boolean {
-        if (!tempFile.exists() || tempFile.length() <= 0L) return false
+    fun publish(context: Context, tempFile: File): String? {
+        if (!tempFile.exists() || tempFile.length() <= 0L) return null
         val saved = runCatching {
             StorageSettings.saveAudioFromFile(
                 context = context,
@@ -94,7 +94,8 @@ object KaraokeRecordings {
         }.onFailure { Logger.e(LOG_TAG, "No se pudo publicar la grabación ${tempFile.name}", it) }
             .getOrNull()
         runCatching { tempFile.delete() }
-        return saved != null
+        // El nombre real puede diferir del pedido si el sistema desambigua colisiones.
+        return saved?.takeIf { it.isNotBlank() } ?: tempFile.name.takeIf { saved != null }
     }
 
     /** Una grabación guardada, ya en la carpeta del usuario. */
@@ -142,8 +143,14 @@ object KaraokeRecordings {
 
     fun totalBytes(context: Context): Long = listSaved(context).sumOf { it.sizeBytes }
 
-    /** Borra todas las grabaciones guardadas. Devuelve cuántas se borraron. */
-    fun deleteAllSaved(context: Context): Int = listSaved(context).count { saved ->
+    /** Borra todas las grabaciones guardadas y el índice. Devuelve cuántas se borraron. */
+    fun deleteAllSaved(context: Context): Int {
+        val deleted = deleteFiles(context)
+        KaraokeRecordingIndex.clear(context)
+        return deleted
+    }
+
+    private fun deleteFiles(context: Context): Int = listSaved(context).count { saved ->
         runCatching {
             val uri = ContentUris.withAppendedId(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,

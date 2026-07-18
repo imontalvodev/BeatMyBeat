@@ -287,4 +287,8 @@
     <string name="player_edit_playlist_menu">Uredi naziv</string>
     <string name="player_delete_playlist_menu">Obriši playlistu</string>
     <string name="player_default_playlist_name">Moja playlista</string>
+    <plurals name="karaoke_saved_takes">
+        <item quantity="one">%1$d spremljena snimka</item>
+        <item quantity="other">%1$d spremljenih snimki</item>
+    </plurals>
 </resources>

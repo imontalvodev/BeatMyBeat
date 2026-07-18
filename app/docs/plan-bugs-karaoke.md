@@ -430,8 +430,25 @@ comprimir nada.
    diagnosticar. La consulta a MediaStore usa `LIKE 'REC-%'` por eficiencia y luego revalida el
    nombre completo.
 
-   Sin id de canción en el nombre no se puede agrupar las tomas por pista; es consecuencia directa
-   del formato elegido.
+3c. **Tomas por canción (`KaraokeRecordingIndex`).** El nombre `REC-fecha` no lleva id, así que la
+   relación toma→canción va en un índice propio (JSON en `SharedPreferences`).
+
+   **Por qué no en los tags del archivo:** `StorageSettings.saveToCustomTree` ignora
+   título/artista/álbum — con carpeta personalizada configurada no se crea fila en MediaStore y no
+   habría dónde colgarlos. Un índice propio funciona en los dos casos de almacenamiento.
+
+   Se guardan **título y artista además del id** porque el id de MediaStore no es estable: si el
+   usuario borra y vuelve a descargar la canción, cambia. Con título y artista la toma sigue siendo
+   identificable aunque el id ya no case.
+
+   `reconcile` descarta las entradas cuyo archivo ya no existe — el usuario puede borrar las
+   grabaciones desde su explorador y el índice no se entera. Se ejecuta al consultar las tomas de
+   una canción, así que se autolimpia sin trabajo de fondo.
+
+   **Límite conocido:** borrar los datos de la app pierde el índice. Las grabaciones siguen siendo
+   archivos suyos y reproducibles; solo se pierde a qué canción pertenecían.
+
+   En el Modo Karaoke se muestra "N tomas guardadas" de la canción actual.
 4. **Revisión sin mezclar archivos:** al parar, la canción vuelve a `trackOffsetMs` (la posición en
    que arrancó la toma) y un `MediaPlayer` reproduce la voz encima. Dos reproductores arrancados a la
    vez, coste cero. Oírse a capela no permite juzgar nada.

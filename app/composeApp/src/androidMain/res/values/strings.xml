@@ -295,4 +295,8 @@
     <string name="player_edit_playlist_menu">Editar nombre</string>
     <string name="player_delete_playlist_menu">Eliminar playlist</string>
     <string name="player_default_playlist_name">Mi playlist</string>
+    <plurals name="karaoke_saved_takes">
+        <item quantity="one">%1$d toma guardada</item>
+        <item quantity="other">%1$d tomas guardadas</item>
+    </plurals>
 </resources>

@@ -288,4 +288,8 @@
     <string name="player_lyrics_deleted">Letra eliminada</string>
     <string name="player_lyrics_refresh_cd">Volver a buscar letra</string>
     <string name="player_lyrics_delete_cd">Eliminar letra guardada</string>
+    <plurals name="karaoke_saved_takes">
+        <item quantity="one">%1$d toma guardada</item>
+        <item quantity="other">%1$d tomas guardadas</item>
+    </plurals>
 </resources>

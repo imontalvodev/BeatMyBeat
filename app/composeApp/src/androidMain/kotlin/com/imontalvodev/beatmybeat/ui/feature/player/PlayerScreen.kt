@@ -327,6 +327,8 @@ fun PlayerScreen(
     val karaokeRecorder = remember(context) { KaraokeRecorder(context) }
     /** Recomendación de auriculares; se muestra inline, no bloquea la grabación. */
     val headphonesConnected = rememberHeadphonesConnected()
+    /** Tomas ya guardadas de la canción actual, para mostrarlas en el Modo Karaoke. */
+    var karaokeTakeCount by remember { mutableStateOf(0) }
     val karaokeSpeed by viewModel.karaokeSpeed.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
@@ -457,6 +459,15 @@ fun PlayerScreen(
                 speed = KaraokeTuning.NEUTRAL_SPEED,
                 pitch = KaraokeTuning.NEUTRAL_PITCH,
             )
+        }
+    }
+
+    LaunchedEffect(currentTrack?.id) {
+        val id = currentTrack?.id
+        karaokeTakeCount = if (id == null) {
+            0
+        } else {
+            withContext(Dispatchers.IO) { KaraokeRecordingIndex.forTrack(context, id).size }
         }
     }
 
@@ -940,15 +951,34 @@ fun PlayerScreen(
         if (state !is PlayerViewModel.KaraokeRecordingState.Review) return
         // Publicar es E/S: fuera del hilo principal. Solo aquí la toma sale del temporal privado
         // y entra en la carpeta del usuario.
+        val track = currentTrack
         uiScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                KaraokeRecordings.publish(context, state.session.file)
+            val savedName = withContext(Dispatchers.IO) {
+                val name = KaraokeRecordings.publish(context, state.session.file)
+                // El indice relaciona la toma con su cancion: el nombre REC-fecha no lleva id.
+                if (name != null && track != null) {
+                    KaraokeRecordingIndex.add(
+                        context,
+                        KaraokeRecordingIndex.Entry(
+                            fileName = name,
+                            trackId = track.id,
+                            trackTitle = track.title,
+                            trackArtist = track.artist,
+                            recordedAtMs = state.session.startedAtMs,
+                        ),
+                    )
+                }
+                name
             }
             showToast(
                 resources.getString(
-                    if (ok) R.string.karaoke_record_saved else R.string.karaoke_record_failed,
+                    if (savedName != null) R.string.karaoke_record_saved
+                    else R.string.karaoke_record_failed,
                 ),
             )
+            karaokeTakeCount = withContext(Dispatchers.IO) {
+                track?.let { KaraokeRecordingIndex.forTrack(context, it.id).size } ?: 0
+            }
         }
     }
 
@@ -2269,6 +2299,7 @@ fun PlayerScreen(
                     onSaveRecording = { saveKaraokeRecording() },
                     onDiscardRecording = { discardKaraokeRecording() },
                     headphonesConnected = headphonesConnected,
+                    savedTakeCount = karaokeTakeCount,
                 )
             }
 

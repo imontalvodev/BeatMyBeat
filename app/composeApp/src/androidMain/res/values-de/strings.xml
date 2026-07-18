@@ -287,4 +287,8 @@
     <string name="player_edit_playlist_menu">Namen bearbeiten</string>
     <string name="player_delete_playlist_menu">Playlist löschen</string>
     <string name="player_default_playlist_name">Meine Playlist</string>
+    <plurals name="karaoke_saved_takes">
+        <item quantity="one">%1$d gespeicherte Aufnahme</item>
+        <item quantity="other">%1$d gespeicherte Aufnahmen</item>
+    </plurals>
 </resources>
