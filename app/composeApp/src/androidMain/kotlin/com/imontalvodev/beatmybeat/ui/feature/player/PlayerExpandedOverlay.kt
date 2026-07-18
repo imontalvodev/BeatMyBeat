@@ -193,6 +193,7 @@ private fun KaraokeRecordingControls(
     state: PlayerViewModel.KaraokeRecordingState,
     headphonesConnected: Boolean,
     savedTakeCount: Int,
+    onOpenTakes: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onSave: () -> Unit,
@@ -237,17 +238,20 @@ private fun KaraokeRecordingControls(
                         // Tomas ya guardadas de esta canción: la relación no está en el nombre
                         // del archivo sino en KaraokeRecordingIndex.
                         AnimatedVisibility(visible = savedTakeCount > 0) {
-                            Text(
-                                text = pluralStringResource(
-                                    R.plurals.karaoke_saved_takes,
-                                    savedTakeCount,
-                                    savedTakeCount,
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(bottom = Spacing.xs),
-                            )
+                            // Clicable: el contador sin poder abrir las tomas solo informaba de
+                            // que existen en algun sitio del telefono.
+                            TextButton(onClick = onOpenTakes) {
+                                Text(
+                                    text = pluralStringResource(
+                                        R.plurals.karaoke_saved_takes,
+                                        savedTakeCount,
+                                        savedTakeCount,
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
                         }
                     }
                 }
@@ -462,6 +466,7 @@ internal fun ExpandedPlayerOverlay(
     onDiscardRecording: () -> Unit,
     headphonesConnected: Boolean,
     savedTakeCount: Int,
+    onOpenTakes: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val expandedPlayScale by animateFloatAsState(
@@ -869,6 +874,7 @@ internal fun ExpandedPlayerOverlay(
                                 state = karaokeRecording,
                                 headphonesConnected = headphonesConnected,
                                 savedTakeCount = savedTakeCount,
+                                onOpenTakes = onOpenTakes,
                                 onStart = onStartRecording,
                                 onStop = onStopRecording,
                                 onSave = onSaveRecording,

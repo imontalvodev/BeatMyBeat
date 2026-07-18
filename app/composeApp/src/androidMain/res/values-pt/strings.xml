@@ -223,6 +223,13 @@
     <string name="karaoke_record_failed">Não foi possível iniciar a gravação</string>
     <string name="karaoke_record_too_short">Gravação demasiado curta</string>
     <string name="karaoke_headphones_hint">Melhor com auscultadores: sem eles a música entra na gravação</string>
+    <string name="karaoke_takes_title">Gravações guardadas</string>
+    <string name="karaoke_take_play">Reproduzir</string>
+    <string name="karaoke_take_stop">Parar</string>
+    <string name="karaoke_take_delete">Apagar gravação</string>
+    <string name="karaoke_take_deleted">Gravação apagada</string>
+    <string name="karaoke_take_delete_failed">Não foi possível apagar</string>
+    <string name="karaoke_takes_close">Fechar</string>
     <string name="karaoke_cancel">Cancelar</string>
     <string name="karaoke_permission_denied">Permissão de microfone negada</string>
     <string name="profile_karaoke_recordings">Gravações de karaoke</string>

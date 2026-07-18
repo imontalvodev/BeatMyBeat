@@ -162,6 +162,13 @@
     <string name="karaoke_record_failed">No se pudo iniciar la grabación</string>
     <string name="karaoke_record_too_short">Toma demasiado corta</string>
     <string name="karaoke_headphones_hint">Mejor con auriculares: sin ellos se colará la canción en la grabación</string>
+    <string name="karaoke_takes_title">Tomas guardadas</string>
+    <string name="karaoke_take_play">Reproducir</string>
+    <string name="karaoke_take_stop">Detener</string>
+    <string name="karaoke_take_delete">Borrar toma</string>
+    <string name="karaoke_take_deleted">Toma borrada</string>
+    <string name="karaoke_take_delete_failed">No se pudo borrar</string>
+    <string name="karaoke_takes_close">Cerrar</string>
     <string name="karaoke_cancel">Cancelar</string>
     <string name="karaoke_permission_denied">Permiso de micrófono denegado</string>
     <string name="profile_karaoke_recordings">Grabaciones de karaoke</string>

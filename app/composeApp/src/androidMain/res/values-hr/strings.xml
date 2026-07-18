@@ -223,6 +223,13 @@
     <string name="karaoke_record_failed">Snimanje se nije moglo pokrenuti</string>
     <string name="karaoke_record_too_short">Snimka prekratka</string>
     <string name="karaoke_headphones_hint">Bolje sa slušalicama: bez njih pjesma ulazi u snimku</string>
+    <string name="karaoke_takes_title">Spremljene snimke</string>
+    <string name="karaoke_take_play">Reproduciraj</string>
+    <string name="karaoke_take_stop">Zaustavi</string>
+    <string name="karaoke_take_delete">Obriši snimku</string>
+    <string name="karaoke_take_deleted">Snimka obrisana</string>
+    <string name="karaoke_take_delete_failed">Brisanje nije uspjelo</string>
+    <string name="karaoke_takes_close">Zatvori</string>
     <string name="karaoke_cancel">Odustani</string>
     <string name="karaoke_permission_denied">Dopuštenje za mikrofon odbijeno</string>
     <string name="profile_karaoke_recordings">Karaoke snimke</string>

@@ -329,6 +329,7 @@ fun PlayerScreen(
     val headphonesConnected = rememberHeadphonesConnected()
     /** Tomas ya guardadas de la canción actual, para mostrarlas en el Modo Karaoke. */
     var karaokeTakeCount by remember { mutableStateOf(0) }
+    var takesSheetOpen by remember { mutableStateOf(false) }
     val karaokeSpeed by viewModel.karaokeSpeed.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
@@ -459,6 +460,16 @@ fun PlayerScreen(
                 speed = KaraokeTuning.NEUTRAL_SPEED,
                 pitch = KaraokeTuning.NEUTRAL_PITCH,
             )
+        }
+    }
+
+    // Temporales huerfanos de una grabacion interrumpida (app matada a media toma). Estan en
+    // cacheDir, asi que el sistema acabaria reclamandolos, pero no hay razon para esperar.
+    LaunchedEffect(Unit) {
+        // Solo si no hay toma viva: en estado Review el temporal AUN NO se ha guardado, y
+        // borrarlo al volver a la pantalla le quitaria al usuario la toma que esta escuchando.
+        if (viewModel.karaokeRecording.value is PlayerViewModel.KaraokeRecordingState.Idle) {
+            withContext(Dispatchers.IO) { KaraokeRecordings.clearTemp(context) }
         }
     }
 
@@ -929,7 +940,12 @@ fun PlayerScreen(
 
         // Revisión: la canción vuelve al punto donde arrancó la toma y la voz se reproduce
         // encima. No se mezcla ningún archivo — son dos reproductores arrancados a la vez.
+        // seekTo preserva el estado de reproduccion: si la cancion estaba pausada, seguiria
+        // pausada y la revision sonaria solo con la voz. Se fuerza a reproducir.
         boundService?.seekTo(session.trackOffsetMs)
+        if (!isPlaying) {
+            context.sendPlaybackForegroundAction(PlaybackService.ACTION_PLAY)
+        }
         releaseReviewPlayer()
         runCatching {
             MediaPlayer().apply {
@@ -2300,7 +2316,22 @@ fun PlayerScreen(
                     onDiscardRecording = { discardKaraokeRecording() },
                     headphonesConnected = headphonesConnected,
                     savedTakeCount = karaokeTakeCount,
+                    onOpenTakes = { takesSheetOpen = true },
                 )
+            }
+
+            if (takesSheetOpen) {
+                val takesTrack = currentTrack
+                if (takesTrack == null) {
+                    takesSheetOpen = false
+                } else {
+                    KaraokeTakesSheet(
+                        trackId = takesTrack.id,
+                        trackTitle = takesTrack.title,
+                        onDismiss = { takesSheetOpen = false },
+                        onTakesChanged = { karaokeTakeCount = it },
+                    )
+                }
             }
 
             // SHEET: Cola de reproducción en tiempo real

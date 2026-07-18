@@ -3,6 +3,8 @@ package com.imontalvodev.beatmybeat.ui.feature.player
 import android.content.ContentUris
 import android.content.Context
 import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
+import android.net.Uri
 import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import java.io.File
@@ -99,14 +101,30 @@ object KaraokeRecordings {
     }
 
     /** Una grabación guardada, ya en la carpeta del usuario. */
-    data class Saved(val id: Long, val displayName: String, val sizeBytes: Long)
+    data class Saved(
+        val uri: Uri,
+        val displayName: String,
+        val sizeBytes: Long,
+    )
 
     /**
-     * Grabaciones guardadas, vía MediaStore. Se consulta por prefijo y luego se valida el nombre
-     * completo con [isRecordingFileName], porque `LIKE 'REC-%'` también casaría `REC-ensayo.m4a`.
+     * Grabaciones guardadas.
+     *
+     * Se consultan **las dos rutas de almacenamiento**: MediaStore (carpeta pública por defecto) y
+     * el árbol SAF si el usuario configuró carpeta personalizada. Mirar solo MediaStore dejaba a
+     * esos usuarios con 0 tomas, 0 MB y un borrado que no borraba nada — justo el caso para el que
+     * existe la carpeta personalizada.
      */
     fun listSaved(context: Context): List<Saved> {
-        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        val fromMediaStore = listFromMediaStore(context)
+        val fromCustomTree = listFromCustomTree(context)
+        // Dedupe por nombre: si la carpeta personalizada está dentro del área indexada, el mismo
+        // archivo puede salir por las dos vías.
+        val seen = mutableSetOf<String>()
+        return (fromCustomTree + fromMediaStore).filter { seen.add(it.displayName) }
+    }
+
+    private fun listFromMediaStore(context: Context): List<Saved> {
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.DISPLAY_NAME,
@@ -114,7 +132,7 @@ object KaraokeRecordings {
         )
         return runCatching {
             context.contentResolver.query(
-                collection,
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 "${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ?",
                 arrayOf("$PREFIX%"),
@@ -126,10 +144,14 @@ object KaraokeRecordings {
                 buildList {
                     while (cursor.moveToNext()) {
                         val name = cursor.getString(nameCol).orEmpty()
+                        // LIKE 'REC-%' tambien casaria "REC-ensayo.m4a": se revalida el nombre.
                         if (!isRecordingFileName(name)) continue
                         add(
                             Saved(
-                                id = cursor.getLong(idCol),
+                                uri = ContentUris.withAppendedId(
+                                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                                    cursor.getLong(idCol),
+                                ),
                                 displayName = name,
                                 sizeBytes = cursor.getLong(sizeCol),
                             ),
@@ -141,24 +163,42 @@ object KaraokeRecordings {
             .getOrDefault(emptyList())
     }
 
+    private fun listFromCustomTree(context: Context): List<Saved> =
+        runCatching {
+            StorageSettings.listCustomAudioDocs(context)
+                .filter { isRecordingFileName(it.name.orEmpty()) }
+                .map { doc ->
+                    Saved(
+                        uri = doc.uri,
+                        displayName = doc.name.orEmpty(),
+                        sizeBytes = doc.length(),
+                    )
+                }
+                .sortedByDescending { it.displayName }
+        }.onFailure { Logger.e(LOG_TAG, "No se pudo listar la carpeta personalizada", it) }
+            .getOrDefault(emptyList())
+
     fun totalBytes(context: Context): Long = listSaved(context).sumOf { it.sizeBytes }
 
-    /** Borra todas las grabaciones guardadas y el índice. Devuelve cuántas se borraron. */
-    fun deleteAllSaved(context: Context): Int {
-        val deleted = deleteFiles(context)
-        KaraokeRecordingIndex.clear(context)
+    /** Borra una toma, venga de MediaStore o del árbol SAF, y su entrada del índice. */
+    fun deleteSaved(context: Context, saved: Saved): Boolean {
+        val deleted = runCatching {
+            if (saved.uri.authority == MediaStore.AUTHORITY) {
+                context.contentResolver.delete(saved.uri, null, null) > 0
+            } else {
+                DocumentFile.fromSingleUri(context, saved.uri)?.delete() == true
+            }
+        }.onFailure { Logger.e(LOG_TAG, "No se pudo borrar ${saved.displayName}", it) }
+            .getOrDefault(false)
+        if (deleted) KaraokeRecordingIndex.remove(context, saved.displayName)
         return deleted
     }
 
-    private fun deleteFiles(context: Context): Int = listSaved(context).count { saved ->
-        runCatching {
-            val uri = ContentUris.withAppendedId(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                saved.id,
-            )
-            context.contentResolver.delete(uri, null, null) > 0
-        }.onFailure { Logger.e(LOG_TAG, "No se pudo borrar ${saved.displayName}", it) }
-            .getOrDefault(false)
+    /** Borra todas las grabaciones guardadas y el índice. Devuelve cuántas se borraron. */
+    fun deleteAllSaved(context: Context): Int {
+        val deleted = listSaved(context).count { deleteSaved(context, it) }
+        KaraokeRecordingIndex.clear(context)
+        return deleted
     }
 }
 

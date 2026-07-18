@@ -448,7 +448,27 @@ comprimir nada.
    **Límite conocido:** borrar los datos de la app pierde el índice. Las grabaciones siguen siendo
    archivos suyos y reproducibles; solo se pierde a qué canción pertenecían.
 
-   En el Modo Karaoke se muestra "N tomas guardadas" de la canción actual.
+   En el Modo Karaoke se muestra "N tomas guardadas" de la canción actual, y al pulsarlo se abre
+   `KaraokeTakesSheet`: escuchar y borrar cada toma. Ahí la toma suena **sola**, no sobre la
+   pista — al revisar una recién grabada tiene sentido oírla con la canción para juzgarla, pero al
+   volver días después lo que se quiere es escuchar lo que uno cantó.
+
+### Ronda 4 — fallos propios de la Fase F, encontrados al revisarla
+
+| #  | Bug                                                                                                     | Severidad | Estado   |
+| -- | --------------------------------------------------------------------------------------------------------- | --------- | -------- |
+| 19 | `listSaved` solo consultaba MediaStore: con carpeta personalizada (SAF) el usuario veía 0 tomas, 0 MB y el borrado no borraba nada | **Alta**  | ✅ Fijado |
+| 20 | La revisión no forzaba reproducción: al parar con la canción pausada, `seekTo` preservaba la pausa y solo sonaba la voz | Media     | ✅ Fijado |
+| 21 | `clearTemp` no se llamaba nunca: temporales huérfanos si la app moría grabando                          | Baja      | ✅ Fijado |
+
+**19** es el peor: afectaba justo a los usuarios que usan la carpeta personalizada, que es la función
+por la que existe `StorageSettings`. `listSaved` consulta ahora **las dos rutas** (MediaStore y árbol
+SAF) y deduplica por nombre; `deleteSaved` distingue el tipo de URI para borrar por `ContentResolver`
+o por `DocumentFile` según corresponda.
+
+**21** trajo de propina un fallo al arreglarlo: limpiar los temporales al entrar a la pantalla
+borraría el de una toma en estado `Review`, que todavía no se ha guardado. La limpieza solo corre si
+el estado es `Idle`.
 4. **Revisión sin mezclar archivos:** al parar, la canción vuelve a `trackOffsetMs` (la posición en
    que arrancó la toma) y un `MediaPlayer` reproduce la voz encima. Dos reproductores arrancados a la
    vez, coste cero. Oírse a capela no permite juzgar nada.

@@ -220,6 +220,13 @@
     <string name="karaoke_record_failed">Could not start recording</string>
     <string name="karaoke_record_too_short">Take too short</string>
     <string name="karaoke_headphones_hint">Headphones recommended: without them the song leaks into your recording</string>
+    <string name="karaoke_takes_title">Saved takes</string>
+    <string name="karaoke_take_play">Play</string>
+    <string name="karaoke_take_stop">Stop</string>
+    <string name="karaoke_take_delete">Delete take</string>
+    <string name="karaoke_take_deleted">Take deleted</string>
+    <string name="karaoke_take_delete_failed">Could not delete</string>
+    <string name="karaoke_takes_close">Close</string>
     <string name="karaoke_cancel">Cancel</string>
     <string name="karaoke_permission_denied">Microphone permission denied</string>
     <string name="profile_karaoke_recordings">Karaoke recordings</string>
