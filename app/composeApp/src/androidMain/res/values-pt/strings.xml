@@ -222,9 +222,7 @@
     <string name="karaoke_record_discarded">Gravação descartada</string>
     <string name="karaoke_record_failed">Não foi possível iniciar a gravação</string>
     <string name="karaoke_record_too_short">Gravação demasiado curta</string>
-    <string name="karaoke_headphones_title">Liga auscultadores</string>
-    <string name="karaoke_headphones_body">Sem auscultadores, o microfone capta a música e a gravação fica com a faixa duplicada.</string>
-    <string name="karaoke_record_anyway">Gravar mesmo assim</string>
+    <string name="karaoke_headphones_hint">Melhor com auscultadores: sem eles a música entra na gravação</string>
     <string name="karaoke_cancel">Cancelar</string>
     <string name="karaoke_permission_denied">Permissão de microfone negada</string>
     <string name="profile_karaoke_recordings">Gravações de karaoke</string>

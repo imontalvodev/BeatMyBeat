@@ -222,9 +222,7 @@
     <string name="karaoke_record_discarded">Aufnahme verworfen</string>
     <string name="karaoke_record_failed">Aufnahme konnte nicht gestartet werden</string>
     <string name="karaoke_record_too_short">Aufnahme zu kurz</string>
-    <string name="karaoke_headphones_title">Kopfhörer anschließen</string>
-    <string name="karaoke_headphones_body">Ohne Kopfhörer nimmt das Mikrofon den Song mit auf und die Aufnahme enthält den Track doppelt.</string>
-    <string name="karaoke_record_anyway">Trotzdem aufnehmen</string>
+    <string name="karaoke_headphones_hint">Kopfhörer empfohlen: ohne sie landet der Song in der Aufnahme</string>
     <string name="karaoke_cancel">Abbrechen</string>
     <string name="karaoke_permission_denied">Mikrofonberechtigung verweigert</string>
     <string name="profile_karaoke_recordings">Karaoke-Aufnahmen</string>

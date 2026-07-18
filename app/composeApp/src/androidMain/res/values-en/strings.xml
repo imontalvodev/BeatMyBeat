@@ -219,9 +219,7 @@
     <string name="karaoke_record_discarded">Recording discarded</string>
     <string name="karaoke_record_failed">Could not start recording</string>
     <string name="karaoke_record_too_short">Take too short</string>
-    <string name="karaoke_headphones_title">Connect headphones</string>
-    <string name="karaoke_headphones_body">Without headphones the mic will pick up the song and your recording will have the track doubled.</string>
-    <string name="karaoke_record_anyway">Record anyway</string>
+    <string name="karaoke_headphones_hint">Headphones recommended: without them the song leaks into your recording</string>
     <string name="karaoke_cancel">Cancel</string>
     <string name="karaoke_permission_denied">Microphone permission denied</string>
     <string name="profile_karaoke_recordings">Karaoke recordings</string>

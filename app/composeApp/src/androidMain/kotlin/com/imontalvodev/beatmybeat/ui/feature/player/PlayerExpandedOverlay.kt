@@ -190,6 +190,7 @@ import kotlin.random.Random
 @Composable
 private fun KaraokeRecordingControls(
     state: PlayerViewModel.KaraokeRecordingState,
+    headphonesConnected: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onSave: () -> Unit,
@@ -206,18 +207,31 @@ private fun KaraokeRecordingControls(
         ) {
             when (state) {
                 is PlayerViewModel.KaraokeRecordingState.Idle -> {
-                    TextButton(onClick = onStart) {
-                        Icon(
-                            imageVector = Icons.Filled.FiberManualRecord,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Spacer(modifier = Modifier.width(Spacing.sm))
-                        Text(
-                            text = stringResource(R.string.karaoke_record_start),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
+                    // Los auriculares son recomendables, no obligatorios: el aviso informa y se
+                    // quita solo al conectarlos, pero nunca impide grabar.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        TextButton(onClick = onStart) {
+                            Icon(
+                                imageVector = Icons.Filled.FiberManualRecord,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                            Spacer(modifier = Modifier.width(Spacing.sm))
+                            Text(
+                                text = stringResource(R.string.karaoke_record_start),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                        AnimatedVisibility(visible = !headphonesConnected) {
+                            Text(
+                                text = stringResource(R.string.karaoke_headphones_hint),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(bottom = Spacing.xs),
+                            )
+                        }
                     }
                 }
 
@@ -429,6 +443,7 @@ internal fun ExpandedPlayerOverlay(
     onStopRecording: () -> Unit,
     onSaveRecording: () -> Unit,
     onDiscardRecording: () -> Unit,
+    headphonesConnected: Boolean,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val expandedPlayScale by animateFloatAsState(
@@ -834,6 +849,7 @@ internal fun ExpandedPlayerOverlay(
                             )
                             KaraokeRecordingControls(
                                 state = karaokeRecording,
+                                headphonesConnected = headphonesConnected,
                                 onStart = onStartRecording,
                                 onStop = onStopRecording,
                                 onSave = onSaveRecording,

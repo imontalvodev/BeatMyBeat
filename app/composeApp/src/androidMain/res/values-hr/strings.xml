@@ -222,9 +222,7 @@
     <string name="karaoke_record_discarded">Snimka odbačena</string>
     <string name="karaoke_record_failed">Snimanje se nije moglo pokrenuti</string>
     <string name="karaoke_record_too_short">Snimka prekratka</string>
-    <string name="karaoke_headphones_title">Priključi slušalice</string>
-    <string name="karaoke_headphones_body">Bez slušalica mikrofon će snimiti i pjesmu, pa će snimka imati dvostruku podlogu.</string>
-    <string name="karaoke_record_anyway">Ipak snimi</string>
+    <string name="karaoke_headphones_hint">Bolje sa slušalicama: bez njih pjesma ulazi u snimku</string>
     <string name="karaoke_cancel">Odustani</string>
     <string name="karaoke_permission_denied">Dopuštenje za mikrofon odbijeno</string>
     <string name="profile_karaoke_recordings">Karaoke snimke</string>

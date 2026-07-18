@@ -419,8 +419,11 @@ comprimir nada.
    vez, coste cero. Oírse a capela no permite juzgar nada.
 5. Estado `Idle` / `Recording` / `Review` en `PlayerViewModel`. La toma en revisión **existe en disco
    pero no está guardada**: descartar la borra.
-6. Aviso de auriculares antes de grabar, con "grabar igualmente". Sin ellos el micro capta la canción
-   y la toma sale con la pista duplicada y desfasada.
+6. **Auriculares recomendados, nunca obligatorios.** Se puede grabar con o sin ellos. El aviso va
+   *inline* bajo el botón de grabar, no en un diálogo modal: un diálogo cada vez que quieres cantar
+   es una barrera, no una recomendación. El estado se sigue con `AudioDeviceCallback`
+   (`rememberHeadphonesConnected`) en vez de sondear, así que al enchufar los auriculares el aviso
+   desaparece solo.
 7. En Perfil: espacio ocupado por las grabaciones y borrado con confirmación. Sin esto, la única
    forma de recuperar el espacio sería desinstalar.
 

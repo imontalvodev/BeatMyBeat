@@ -2,6 +2,14 @@ package com.imontalvodev.beatmybeat.ui.feature.player
 
 import android.content.Context
 import android.media.AudioDeviceInfo
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Composable
+import android.media.AudioDeviceCallback
 import android.media.AudioManager
 import android.media.MediaRecorder
 import android.os.Build
@@ -124,6 +132,8 @@ class KaraokeRecorder(private val context: Context) {
         /**
          * ¿Hay auriculares (cable, USB o Bluetooth)? Sin ellos, el micro capta la canción por el
          * altavoz y la toma sale con la pista duplicada y desfasada, no con la voz limpia.
+         *
+         * Es una **recomendación, no un requisito**: grabar sin auriculares está permitido.
          */
         fun headphonesConnected(context: Context): Boolean {
             val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
@@ -136,4 +146,36 @@ class KaraokeRecorder(private val context: Context) {
             }
         }
     }
+}
+
+/**
+ * Estado reactivo de "hay auriculares conectados".
+ *
+ * Usa `AudioDeviceCallback` en vez de sondear: si el usuario enchufa los auriculares con el
+ * reproductor abierto, el aviso desaparece solo.
+ */
+@Composable
+fun rememberHeadphonesConnected(): Boolean {
+    val context = LocalContext.current
+    var connected by remember { mutableStateOf(KaraokeRecorder.headphonesConnected(context)) }
+
+    DisposableEffect(context) {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        if (audioManager == null) {
+            onDispose { }
+        } else {
+            val callback = object : AudioDeviceCallback() {
+                override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                    connected = KaraokeRecorder.headphonesConnected(context)
+                }
+
+                override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                    connected = KaraokeRecorder.headphonesConnected(context)
+                }
+            }
+            audioManager.registerAudioDeviceCallback(callback, null)
+            onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
+        }
+    }
+    return connected
 }

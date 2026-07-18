@@ -325,8 +325,8 @@ fun PlayerScreen(
     val karaokePitchSemitones by viewModel.karaokePitchSemitones.collectAsState()
     val karaokeRecording by viewModel.karaokeRecording.collectAsState()
     val karaokeRecorder = remember(context) { KaraokeRecorder(context) }
-    /** Se pide auriculares antes de grabar; el usuario puede seguir igualmente. */
-    var headphonesWarningOpen by remember { mutableStateOf(false) }
+    /** Recomendación de auriculares; se muestra inline, no bloquea la grabación. */
+    val headphonesConnected = rememberHeadphonesConnected()
     val karaokeSpeed by viewModel.karaokeSpeed.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
@@ -901,12 +901,9 @@ fun PlayerScreen(
             recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
-        // Con altavoz el micro capta la canción: la toma sale con la pista duplicada y desfasada,
-        // no con la voz limpia. Se avisa, pero se deja seguir.
-        if (!KaraokeRecorder.headphonesConnected(context)) {
-            headphonesWarningOpen = true
-            return
-        }
+        // Los auriculares son recomendables, no obligatorios: sin ellos el micro capta la
+        // canción y la toma sale con la pista encima, pero grabar sigue estando permitido. El
+        // aviso va inline junto al botón (ver KaraokeRecordingControls), sin cortar el flujo.
         beginKaraokeRecording()
     }
 
@@ -2257,29 +2254,7 @@ fun PlayerScreen(
                     onStopRecording = { stopKaraokeRecording() },
                     onSaveRecording = { saveKaraokeRecording() },
                     onDiscardRecording = { discardKaraokeRecording() },
-                )
-            }
-
-            // Aviso de auriculares antes de grabar (Fase F). No bloquea: se puede grabar
-            // igualmente, pero avisado de que la toma saldrá con la canción encima.
-            if (headphonesWarningOpen) {
-                AlertDialog(
-                    onDismissRequest = { headphonesWarningOpen = false },
-                    title = { Text(stringResource(R.string.karaoke_headphones_title)) },
-                    text = { Text(stringResource(R.string.karaoke_headphones_body)) },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            headphonesWarningOpen = false
-                            beginKaraokeRecording()
-                        }) {
-                            Text(stringResource(R.string.karaoke_record_anyway))
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { headphonesWarningOpen = false }) {
-                            Text(stringResource(R.string.karaoke_cancel))
-                        }
-                    },
+                    headphonesConnected = headphonesConnected,
                 )
             }
 
