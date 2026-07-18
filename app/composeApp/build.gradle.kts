@@ -84,6 +84,25 @@ android {
         includeInBundle = false
     }
     buildTypes {
+        getByName("debug") {
+            // ffmpeg-kit trae libavcodec/libavformat/libavfilter compiladas para las cuatro ABIs:
+            // ~90 MB de los ~136 MB del APK de debug. Al desarrollar solo se usa una, y un APK de
+            // ese tamaño llega a no caber en el emulador
+            // ("Requested internal only, but not enough space").
+            //
+            // Release y F-Droid NO se tocan: ahí las cuatro ABIs son necesarias de verdad.
+            //
+            // Por defecto se dejan la del emulador (x86_64) y la de un móvil real (arm64-v8a).
+            // Para bajar aún más, apuntando solo al emulador:
+            //   ./gradlew installDebug -PdebugAbi=x86_64
+            ndk {
+                val requested = (project.findProperty("debugAbi") as String?)
+                    ?.split(",")
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                abiFilters += requested ?: listOf("x86_64", "arm64-v8a")
+            }
+        }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
