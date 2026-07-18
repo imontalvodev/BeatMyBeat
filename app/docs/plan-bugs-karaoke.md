@@ -378,17 +378,63 @@ verificados en emulador** junto con el rediseño de la Fase U1 (ver
 
 **Strings:** 9 nuevas en las 6 locales (`values`, `-es`, `-en`, `-de`, `-pt`, `-hr`).
 
-### Fase F — Modo Karaoke: grabación (prioridad baja, mayor coste)
+### Fase F — Modo Karaoke: grabación ✅ Completada (núcleo)
 
-**Prerrequisito:** validar con usuarios las Fases D-E antes de invertir aquí — es la parte más costosa.
+**Nota de referencia:** [Rhythm](https://github.com/cromaguy/Rhythm), la referencia de diseño del
+resto del proyecto, **no graba nada** — es solo reproductor. Aquí no había a quién copiar.
 
-1. Añadir permiso `RECORD_AUDIO` al `AndroidManifest.xml` (actualmente ausente).
-2. Capturar voz con `MediaRecorder` en paralelo a la reproducción de la pista.
-3. Guardar grabación (voz sola o mezclada con la pista) en el almacenamiento de la app.
-4. UI de reproducción/descarte de la grabación tras finalizar la sesión de karaoke.
+**Restricción de plataforma:** Android no ofrece ninguna API que capture "micro + lo que suena" en un
+archivo. `MediaRecorder` graba del micro y ya. Mezclar exige decodificar ambas pistas a PCM, sumarlas
+y recodificar con MediaCodec/MediaMuxer. Eso condiciona todo el diseño de abajo.
 
-**Riesgo:** medio-alto. Nueva superficie de permisos, gestión de recursos de audio concurrente
-(reproducción + grabación), y necesidad de mezcla de audio si se decide combinar voz + pista.
+**Política de espacio (decidida con el usuario):**
+
+| Formato | Por minuto | Toma de 3:30 |
+| ------- | ---------- | ------------ |
+| AAC 64 kbps mono (elegido) | 0,47 MB | **~1,6 MB** |
+| AAC 128 kbps estéreo | 0,94 MB | ~3,3 MB |
+| Mezcla exportada | 0,94 MB | ~3,3 MB extra |
+
+Una canción descargada ocupa 3,5–7 MB, así que **una toma cuesta menos de la mitad que una canción**.
+Mono es lo correcto para voz: un micro, un cantante.
+
+**La palanca de espacio no es el bitrate, es no guardar por defecto.** La mayoría de tomas se
+descartan al oírlas. Preguntar "guardar o descartar" al parar elimina el grueso del problema sin
+comprimir nada.
+
+**Implementado:**
+
+1. `RECORD_AUDIO` en el Manifest. **No** se añadió servicio en primer plano de tipo `microphone`: se
+   graba solo con el reproductor en pantalla, lo que evita el permiso `FOREGROUND_SERVICE_MICROPHONE`
+   y su superficie asociada. Al salir de la pantalla se cancela la toma (`DisposableEffect`), para no
+   dejar el micro tomado ni un archivo a medias.
+2. `KaraokeRecorder`: `MediaRecorder` a AAC mono 64 kbps. Usa `AudioSource.MIC` y **no**
+   `VOICE_COMMUNICATION` — este último aplica el cancelador de eco del sistema, pensado para llamadas
+   (mono de banda reducida, AGC agresivo), y para cantar suena mal. El eco se evita pidiendo
+   auriculares, no degradando la voz.
+3. `KaraokeRecordings`: almacén en `getExternalFilesDir` (privado, se limpia al desinstalar), nombres
+   `track<id>_<instante>.m4a` para listar por canción, y contabilidad de tamaño.
+4. **Revisión sin mezclar archivos:** al parar, la canción vuelve a `trackOffsetMs` (la posición en
+   que arrancó la toma) y un `MediaPlayer` reproduce la voz encima. Dos reproductores arrancados a la
+   vez, coste cero. Oírse a capela no permite juzgar nada.
+5. Estado `Idle` / `Recording` / `Review` en `PlayerViewModel`. La toma en revisión **existe en disco
+   pero no está guardada**: descartar la borra.
+6. Aviso de auriculares antes de grabar, con "grabar igualmente". Sin ellos el micro capta la canción
+   y la toma sale con la pista duplicada y desfasada.
+7. En Perfil: espacio ocupado por las grabaciones y borrado con confirmación. Sin esto, la única
+   forma de recuperar el espacio sería desinstalar.
+
+**Tests:** `ui/feature/player/KaraokeRecordingsTest.kt` (5) — codificación y lectura del nombre,
+archivos ajenos ignorados, presupuesto de tamaño por toma (falla si alguien sube el bitrate sin
+querer) y formato legible respetando la locale.
+
+**Fuera de esta tanda, a propósito:** la **exportación con mezcla** (MediaCodec + MediaMuxer). Es el
+trozo caro y la política dice que la mezcla solo se genera al exportar, así que no bloquea el uso
+normal. Pendiente también decidir si al exportar se usa `StorageSettings` para dejarla en la carpeta
+pública del usuario.
+
+**Riesgo:** medio. **Sin verificar en dispositivo:** grabar exige micro real y auriculares; el
+emulador de esta máquina además no admite instalar (`/data` al 92%).
 
 ### Fase G — Corrección de tags MP4 y robustez de letras (prioridad media-alta) ✅ Completada
 
@@ -444,7 +490,7 @@ manualmente, no por unit test JVM.
 | C    | Feedback UX + TODOs pendientes                                   | Baja        | Fase A (reutiliza Snackbar) | ✅ Completada |
 | D    | Karaoke: resaltado por palabra                                   | Baja        | —                           | ✅ Completada |
 | E    | Karaoke: conmutador de modo + tono/velocidad                     | Baja        | Fase D (mismo overlay)      | ✅ Completada |
-| F    | Karaoke: grabación                                               | Media-Alta  | Validación de Fases D-E     | Pendiente    |
+| F    | Karaoke: grabación (núcleo; export con mezcla pendiente)         | Media-Alta  | Validación de Fases D-E     | ✅ Completada |
 | G    | Tags MP4 + robustez letras/update                                | Media       | —                           | ✅ Completada |
 
 

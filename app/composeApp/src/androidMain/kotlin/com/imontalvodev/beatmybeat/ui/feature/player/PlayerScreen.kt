@@ -130,12 +130,14 @@ import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import android.provider.MediaStore
 import androidx.media3.common.Player
+import android.media.MediaPlayer
 import java.io.File
 import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.palette.graphics.Palette
 import coil.compose.AsyncImage
 import com.imontalvodev.beatmybeat.R
+import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.isLyricsNetworkFailure
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
@@ -321,6 +323,10 @@ fun PlayerScreen(
     val shuffleOn by viewModel.shuffleEnabled.collectAsState()
     val karaokeMode by viewModel.karaokeMode.collectAsState()
     val karaokePitchSemitones by viewModel.karaokePitchSemitones.collectAsState()
+    val karaokeRecording by viewModel.karaokeRecording.collectAsState()
+    val karaokeRecorder = remember(context) { KaraokeRecorder(context) }
+    /** Se pide auriculares antes de grabar; el usuario puede seguir igualmente. */
+    var headphonesWarningOpen by remember { mutableStateOf(false) }
     val karaokeSpeed by viewModel.karaokeSpeed.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
@@ -842,6 +848,118 @@ fun PlayerScreen(
                 }
             } finally {
                 lyricsDownloadingUris = lyricsDownloadingUris - track.uri
+            }
+        }
+    }
+
+    // ── Modo Karaoke: grabación de voz (Fase F) ─────────────────────────────
+    //
+    // La toma vive en almacenamiento privado desde que se pulsa grabar, pero NO se considera
+    // guardada hasta que el usuario lo dice: descartar la borra. Es lo que evita que la carpeta
+    // se llene de tomas que nadie va a volver a oír.
+
+    /** Reproductor de la voz durante la revisión. La canción la sigue llevando ExoPlayer. */
+    var reviewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    fun releaseReviewPlayer() {
+        reviewPlayer?.let { player ->
+            runCatching { player.stop() }
+            runCatching { player.release() }
+        }
+        reviewPlayer = null
+    }
+
+    fun beginKaraokeRecording() {
+        val track = currentTrack ?: return
+        val session = karaokeRecorder.start(
+            trackId = track.id,
+            trackPositionMs = playbackPositionMs,
+        )
+        if (session == null) {
+            showToast(resources.getString(R.string.karaoke_record_failed))
+            return
+        }
+        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Recording(session))
+    }
+
+    val recordPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            beginKaraokeRecording()
+        } else {
+            showToast(resources.getString(R.string.karaoke_permission_denied))
+        }
+    }
+
+    fun requestKaraokeRecording() {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        // Con altavoz el micro capta la canción: la toma sale con la pista duplicada y desfasada,
+        // no con la voz limpia. Se avisa, pero se deja seguir.
+        if (!KaraokeRecorder.headphonesConnected(context)) {
+            headphonesWarningOpen = true
+            return
+        }
+        beginKaraokeRecording()
+    }
+
+    fun stopKaraokeRecording() {
+        val session = karaokeRecorder.stop()
+        if (session == null) {
+            viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
+            showToast(resources.getString(R.string.karaoke_record_too_short))
+            return
+        }
+        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Review(session))
+
+        // Revisión: la canción vuelve al punto donde arrancó la toma y la voz se reproduce
+        // encima. No se mezcla ningún archivo — son dos reproductores arrancados a la vez.
+        boundService?.seekTo(session.trackOffsetMs)
+        releaseReviewPlayer()
+        runCatching {
+            MediaPlayer().apply {
+                setDataSource(session.file.absolutePath)
+                prepare()
+                start()
+            }
+        }.onSuccess { player ->
+            reviewPlayer = player
+        }.onFailure { error ->
+            Logger.e("Karaoke", "No se pudo reproducir la toma", error)
+        }
+    }
+
+    fun saveKaraokeRecording() {
+        releaseReviewPlayer()
+        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
+        showToast(resources.getString(R.string.karaoke_record_saved))
+    }
+
+    fun discardKaraokeRecording() {
+        releaseReviewPlayer()
+        val state = karaokeRecording
+        if (state is PlayerViewModel.KaraokeRecordingState.Review) {
+            KaraokeRecordings.delete(state.session.file)
+        }
+        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
+        showToast(resources.getString(R.string.karaoke_record_discarded))
+    }
+
+    // Salir de la pantalla con el micro abierto dejaría un archivo a medias y el micro tomado:
+    // se cancela la toma en curso y se suelta el reproductor de revisión.
+    DisposableEffect(Unit) {
+        onDispose {
+            if (karaokeRecorder.isRecording) karaokeRecorder.cancel()
+            reviewPlayer?.let { player ->
+                runCatching { player.stop() }
+                runCatching { player.release() }
             }
         }
     }
@@ -2134,6 +2252,34 @@ fun PlayerScreen(
                     onKaraokePitchChange = { viewModel.setKaraokePitchSemitones(it) },
                     onKaraokeSpeedChange = { viewModel.setKaraokeSpeed(it) },
                     onResetKaraokeTuning = { viewModel.resetKaraokeTuning() },
+                    karaokeRecording = karaokeRecording,
+                    onStartRecording = { requestKaraokeRecording() },
+                    onStopRecording = { stopKaraokeRecording() },
+                    onSaveRecording = { saveKaraokeRecording() },
+                    onDiscardRecording = { discardKaraokeRecording() },
+                )
+            }
+
+            // Aviso de auriculares antes de grabar (Fase F). No bloquea: se puede grabar
+            // igualmente, pero avisado de que la toma saldrá con la canción encima.
+            if (headphonesWarningOpen) {
+                AlertDialog(
+                    onDismissRequest = { headphonesWarningOpen = false },
+                    title = { Text(stringResource(R.string.karaoke_headphones_title)) },
+                    text = { Text(stringResource(R.string.karaoke_headphones_body)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            headphonesWarningOpen = false
+                            beginKaraokeRecording()
+                        }) {
+                            Text(stringResource(R.string.karaoke_record_anyway))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { headphonesWarningOpen = false }) {
+                            Text(stringResource(R.string.karaoke_cancel))
+                        }
+                    },
                 )
             }
 

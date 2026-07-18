@@ -364,6 +364,26 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _karaokeSpeed.value = KaraokeTuning.NEUTRAL_SPEED
     }
 
+    /**
+     * Estado de la grabación de karaoke (Fase F).
+     *
+     * `Review` es deliberadamente un estado propio y no un guardado automático: la toma vive en
+     * disco pero **no se considera guardada** hasta que el usuario lo dice. Al descartar se borra.
+     * Es lo que evita que la carpeta se llene de tomas que nadie va a volver a oír.
+     */
+    sealed interface KaraokeRecordingState {
+        data object Idle : KaraokeRecordingState
+        data class Recording(val session: KaraokeRecorder.Session) : KaraokeRecordingState
+        data class Review(val session: KaraokeRecorder.Session) : KaraokeRecordingState
+    }
+
+    private val _karaokeRecording = MutableStateFlow<KaraokeRecordingState>(KaraokeRecordingState.Idle)
+    val karaokeRecording: StateFlow<KaraokeRecordingState> = _karaokeRecording.asStateFlow()
+
+    fun setKaraokeRecordingState(state: KaraokeRecordingState) {
+        _karaokeRecording.value = state
+    }
+
     // ── Cola de reproducción unificada (JSON) ───────────────────────────────
 
     fun loadPlaybackQueueSnapshot(): PlaybackQueueSnapshot? {
