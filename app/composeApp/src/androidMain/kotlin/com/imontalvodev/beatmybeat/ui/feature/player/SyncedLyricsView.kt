@@ -27,6 +27,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.imontalvodev.beatmybeat.ui.theme.Motion
 import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 
@@ -97,7 +98,7 @@ fun SyncedLyricsView(
                         isPast -> onSurface.copy(alpha = 0.45f)
                         else -> onSurface.copy(alpha = 0.65f)
                     },
-                    animationSpec = tween(durationMillis = 180),
+                    animationSpec = tween(durationMillis = Motion.QUICK),
                     label = "lyric_line_color",
                 )
                 val fontSize = if (isActive || isUpcoming) activeFontSize else inactiveFontSize

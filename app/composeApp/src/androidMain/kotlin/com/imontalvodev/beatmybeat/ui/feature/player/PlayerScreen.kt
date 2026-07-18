@@ -145,6 +145,7 @@ import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
+import com.imontalvodev.beatmybeat.ui.theme.Motion
 import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
@@ -1844,8 +1845,8 @@ fun PlayerScreen(
                 AnimatedContent(
                     targetState = selectedSection,
                     transitionSpec = {
-                        (fadeIn(animationSpec = tween(240)) + slideInHorizontally { it / 6 }) togetherWith
-                            (fadeOut(animationSpec = tween(200)) + slideOutHorizontally { -it / 6 })
+                        (fadeIn(animationSpec = tween(Motion.STANDARD)) + slideInHorizontally { it / 6 }) togetherWith
+                            (fadeOut(animationSpec = tween(Motion.QUICK)) + slideOutHorizontally { -it / 6 })
                     },
                     label = "player_section_content",
                 ) { section ->
@@ -2030,8 +2031,8 @@ fun PlayerScreen(
             AnimatedVisibility(
                 visible = currentTrack != null,
                 modifier = Modifier.fillMaxWidth(),
-                enter = slideInVertically { it } + fadeIn(animationSpec = tween(280)),
-                exit = slideOutVertically { it } + fadeOut(animationSpec = tween(220)),
+                enter = slideInVertically { it } + fadeIn(animationSpec = tween(Motion.STANDARD)),
+                exit = slideOutVertically { it } + fadeOut(animationSpec = tween(Motion.QUICK)),
             ) {
                 MiniPlayerBar(
                     modifier = Modifier

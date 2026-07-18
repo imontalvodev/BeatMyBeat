@@ -145,6 +145,7 @@ import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
+import com.imontalvodev.beatmybeat.ui.theme.Motion
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.Radius
@@ -229,7 +230,7 @@ internal fun MiniPlayerBar(
                         val miniCtx = LocalContext.current
                         Crossfade(
                             targetState = artwork,
-                            animationSpec = tween(220),
+                            animationSpec = tween(Motion.STANDARD),
                             label = "mini_artwork_cf",
                         ) { bmp ->
                             if (bmp != null) {

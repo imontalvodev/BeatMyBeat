@@ -40,6 +40,33 @@ object Radius {
 }
 
 /**
+ * Duraciones de animación, en milisegundos.
+ *
+ * Había 9 valores distintos repartidos por 12 sitios (180, 200, 220, 240, 280, 320, 600, 700), pero
+ * al mirarlos de cerca seguían un criterio correcto que **no** hay que aplanar: las entradas duran
+ * más que las salidas (240/200, 280/220, 220/160). Es práctica Material: aparecer se acompaña,
+ * desaparecer se quita de en medio. Por eso los tokens se nombran por rol y conservan esa asimetría
+ * en vez de unificar todo a un único número.
+ */
+object Motion {
+
+    /** Respuesta inmediata a una acción, y salidas. Lo que desaparece no se hace esperar. */
+    const val QUICK = 180
+
+    /** Entradas y crossfades de contenido. Es la duración por defecto. */
+    const val STANDARD = 240
+
+    /** Cambios estructurales de layout: expandir/colapsar, barras de progreso. */
+    const val LAYOUT = 320
+
+    /**
+     * Cambios de ambiente que no deben llamar la atención — el color dominante que tiñe el fondo
+     * del reproductor al cambiar de canción. Lento a propósito: si se nota, molesta.
+     */
+    const val AMBIENT = 600
+}
+
+/**
  * Roles tipográficos por función, no por tamaño.
  *
  * Se nombran por lo que son ("el título en el reproductor") y no por su escala, para que subir o

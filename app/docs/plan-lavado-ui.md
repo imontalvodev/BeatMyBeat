@@ -200,11 +200,30 @@ la convertiría casi en un círculo. No se inventó un token para un caso único
 
 **Riesgo:** bajo.
 
-### Fase U6 — Movimiento y estados de carga (prioridad baja, hacer al final)
+### Fase U6 — Movimiento y estados de carga ✅ Completada
 
-`LoadingSkeletons.kt`, transiciones entre pantallas y `Crossfade`/`AnimatedContent` ya presentes.
-Unificar duraciones y curvas en tokens de `Motion`. Al final a propósito: el movimiento se afina sobre
-un layout ya estable, nunca antes.
+Había 9 duraciones distintas repartidas por 12 sitios: 180, 200, 220, 240, 280, 320, 600, 700.
+
+**El hallazgo:** no todas eran ruido. Las entradas duraban sistemáticamente más que las salidas
+(240/200, 280/220, 220/160), que es criterio Material correcto — aparecer se acompaña, desaparecer se
+quita de en medio. Aplanarlo todo a un número habría sido *empeorar* el movimiento en nombre de la
+consistencia. Los tokens conservan esa asimetría:
+
+| Token             | ms  | Para qué                                                       |
+| ----------------- | --- | -------------------------------------------------------------- |
+| `Motion.QUICK`    | 180 | Salidas y respuesta inmediata (color de la línea que canta)     |
+| `Motion.STANDARD` | 240 | Entradas y crossfades de contenido. El valor por defecto        |
+| `Motion.LAYOUT`   | 320 | Cambios estructurales: expandir/colapsar, barras de progreso    |
+| `Motion.AMBIENT`  | 600 | Color dominante que tiñe el fondo del reproductor               |
+
+Aplicado en `PlayerArtwork`, `PlayerMiniBar`, `SyncedLyricsView`, `DownloadProgressUi`,
+`PlayerExpandedOverlay` y `PlayerScreen`.
+
+**`LoadingSkeletons` no se toca:** usa la librería `shimmer` con sus valores por defecto, que ya son
+coherentes. No hay nada que unificar ahí.
+
+**El splash conserva sus 700ms** (`SplashScreen.kt:54`), único literal que queda. No es una transición
+de interfaz sino un momento de marca, y meterlo en la escala de movimiento de la app lo dejaría corto.
 
 **Riesgo:** bajo.
 
@@ -232,7 +251,7 @@ UI (no hay Robolectric en el proyecto) es justo el tipo de cambio que rompe algo
 | U3   | Biblioteca + scroll A–Z                | Media-Alta  | U0, U2     | ✅ Completada |
 | U4   | Descargas                              | Media       | U3         | ✅ Completada |
 | U5   | Perfil + personalizador                | Baja        | U0         | ✅ Completada |
-| U6   | Movimiento y skeletons                 | Baja        | U2–U5      | Pendiente    |
+| U6   | Movimiento y skeletons                 | Baja        | U2–U5      | ✅ Completada |
 
 ---
 
@@ -257,6 +276,24 @@ cambio — conviene barrer el resto de pantallas buscando más casos antes de ar
    probar explícitamente en cada fase: crear un perfil de fondo claro y recorrer la pantalla.
 4. **Espacio en el emulador.** `/data` al 92%; el APK debug pesa 136 MB y `adb install -r` falla con
    `INSTALL_FAILED_INSUFFICIENT_STORAGE`. Hay que resolverlo antes de la verificación visual de U2.
+
+---
+
+## Estado final
+
+Las seis fases están cerradas. Lo que queda del diagnóstico inicial:
+
+- **Tipografía:** 22 usos de roles semánticos donde antes todo vivía en `body*`/`label*`. El peor caso
+  (título de canción a 12sp) está a 16sp semibold.
+- **Color:** las 14 fugas de paleta, cerradas. Fuera de `Theme.kt` solo queda el tirador del círculo de
+  tono, deliberado.
+- **Forma y espaciado:** radios y márgenes por tokens.
+- **Movimiento:** 9 duraciones sueltas → 4 tokens con roles, más el splash aparte.
+
+**Sin verificar a ojo:** U4, U5, U6 y el rediseño de la zona de letra. El emulador de esta máquina
+está al 92% de `/data` y `adb install` falla con `INSTALL_FAILED_INSUFFICIENT_STORAGE`; el despliegue
+se hizo desde Android Studio. Conviene recorrer las cuatro pantallas antes de dar el plan por bueno,
+**con un perfil de tema claro**, que es el escenario que rompía antes.
 
 ---
 

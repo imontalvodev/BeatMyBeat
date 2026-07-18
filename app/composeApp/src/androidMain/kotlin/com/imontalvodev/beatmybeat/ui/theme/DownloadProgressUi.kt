@@ -45,7 +45,7 @@ fun GradientProgressTrack(
 ) {
     val animated by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(320),
+        animationSpec = tween(Motion.LAYOUT),
         label = "download_progress_anim",
     )
     val primary = MaterialTheme.colorScheme.primary

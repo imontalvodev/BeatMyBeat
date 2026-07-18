@@ -155,6 +155,7 @@ import com.imontalvodev.beatmybeat.ui.network.LrcLine
 import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
+import com.imontalvodev.beatmybeat.ui.theme.Motion
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.Radius
@@ -333,7 +334,7 @@ internal fun ExpandedPlayerOverlay(
 
     val animatedTop by animateColorAsState(
         targetValue = dominantTop,
-        animationSpec = tween(600),
+        animationSpec = tween(Motion.AMBIENT),
         label = "expanded_player_dominant",
     )
     val gradientBrush = remember(animatedTop, overlayPalette.backgroundBottom) {
@@ -445,8 +446,8 @@ internal fun ExpandedPlayerOverlay(
                 AnimatedVisibility(
                     visible = !karaokeActive,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
-                    enter = fadeIn(tween(220)) + expandVertically(tween(320)),
-                    exit = fadeOut(tween(160)) + shrinkVertically(tween(320)),
+                    enter = fadeIn(tween(Motion.STANDARD)) + expandVertically(tween(Motion.LAYOUT)),
+                    exit = fadeOut(tween(Motion.QUICK)) + shrinkVertically(tween(Motion.LAYOUT)),
                 ) {
                     Box(
                         modifier = Modifier
