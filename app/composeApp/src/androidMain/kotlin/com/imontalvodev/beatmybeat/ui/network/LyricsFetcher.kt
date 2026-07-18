@@ -38,7 +38,10 @@ object LyricsFetcher {
             for (title in titles) {
                 for (artist in artists) {
                     LyricsCache.getEntry(context, title, artist)?.let { cached ->
-                        if (cached.hasAnyLyrics()) {
+                        // Una entrada guardada sin haber podido consultar LRCLIB (texto plano de
+                        // lyrics.ovh tras un timeout) no debe bloquear el intento de conseguir
+                        // letra sincronizada: se ignora aquí y se vuelve a preguntar.
+                        if (cached.hasAnyLyrics() && (cached.lrclibChecked || !cached.syncedLrc.isNullOrBlank())) {
                             return cached.toResponse()
                         }
                     }
@@ -58,15 +61,24 @@ object LyricsFetcher {
             artistCandidates = artists.drop(1),
         )
         if (lrc.success && lrc.lyrics.isNotBlank()) {
-            LyricsCache.putFromResponse(context, titles.first(), artists.first(), lrc)
+            LyricsCache.putFromResponse(context, titles.first(), artists.first(), lrc, lrclibChecked = true)
             return lrc
+        }
+
+        // Si LRCLIB no contestó (timeout/DNS/conexión), NO se cae a lyrics.ovh: devuelve texto
+        // plano sin sincronizar, y al cachearlo dejaría la pista sin karaoke posible. Ante un
+        // fallo pasajero es mejor no tener letra ahora que tener la mala para siempre.
+        if (isLyricsNetworkFailure(lrc.error)) {
+            return notFound(lrc.error ?: ERROR_UNREACHABLE)
         }
 
         for (title in titles.take(2)) {
             for (artist in artists.take(2)) {
                 val ovh = LyricsOvhApi.fetch(title = title, artist = artist)
                 if (ovh.success && ovh.lyrics.isNotBlank()) {
-                    LyricsCache.putFromResponse(context, title, artist, ovh)
+                    // LRCLIB sí respondió (dijo que no la tiene), así que esta entrada plana es
+                    // definitiva y no hay que volver a preguntarle.
+                    LyricsCache.putFromResponse(context, title, artist, ovh, lrclibChecked = true)
                     return ovh
                 }
             }

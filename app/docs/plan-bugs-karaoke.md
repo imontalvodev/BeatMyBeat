@@ -37,6 +37,47 @@
 | 15  | Lote de letras sin timeout agregado; una pista lenta bloquea el batch entero minutos                                                                                                   | `ui/network/LrcLibApi.kt:62-81`, `service/LyricsBatchService.kt:71-132`                    | Baja                       | ✅ Fijado (Fase G) |
 
 
+### Ronda 3 — la biblioteca se quedaba sin letra sincronizada
+
+| #  | Bug                                                                                                       | Archivo                                        | Severidad                  | Estado   |
+| -- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | -------------------------- | -------- |
+| 16 | Un timeout de LRCLIB se mostraba como "no hay letra para esta canción"                                     | `ui/feature/player/PlayerScreen.kt`            | Media (engaña al usuario)  | ✅ Fijado |
+| 17 | Tras un timeout se caía a lyrics.ovh y el texto plano se cacheaba, dejando la pista sin karaoke **para siempre** | `ui/network/LyricsFetcher.kt`, `LyricsCache.kt` | **Alta (pérdida silenciosa de una feature)** | ✅ Fijado |
+| 18 | Se agotaba el presupuesto de 20s lanzando peticiones sabiendo que la red no respondía                     | `ui/network/LrcLibApi.kt`                      | Baja (espera innecesaria)  | ✅ Fijado |
+
+**Cómo se manifestaba (bug 17, el grave):** al descargar canciones en lote, LRCLIB responde lento o
+corta (2 peticiones concurrentes, timeout de lectura de 10s). `LyricsFetcher` trataba *cualquier* fallo
+de LRCLIB como "no la tiene" y caía a lyrics.ovh, que **solo devuelve texto plano, sin marcas de
+tiempo**. Ese texto se guardaba en caché, y `getEntry(...).hasAnyLyrics()` respondía a partir de
+entonces: LRCLIB no se volvía a consultar **nunca**. Resultado: pistas que sí tienen LRC sincronizado en
+LRCLIB se quedaban con letra plana permanentemente, y con ellas el Modo Karaoke — que exige LRC — dejaba
+de estar disponible sin que nada lo indicara. Una caída pasajera de red degradaba la biblioteca de forma
+irreversible (salvo "refrescar letra" a mano, pista por pista).
+
+**Fix aplicado:**
+
+1. `LrcLibApi.executeGetRaw` distingue "red no alcanzable" (`SocketTimeoutException`,
+   `InterruptedIOException`, `UnknownHostException`, `ConnectException`) de un fallo cualquiera, y lanza
+   `LyricsNetworkUnreachable`. `fetchLyrics` la captura y **aborta la búsqueda entera** en vez de seguir
+   probando combinaciones que van a fallar igual (el doble bucle se extrajo a `searchAllCombinations`
+   para poder envolverlo; el flujo interno no cambia). Deja de gastar los 20s de presupuesto.
+2. `LyricsFetcher` **ya no cae a lyrics.ovh cuando el fallo es de red** — solo cuando LRCLIB ha
+   respondido de verdad que no tiene la letra. Ante un fallo pasajero es mejor no tener letra ahora que
+   tener la mala para siempre.
+3. `LyricsCacheEntry.lrclibChecked` (nuevo, persistido en el JSON): marca si LRCLIB llegó a contestar.
+   Una entrada de texto plano guardada **sin** haber podido preguntarle ya no bloquea el reintento. Las
+   entradas antiguas no llevan la marca, así que se reintenta LRCLIB una vez por pista y a partir de ahí
+   queda resuelto — la biblioteca ya degradada se recupera sola.
+4. La UI distingue los dos casos: nueva cadena `player_lyrics_network_error` ("No se pudo conectar…") en
+   las 6 locales, frente a `player_lyrics_unavailable`. El botón de reintentar que ya existía ahora
+   tiene sentido cuando aparece.
+
+**Tests:** `ui/network/LyricsFailureKindTest.kt` (3) sobre la clasificación del error y
+`ui/network/LyricsCacheEntryTest.kt` (5) sobre la condición de servir-desde-caché, incluida la regresión
+explícita del bug 17 y el caso de las entradas antiguas sin marca.
+
+---
+
 ### 1. Errores de reproducción no capturados
 
 **Archivo:** `service/PlaybackService.kt:109-137`

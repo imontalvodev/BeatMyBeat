@@ -213,6 +213,7 @@
     <string name="player_queue_load_error">Não foi possível carregar a lista de reprodução.</string>
     <string name="player_lyrics_select_song">Selecione uma música</string>
     <string name="player_lyrics_unavailable">Letra não disponível para esta música</string>
+    <string name="player_lyrics_network_error">Não foi possível ligar. Verifica a tua ligação e tenta de novo</string>
     <string name="player_lyrics_tap_download">Toque para baixar a letra (requer internet).</string>
     <string name="player_lyrics_synced_mode">Letra sincronizada</string>
     <string name="player_karaoke_mode">Modo karaoke</string>

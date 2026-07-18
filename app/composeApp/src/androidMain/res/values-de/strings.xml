@@ -213,6 +213,7 @@
     <string name="player_queue_load_error">Die Wiedergabeliste konnte nicht geladen werden.</string>
     <string name="player_lyrics_select_song">Wähle einen Song</string>
     <string name="player_lyrics_unavailable">Für diesen Song sind keine Lyrics verfügbar</string>
+    <string name="player_lyrics_network_error">Keine Verbindung. Prüfe deine Verbindung und versuche es erneut</string>
     <string name="player_lyrics_tap_download">Tippen, um Lyrics herunterzuladen (Internet erforderlich).</string>
     <string name="player_lyrics_synced_mode">Synchronisierte Lyrics</string>
     <string name="player_karaoke_mode">Karaoke-Modus</string>

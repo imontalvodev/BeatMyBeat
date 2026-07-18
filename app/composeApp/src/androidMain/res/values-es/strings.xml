@@ -152,6 +152,7 @@
     <string name="player_queue_load_error">No se pudo cargar la lista de reproducción.</string>
     <string name="player_lyrics_select_song">Selecciona una canción</string>
     <string name="player_lyrics_unavailable">No hay letra disponible para esta canción</string>
+    <string name="player_lyrics_network_error">No se pudo conectar. Revisa tu conexión y vuelve a intentarlo</string>
     <string name="player_lyrics_tap_download">Toca para descargar la letra (necesitas internet).</string>
     <string name="player_delete_failed">No se pudo eliminar la canción.</string>
     <string name="player_delete_failed_saf">No se pudo eliminar (SAF).</string>
