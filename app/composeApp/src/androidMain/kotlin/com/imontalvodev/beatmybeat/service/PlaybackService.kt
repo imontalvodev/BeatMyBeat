@@ -19,6 +19,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -348,6 +349,22 @@ class PlaybackService : Service() {
         pushState(force = true)
     }
 
+    /**
+     * Ajuste de velocidad y tono para el Modo Karaoke (Fase E). Usa el soporte nativo de
+     * ExoPlayer (`PlaybackParameters`), sin librería de audio adicional: `pitch` desacoplado
+     * de `speed` significa que transportar la canción no la acelera.
+     *
+     * El estado vive en `PlayerViewModel`, no aquí: si el servicio muere y se recrea, la UI
+     * lo vuelve a aplicar al rebindar.
+     */
+    fun setPlaybackTuning(speed: Float, pitch: Float) {
+        val safeSpeed = speed.coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)
+        val safePitch = pitch.coerceIn(MIN_PLAYBACK_PITCH, MAX_PLAYBACK_PITCH)
+        val current = exoPlayer.playbackParameters
+        if (current.speed == safeSpeed && current.pitch == safePitch) return
+        exoPlayer.playbackParameters = PlaybackParameters(safeSpeed, safePitch)
+    }
+
     private fun pushState(force: Boolean) {
         val now = SystemClock.elapsedRealtime()
         if (!force && exoPlayer.isPlaying) {
@@ -476,6 +493,12 @@ class PlaybackService : Service() {
         const val ACTION_STOP           = "com.imontalvodev.beatmybeat.action.STOP"
         const val ACTION_TOGGLE_SHUFFLE = "com.imontalvodev.beatmybeat.action.TOGGLE_SHUFFLE"
         const val ACTION_CYCLE_REPEAT   = "com.imontalvodev.beatmybeat.action.CYCLE_REPEAT"
+
+        /** Rangos del ajuste de karaoke. Tono en semitonos: ±6 = ±media octava. */
+        const val MIN_PLAYBACK_SPEED = 0.5f
+        const val MAX_PLAYBACK_SPEED = 1.5f
+        const val MIN_PLAYBACK_PITCH = 0.7071f  // -6 semitonos
+        const val MAX_PLAYBACK_PITCH = 1.4142f  // +6 semitonos
 
         private const val POSITION_TICK_MS = 500L
         private const val STATE_PUSH_INTERVAL_MS = 500L

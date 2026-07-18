@@ -153,7 +153,6 @@
     <string name="theme_accent">Acento</string>
 
     <string name="profile_avatar_cd">Avatar</string>
-    <string name="profile_change_photo">Cambiar foto de perfil</string>
     <string name="profile_change_language">Cambiar idioma</string>
     <string name="profile_song_location">Ubicación de canciones</string>
     <string name="profile_open_song_folder">Ver carpeta de canciones</string>
@@ -176,6 +175,10 @@
     <string name="update_download_failed">No se pudo descargar la actualización.</string>
     <string name="update_install_failed">No se pudo abrir el instalador.</string>
     <string name="update_install_permission_required">Permite instalar apps desconocidas para continuar.</string>
+    <string name="update_downloading_title">Descargando actualización…</string>
+    <string name="update_ready_title">Actualización lista</string>
+    <string name="update_ready_message">BeatMyBeat %1$s se ha descargado. ¿Instalar ahora?</string>
+    <string name="update_install_apk">Instalar</string>
     <string name="update_later">Más tarde</string>
     <string name="profile_check_updates">Buscar actualizaciones</string>
     <string name="profile_check_updates_hint">Comprueba si hay una versión nueva</string>
@@ -218,8 +221,45 @@
     <string name="player_queue_load_error">No se pudo cargar la lista de reproducción.</string>
     <string name="player_lyrics_select_song">Selecciona una canción</string>
     <string name="player_lyrics_unavailable">No hay letra disponible para esta canción</string>
+    <string name="player_lyrics_network_error">No se pudo conectar. Revisa tu conexión y vuelve a intentarlo</string>
+    <string name="karaoke_record_start">Grabar</string>
+    <string name="karaoke_record_stop">Parar</string>
+    <string name="karaoke_record_save">Guardar</string>
+    <string name="karaoke_record_discard">Descartar</string>
+    <string name="karaoke_record_saved">Grabación guardada</string>
+    <string name="karaoke_record_discarded">Grabación descartada</string>
+    <string name="karaoke_record_failed">No se pudo iniciar la grabación</string>
+    <string name="karaoke_record_too_short">Toma demasiado corta</string>
+    <string name="karaoke_headphones_hint">Mejor con auriculares: sin ellos se colará la canción en la grabación</string>
+    <string name="karaoke_takes_title">Tomas guardadas</string>
+    <string name="karaoke_take_play">Reproducir</string>
+    <string name="karaoke_take_stop">Detener</string>
+    <string name="karaoke_review_replay">Escuchar</string>
+    <string name="karaoke_take_delete">Borrar toma</string>
+    <string name="karaoke_take_deleted">Toma borrada</string>
+    <string name="karaoke_take_delete_failed">No se pudo borrar</string>
+    <string name="karaoke_takes_close">Cerrar</string>
+    <string name="karaoke_cancel">Cancelar</string>
+    <string name="karaoke_permission_denied">Permiso de micrófono denegado</string>
+    <string name="profile_karaoke_recordings">Grabaciones de karaoke</string>
+    <string name="profile_karaoke_recordings_size">%1$s ocupados · toca para borrar</string>
+    <string name="profile_karaoke_delete_title">¿Borrar las grabaciones?</string>
+    <string name="profile_karaoke_delete_body">Se borrarán todas las grabaciones de karaoke guardadas. No se puede deshacer.</string>
+    <string name="profile_karaoke_delete_confirm">Borrar</string>
+    <string name="profile_karaoke_deleted">Grabaciones borradas</string>
+    <string name="profile_karaoke_none">No hay grabaciones guardadas</string>
     <string name="player_lyrics_tap_download">Toca para descargar la letra (necesitas internet).</string>
     <string name="player_lyrics_synced_mode">Letra sincronizada</string>
+    <string name="player_karaoke_mode">Modo karaoke</string>
+    <string name="player_karaoke_mode_line_sync">Modo karaoke · por línea</string>
+    <string name="player_karaoke_enter_cd">Activar modo karaoke</string>
+    <string name="player_karaoke_exit_cd">Salir del modo karaoke</string>
+    <string name="player_karaoke_tuning_summary">Tono %1$s · %2$s</string>
+    <string name="player_karaoke_tuning_reset">Restablecer</string>
+    <string name="player_karaoke_pitch_label">Tono</string>
+    <string name="player_karaoke_speed_label">Velocidad</string>
+    <string name="player_karaoke_pitch_a11y">Tono %1$s semitonos</string>
+    <string name="player_karaoke_speed_a11y">Velocidad %1$s</string>
     <string name="player_lyrics_tap_load">Pulsa para cargar letra</string>
     <string name="player_lyrics_loading">Cargando letra…</string>
     <string name="player_lyrics_refresh">Volver a buscar</string>
@@ -260,8 +300,11 @@
     <string name="player_edit_playlist_invalid_name">Introduce un nombre válido.</string>
     <string name="player_save_button">Guardar</string>
     <string name="player_create_playlist_button">Crear</string>
-    <string name="player_action_hide">Ocultar</string>
     <string name="player_edit_playlist_menu">Editar nombre</string>
     <string name="player_delete_playlist_menu">Eliminar playlist</string>
     <string name="player_default_playlist_name">Mi playlist</string>
+    <plurals name="karaoke_saved_takes">
+        <item quantity="one">%1$d toma guardada</item>
+        <item quantity="other">%1$d tomas guardadas</item>
+    </plurals>
 </resources>

@@ -147,6 +147,28 @@ object BeatMyBeatNotification {
         runCatching { nm.notify(notificationId, notification) }
     }
 
+    fun showUpdateReadyToInstall(
+        context: Context,
+        title: String,
+        subtitle: String,
+        installActionLabel: String,
+        pendingIntent: PendingIntent,
+        notificationId: Int = DOWNLOAD_NOTIFICATION_ID,
+    ) {
+        ensureChannels(context)
+        if (!canPostNotifications(context)) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_DOWNLOAD)
+            .setSmallIcon(R.drawable.ic_stat_logo)
+            .setContentTitle(title)
+            .setContentText(subtitle)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .addAction(0, installActionLabel, pendingIntent)
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify(notificationId, notification) }
+    }
+
     fun showPlaybackOngoing(
         context: Context,
         title: String,

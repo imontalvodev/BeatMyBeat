@@ -6,11 +6,24 @@ package com.imontalvodev.beatmybeat.ui.network
 data class LrcLine(
     val startMs: Long,
     val text: String,
+    /**
+     * Timestamps por palabra (LRC "enhanced", `<mm:ss.xx>palabra`), vacío si la fuente no los
+     * provee. Sin esto NO se interpola nada dentro de la línea: adivinar el ritmo por proporción
+     * de caracteres no sigue el audio real y queda desincronizado (ver historial de Fase D).
+     */
+    val words: List<LrcWord> = emptyList(),
+)
+
+/** Fragmento de texto (palabra + espacios adyacentes) con su instante de inicio real. */
+data class LrcWord(
+    val startMs: Long,
+    val text: String,
 )
 
 object LrcParser {
 
     private val TIMESTAMP = Regex("""\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?]""")
+    private val WORD_TIMESTAMP = Regex("""<(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?>""")
 
     fun parse(lrc: String): List<LrcLine> {
         if (lrc.isBlank()) return emptyList()
@@ -20,11 +33,15 @@ object LrcParser {
             if (line.isBlank()) continue
             val timestamps = TIMESTAMP.findAll(line).toList()
             if (timestamps.isEmpty()) continue
-            val text = TIMESTAMP.replace(line, "").trim()
-            if (text.isEmpty()) continue
+            val remainder = TIMESTAMP.replace(line, "").trim()
+            if (remainder.isEmpty()) continue
+            val hasWordTimestamps = WORD_TIMESTAMP.containsMatchIn(remainder)
             for (match in timestamps) {
                 val startMs = parseTimestamp(match) ?: continue
-                lines.add(LrcLine(startMs = startMs, text = text))
+                val words = if (hasWordTimestamps) parseWordTimestamps(remainder, startMs) else emptyList()
+                val text = if (words.isNotEmpty()) words.joinToString("") { it.text }.trim() else remainder
+                if (text.isEmpty()) continue
+                lines.add(LrcLine(startMs = startMs, text = text, words = words))
             }
         }
         return lines.sortedBy { it.startMs }
@@ -36,7 +53,7 @@ object LrcParser {
         if (parsed.isNotEmpty()) {
             return parsed.map { it.text }.distinct().joinToString("\n")
         }
-        return TIMESTAMP.replace(lrc, "").lines()
+        return WORD_TIMESTAMP.replace(TIMESTAMP.replace(lrc, ""), "").lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .joinToString("\n")
@@ -50,6 +67,55 @@ object LrcParser {
             if (lines[i].startMs <= positionMs) idx = i else break
         }
         return idx
+    }
+
+    /**
+     * Línea sobre la que centrar la vista, que no siempre es la que suena.
+     *
+     * Durante la intro (antes del primer timestamp) [lineAtPosition] devuelve -1 porque todavía no
+     * canta nadie. Enfocar ahí la línea 0 hace que al arrancar la canción ya se lea la primera frase
+     * y la siguiente, en vez de una pantalla de líneas indistinguibles; y hace que al buscar hacia
+     * atrás hasta la intro la letra vuelva al principio en vez de quedarse clavada.
+     *
+     * Devuelve -1 solo si no hay líneas.
+     */
+    fun focusLineAtPosition(lines: List<LrcLine>, positionMs: Long): Int {
+        if (lines.isEmpty()) return -1
+        return lineAtPosition(lines, positionMs).coerceAtLeast(0)
+    }
+
+    /**
+     * Número de caracteres de [LrcLine.text] ya "cantados" en [positionMs], solo cuando la línea
+     * trae timestamps reales por palabra ([LrcLine.words]). Si no los trae, devuelve 0 siempre:
+     * no hay interpolación de respaldo, para no mostrar un resaltado que no sigue el audio real.
+     */
+    fun karaokeHighlightLength(line: LrcLine, positionMs: Long): Int {
+        if (line.words.isEmpty() || positionMs <= line.startMs) return 0
+        var consumed = 0
+        for (word in line.words) {
+            if (positionMs < word.startMs) break
+            consumed += word.text.length
+        }
+        return consumed.coerceIn(0, line.text.length)
+    }
+
+    private fun parseWordTimestamps(remainder: String, lineStartMs: Long): List<LrcWord> {
+        val matches = WORD_TIMESTAMP.findAll(remainder).toList()
+        if (matches.isEmpty()) return emptyList()
+        val words = mutableListOf<LrcWord>()
+        val leading = remainder.substring(0, matches.first().range.first)
+        if (leading.isNotEmpty()) {
+            words.add(LrcWord(startMs = lineStartMs, text = leading))
+        }
+        for (i in matches.indices) {
+            val match = matches[i]
+            val startMs = parseTimestamp(match) ?: continue
+            val segStart = match.range.last + 1
+            val segEnd = if (i + 1 < matches.size) matches[i + 1].range.first else remainder.length
+            if (segStart >= segEnd) continue
+            words.add(LrcWord(startMs = startMs, text = remainder.substring(segStart, segEnd)))
+        }
+        return words
     }
 
     private fun parseTimestamp(match: MatchResult): Long? {

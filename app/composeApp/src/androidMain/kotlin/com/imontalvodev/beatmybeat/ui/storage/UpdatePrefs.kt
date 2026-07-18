@@ -7,6 +7,7 @@ object UpdatePrefs {
     private const val KEY_LAST_CHECK_MS = "last_check_ms"
     private const val KEY_DISMISSED_VERSION = "dismissed_version"
     private const val KEY_PENDING_APK_DOWNLOAD_ID = "pending_apk_download_id"
+    private const val KEY_PENDING_APK_VERSION = "pending_apk_version"
     private const val CHECK_INTERVAL_MS = 12L * 60L * 60L * 1000L
 
     fun shouldCheckNow(context: Context, nowMs: Long = System.currentTimeMillis()): Boolean {
@@ -49,6 +50,24 @@ object UpdatePrefs {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .remove(KEY_PENDING_APK_DOWNLOAD_ID)
+            .apply()
+    }
+
+    fun setPendingApkVersion(context: Context, version: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_PENDING_APK_VERSION, version)
+            .apply()
+    }
+
+    fun getPendingApkVersion(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_PENDING_APK_VERSION, "") ?: ""
+
+    fun clearPendingApkVersion(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_PENDING_APK_VERSION)
             .apply()
     }
 }

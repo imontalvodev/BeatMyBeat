@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.imontalvodev.beatmybeat.service.PlaybackService
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.data.MediaStoreScanner
 import org.json.JSONArray
@@ -321,6 +322,66 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setShuffleEnabled(enabled: Boolean) {
         _shuffleEnabled.value = enabled
+    }
+
+    /**
+     * Modo karaoke del reproductor expandido. Persiste entre canciones dentro de la sesión
+     * (sobrevive a plegar el overlay y a cambios de configuración), pero no se guarda en
+     * preferencias: al reabrir la app se vuelve al modo de escucha normal. La UI lo desactiva
+     * sola si la pista actual no tiene letra sincronizada — ver ExpandedPlayerOverlay.
+     */
+    private val _karaokeMode = MutableStateFlow(false)
+    val karaokeMode: StateFlow<Boolean> = _karaokeMode.asStateFlow()
+
+    fun setKaraokeMode(enabled: Boolean) {
+        _karaokeMode.value = enabled
+    }
+
+    /**
+     * Ajuste de tono (semitonos) y velocidad del Modo Karaoke. Mismo ciclo de vida que
+     * [karaokeMode]. Los valores se conservan al salir del modo — la UI aplica 1.0/1.0 al
+     * player mientras el karaoke está apagado, así que salir del modo devuelve el audio
+     * original sin perder el ajuste que el usuario ya había encontrado.
+     */
+    private val _karaokePitchSemitones = MutableStateFlow(KaraokeTuning.NEUTRAL_SEMITONES)
+    val karaokePitchSemitones: StateFlow<Float> = _karaokePitchSemitones.asStateFlow()
+
+    private val _karaokeSpeed = MutableStateFlow(KaraokeTuning.NEUTRAL_SPEED)
+    val karaokeSpeed: StateFlow<Float> = _karaokeSpeed.asStateFlow()
+
+    fun setKaraokePitchSemitones(semitones: Float) {
+        _karaokePitchSemitones.value =
+            semitones.coerceIn(KaraokeTuning.MIN_SEMITONES, KaraokeTuning.MAX_SEMITONES)
+    }
+
+    fun setKaraokeSpeed(speed: Float) {
+        _karaokeSpeed.value =
+            speed.coerceIn(PlaybackService.MIN_PLAYBACK_SPEED, PlaybackService.MAX_PLAYBACK_SPEED)
+    }
+
+    fun resetKaraokeTuning() {
+        _karaokePitchSemitones.value = KaraokeTuning.NEUTRAL_SEMITONES
+        _karaokeSpeed.value = KaraokeTuning.NEUTRAL_SPEED
+    }
+
+    /**
+     * Estado de la grabación de karaoke (Fase F).
+     *
+     * `Review` es deliberadamente un estado propio y no un guardado automático: la toma vive en
+     * disco pero **no se considera guardada** hasta que el usuario lo dice. Al descartar se borra.
+     * Es lo que evita que la carpeta se llene de tomas que nadie va a volver a oír.
+     */
+    sealed interface KaraokeRecordingState {
+        data object Idle : KaraokeRecordingState
+        data class Recording(val session: KaraokeRecorder.Session) : KaraokeRecordingState
+        data class Review(val session: KaraokeRecorder.Session) : KaraokeRecordingState
+    }
+
+    private val _karaokeRecording = MutableStateFlow<KaraokeRecordingState>(KaraokeRecordingState.Idle)
+    val karaokeRecording: StateFlow<KaraokeRecordingState> = _karaokeRecording.asStateFlow()
+
+    fun setKaraokeRecordingState(state: KaraokeRecordingState) {
+        _karaokeRecording.value = state
     }
 
     // ── Cola de reproducción unificada (JSON) ───────────────────────────────

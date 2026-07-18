@@ -45,7 +45,7 @@ fun GradientProgressTrack(
 ) {
     val animated by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(320),
+        animationSpec = tween(Motion.LAYOUT),
         label = "download_progress_anim",
     )
     val primary = MaterialTheme.colorScheme.primary
@@ -53,7 +53,7 @@ fun GradientProgressTrack(
     Box(
         modifier = modifier
             .height(8.dp)
-            .clip(RoundedCornerShape(999.dp))
+            .clip(RoundedCornerShape(Radius.pill))
             .background(trackColor),
     ) {
         Box(
@@ -68,7 +68,7 @@ fun GradientProgressTrack(
                             primary,
                         ),
                     ),
-                    shape = RoundedCornerShape(999.dp),
+                    shape = RoundedCornerShape(Radius.pill),
                 ),
         )
     }
@@ -84,12 +84,12 @@ internal fun DownloadProgressCardShell(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(Radius.lg))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(Radius.lg),
             )
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -101,7 +101,7 @@ internal fun DownloadProgressCardShell(
             Box(
                 modifier = Modifier
                     .size(44.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(Radius.md))
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -163,7 +163,7 @@ fun SingleDownloadProgressCard(
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = title.ifBlank { stringResource(R.string.download_progress_unknown_title) },
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                style = AppText.trackTitle,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -171,7 +171,7 @@ fun SingleDownloadProgressCard(
             if (artist.isNotBlank()) {
                 Text(
                     text = artist,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = AppText.trackArtist,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -180,7 +180,7 @@ fun SingleDownloadProgressCard(
         }
         Text(
             text = phase,
-            style = MaterialTheme.typography.labelMedium,
+            style = AppText.meta,
             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
         )
         if (hasFileProgress) {
@@ -273,7 +273,7 @@ fun PlaylistDownloadProgressCard(
 
         Text(
             text = phase,
-            style = MaterialTheme.typography.labelMedium,
+            style = AppText.meta,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
         )
 

@@ -90,3 +90,16 @@ fun buildLyricsArtistCandidates(rawArtist: String, extra: List<String> = emptyLi
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .distinct()
+
+/**
+ * Códigos de [LyricsResponse.error] que significan "no se pudo llegar a LRCLIB", frente a
+ * "LRCLIB contestó que no hay letra para esta canción".
+ *
+ * La UI los distingue porque la acción que le toca al usuario es distinta: ante un fallo de red
+ * reintentar sirve de algo; ante un "no existe", no.
+ */
+internal fun isLyricsNetworkFailure(error: String?): Boolean =
+    error == ERROR_UNREACHABLE || error == ERROR_TIMEOUT
+
+internal const val ERROR_UNREACHABLE = "Unreachable"
+internal const val ERROR_TIMEOUT = "Timeout"
