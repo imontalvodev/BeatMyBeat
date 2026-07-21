@@ -18,6 +18,7 @@
 !.github/**
 !app/
 !app/**
+!graphify-out/**
 
 # Legado explícito (por si se recrean carpetas locales)
 /backend/
