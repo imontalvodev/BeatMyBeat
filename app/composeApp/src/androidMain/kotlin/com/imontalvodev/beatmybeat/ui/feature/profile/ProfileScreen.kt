@@ -66,10 +66,7 @@ import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.feature.player.formatBytes
-import com.imontalvodev.beatmybeat.ui.feature.player.KaraokeRecordings
 import android.widget.Toast
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.runtime.LaunchedEffect
 
 @Composable
@@ -156,59 +153,6 @@ fun ProfileScreen(
                 onClick = onOpenStorageFolder,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-            // Grabaciones de karaoke (Fase F): el usuario debe poder ver cuanto ocupan y
-            // borrarlas sin salir de la app. Sin esto, el unico modo de recuperar el espacio
-            // seria desinstalar.
-            val context = LocalContext.current
-            var recordingsBytes by remember { mutableStateOf(0L) }
-            var deleteRecordingsOpen by remember { mutableStateOf(false) }
-            val noRecordingsText = stringResource(R.string.profile_karaoke_none)
-            val deletedText = stringResource(R.string.profile_karaoke_deleted)
-
-            LaunchedEffect(Unit) {
-                recordingsBytes = withContext(Dispatchers.IO) { KaraokeRecordings.totalBytes(context) }
-            }
-
-            ProfileOption(
-                label = stringResource(R.string.profile_karaoke_recordings),
-                subtitle = if (recordingsBytes > 0L) {
-                    stringResource(R.string.profile_karaoke_recordings_size, formatBytes(recordingsBytes))
-                } else {
-                    noRecordingsText
-                },
-                icon = Icons.Filled.Mic,
-                onClick = { if (recordingsBytes > 0L) deleteRecordingsOpen = true },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-
-            if (deleteRecordingsOpen) {
-                val scope = rememberCoroutineScope()
-                AlertDialog(
-                    onDismissRequest = { deleteRecordingsOpen = false },
-                    title = { Text(stringResource(R.string.profile_karaoke_delete_title)) },
-                    text = { Text(stringResource(R.string.profile_karaoke_delete_body)) },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            deleteRecordingsOpen = false
-                            scope.launch {
-                                withContext(Dispatchers.IO) { KaraokeRecordings.deleteAllSaved(context) }
-                                recordingsBytes = withContext(Dispatchers.IO) {
-                                    KaraokeRecordings.totalBytes(context)
-                                }
-                                Toast.makeText(context, deletedText, Toast.LENGTH_SHORT).show()
-                            }
-                        }) {
-                            Text(stringResource(R.string.profile_karaoke_delete_confirm))
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { deleteRecordingsOpen = false }) {
-                            Text(stringResource(R.string.karaoke_cancel))
-                        }
-                    },
-                )
-            }
-
             ProfileOption(
                 label = stringResource(R.string.profile_customize_background),
                 icon = Icons.Filled.Palette,

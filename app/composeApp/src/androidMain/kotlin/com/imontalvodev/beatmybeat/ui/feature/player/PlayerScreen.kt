@@ -130,7 +130,6 @@ import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import android.provider.MediaStore
 import androidx.media3.common.Player
-import android.media.MediaPlayer
 import java.io.File
 import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -323,13 +322,6 @@ fun PlayerScreen(
     val shuffleOn by viewModel.shuffleEnabled.collectAsState()
     val karaokeMode by viewModel.karaokeMode.collectAsState()
     val karaokePitchSemitones by viewModel.karaokePitchSemitones.collectAsState()
-    val karaokeRecording by viewModel.karaokeRecording.collectAsState()
-    val karaokeRecorder = remember(context) { KaraokeRecorder(context) }
-    /** Recomendación de auriculares; se muestra inline, no bloquea la grabación. */
-    val headphonesConnected = rememberHeadphonesConnected()
-    /** Tomas ya guardadas de la canción actual, para mostrarlas en el Modo Karaoke. */
-    var karaokeTakeCount by remember { mutableStateOf(0) }
-    var takesSheetOpen by remember { mutableStateOf(false) }
     val karaokeSpeed by viewModel.karaokeSpeed.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
@@ -460,25 +452,6 @@ fun PlayerScreen(
                 speed = KaraokeTuning.NEUTRAL_SPEED,
                 pitch = KaraokeTuning.NEUTRAL_PITCH,
             )
-        }
-    }
-
-    // Temporales huerfanos de una grabacion interrumpida (app matada a media toma). Estan en
-    // cacheDir, asi que el sistema acabaria reclamandolos, pero no hay razon para esperar.
-    LaunchedEffect(Unit) {
-        // Solo si no hay toma viva: en estado Review el temporal AUN NO se ha guardado, y
-        // borrarlo al volver a la pantalla le quitaria al usuario la toma que esta escuchando.
-        if (viewModel.karaokeRecording.value is PlayerViewModel.KaraokeRecordingState.Idle) {
-            withContext(Dispatchers.IO) { KaraokeRecordings.clearTemp(context) }
-        }
-    }
-
-    LaunchedEffect(currentTrack?.id) {
-        val id = currentTrack?.id
-        karaokeTakeCount = if (id == null) {
-            0
-        } else {
-            withContext(Dispatchers.IO) { KaraokeRecordingIndex.forTrack(context, id).size }
         }
     }
 
@@ -870,180 +843,6 @@ fun PlayerScreen(
                 }
             } finally {
                 lyricsDownloadingUris = lyricsDownloadingUris - track.uri
-            }
-        }
-    }
-
-    // ── Modo Karaoke: grabación de voz (Fase F) ─────────────────────────────
-    //
-    // La toma vive en almacenamiento privado desde que se pulsa grabar, pero NO se considera
-    // guardada hasta que el usuario lo dice: descartar la borra. Es lo que evita que la carpeta
-    // se llene de tomas que nadie va a volver a oír.
-
-    /** Reproductor de la voz durante la revisión. La canción queda pausada mientras tanto. */
-    var reviewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-
-    /**
-     * ¿Está sonando la toma en revisión? Necesario para pintar reproducir/parar: la toma se
-     * escucha entera y sin él no habría forma de volver a oírla antes de decidir.
-     */
-    var reviewPlaying by remember { mutableStateOf(false) }
-
-    fun releaseReviewPlayer() {
-        reviewPlayer?.let { player ->
-            runCatching { player.stop() }
-            runCatching { player.release() }
-        }
-        reviewPlayer = null
-        reviewPlaying = false
-    }
-
-    /** Arranca la toma desde el principio. Suelta cualquier reproducción anterior. */
-    fun startReviewPlayback(file: File) {
-        releaseReviewPlayer()
-        runCatching {
-            MediaPlayer().apply {
-                setDataSource(file.absolutePath)
-                setOnCompletionListener { reviewPlaying = false }
-                prepare()
-                start()
-            }
-        }.onSuccess { player ->
-            reviewPlayer = player
-            reviewPlaying = true
-        }.onFailure { error ->
-            Logger.e("Karaoke", "No se pudo reproducir la toma", error)
-            showToast(resources.getString(R.string.karaoke_record_failed))
-        }
-    }
-
-    /** Reproducir/parar la toma en revisión, para poder oírla las veces que haga falta. */
-    fun toggleReviewPlayback() {
-        val state = viewModel.karaokeRecording.value
-        if (state !is PlayerViewModel.KaraokeRecordingState.Review) return
-        if (reviewPlaying) releaseReviewPlayer() else startReviewPlayback(state.session.file)
-    }
-
-    fun beginKaraokeRecording() {
-        val track = currentTrack ?: return
-        val session = karaokeRecorder.start(
-            trackId = track.id,
-            trackPositionMs = playbackPositionMs,
-        )
-        if (session == null) {
-            showToast(resources.getString(R.string.karaoke_record_failed))
-            return
-        }
-        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Recording(session))
-    }
-
-    val recordPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            beginKaraokeRecording()
-        } else {
-            showToast(resources.getString(R.string.karaoke_permission_denied))
-        }
-    }
-
-    fun requestKaraokeRecording() {
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) {
-            recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-        // Los auriculares son recomendables, no obligatorios: sin ellos el micro capta la
-        // canción y la toma sale con la pista encima, pero grabar sigue estando permitido. El
-        // aviso va inline junto al botón (ver KaraokeRecordingControls), sin cortar el flujo.
-        beginKaraokeRecording()
-    }
-
-    fun stopKaraokeRecording() {
-        val session = karaokeRecorder.stop()
-        if (session == null) {
-            viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
-            showToast(resources.getString(R.string.karaoke_record_too_short))
-            return
-        }
-        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Review(session))
-
-        // Revisión: suena SOLO la voz. La canción se pausa donde esté.
-        //
-        // Antes se rebobinaba a session.trackOffsetMs y se forzaba a reproducir, para oír la toma
-        // en contexto. En la práctica no dejaba oír nada: la canción tapa la voz, y si la toma
-        // arrancó al principio el rebobinado se lee como "se ha reiniciado sola". Además la
-        // grabación casi siempre lleva ya la canción colada por el micro (sin auriculares), así
-        // que superponerla otra vez la duplica desfasada.
-        //
-        // Así coincide con KaraokeTakesSheet, que ya reproducía las tomas solas. No se toca la
-        // posición de la canción: al guardar o descartar, sigue donde el usuario la dejó.
-        if (isPlaying) {
-            context.sendPlaybackForegroundAction(PlaybackService.ACTION_PAUSE)
-        }
-        startReviewPlayback(session.file)
-    }
-
-    fun saveKaraokeRecording() {
-        releaseReviewPlayer()
-        val state = karaokeRecording
-        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
-        if (state !is PlayerViewModel.KaraokeRecordingState.Review) return
-        // Publicar es E/S: fuera del hilo principal. Solo aquí la toma sale del temporal privado
-        // y entra en la carpeta del usuario.
-        val track = currentTrack
-        uiScope.launch {
-            val savedName = withContext(Dispatchers.IO) {
-                val name = KaraokeRecordings.publish(context, state.session.file)
-                // El indice relaciona la toma con su cancion: el nombre REC-fecha no lleva id.
-                if (name != null && track != null) {
-                    KaraokeRecordingIndex.add(
-                        context,
-                        KaraokeRecordingIndex.Entry(
-                            fileName = name,
-                            trackId = track.id,
-                            trackTitle = track.title,
-                            trackArtist = track.artist,
-                            recordedAtMs = state.session.startedAtMs,
-                        ),
-                    )
-                }
-                name
-            }
-            showToast(
-                resources.getString(
-                    if (savedName != null) R.string.karaoke_record_saved
-                    else R.string.karaoke_record_failed,
-                ),
-            )
-            karaokeTakeCount = withContext(Dispatchers.IO) {
-                track?.let { KaraokeRecordingIndex.forTrack(context, it.id).size } ?: 0
-            }
-        }
-    }
-
-    fun discardKaraokeRecording() {
-        releaseReviewPlayer()
-        val state = karaokeRecording
-        if (state is PlayerViewModel.KaraokeRecordingState.Review) {
-            // Solo se borra el temporal: nunca llegó a la carpeta del usuario.
-            runCatching { state.session.file.delete() }
-        }
-        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
-        showToast(resources.getString(R.string.karaoke_record_discarded))
-    }
-
-    // Salir de la pantalla con el micro abierto dejaría un archivo a medias y el micro tomado:
-    // se cancela la toma en curso y se suelta el reproductor de revisión.
-    DisposableEffect(Unit) {
-        onDispose {
-            if (karaokeRecorder.isRecording) karaokeRecorder.cancel()
-            reviewPlayer?.let { player ->
-                runCatching { player.stop() }
-                runCatching { player.release() }
             }
         }
     }
@@ -2336,31 +2135,7 @@ fun PlayerScreen(
                     onKaraokePitchChange = { viewModel.setKaraokePitchSemitones(it) },
                     onKaraokeSpeedChange = { viewModel.setKaraokeSpeed(it) },
                     onResetKaraokeTuning = { viewModel.resetKaraokeTuning() },
-                    karaokeRecording = karaokeRecording,
-                    onStartRecording = { requestKaraokeRecording() },
-                    onStopRecording = { stopKaraokeRecording() },
-                    reviewPlaying = reviewPlaying,
-                    onToggleReviewPlayback = { toggleReviewPlayback() },
-                    onSaveRecording = { saveKaraokeRecording() },
-                    onDiscardRecording = { discardKaraokeRecording() },
-                    headphonesConnected = headphonesConnected,
-                    savedTakeCount = karaokeTakeCount,
-                    onOpenTakes = { takesSheetOpen = true },
                 )
-            }
-
-            if (takesSheetOpen) {
-                val takesTrack = currentTrack
-                if (takesTrack == null) {
-                    takesSheetOpen = false
-                } else {
-                    KaraokeTakesSheet(
-                        trackId = takesTrack.id,
-                        trackTitle = takesTrack.title,
-                        onDismiss = { takesSheetOpen = false },
-                        onTakesChanged = { karaokeTakeCount = it },
-                    )
-                }
             }
 
             // SHEET: Cola de reproducción en tiempo real
