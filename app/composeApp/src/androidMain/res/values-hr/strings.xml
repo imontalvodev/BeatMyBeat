@@ -252,6 +252,12 @@
     <string name="player_track_added_playlist">Pjesma dodana u playlistu.</string>
     <string name="player_tracks_added_playlist">Pjesme dodane u playlistu.</string>
     <string name="player_add_button">Dodaj</string>
+    <string name="player_tracks_selected_count">%1$d pjesama odabrano</string>
+    <string name="player_playlist_search_hint">Pretraži playliste</string>
+    <string name="player_playlist_search_empty">Nema rezultata</string>
+    <string name="player_reorder_cd">Promijeni redoslijed pjesme</string>
+    <string name="player_create_new_playlist">Stvori novu playlistu</string>
+    <string name="player_playlist_song_count_only">Pjesme: %1$d</string>
     <string name="player_duplicates_title">Otkriveni duplikati</string>
     <string name="player_duplicates_message">%1$d pjesma već postoji u playlisti. Duplicirati sve?</string>
     <string name="player_duplicates_added">Duplikati dodani u playlistu.</string>

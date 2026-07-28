@@ -252,6 +252,12 @@
     <string name="player_track_added_playlist">Song zur Playlist hinzugefügt.</string>
     <string name="player_tracks_added_playlist">Songs zur Playlist hinzugefügt.</string>
     <string name="player_add_button">Hinzufügen</string>
+    <string name="player_tracks_selected_count">%1$d Titel ausgewählt</string>
+    <string name="player_playlist_search_hint">Playlists durchsuchen</string>
+    <string name="player_playlist_search_empty">Keine Ergebnisse</string>
+    <string name="player_reorder_cd">Titel neu anordnen</string>
+    <string name="player_create_new_playlist">Neue Playlist erstellen</string>
+    <string name="player_playlist_song_count_only">Tracks: %1$d</string>
     <string name="player_duplicates_title">Duplikate erkannt</string>
     <string name="player_duplicates_message">%1$d Song(s) sind bereits in der Playlist. Alle duplizieren?</string>
     <string name="player_duplicates_added">Duplikate zur Playlist hinzugefügt.</string>

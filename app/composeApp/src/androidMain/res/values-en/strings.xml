@@ -231,6 +231,12 @@
     <string name="player_track_added_playlist">Song added to playlist.</string>
     <string name="player_tracks_added_playlist">Songs added to playlist.</string>
     <string name="player_add_button">Add</string>
+    <string name="player_tracks_selected_count">%1$d tracks selected</string>
+    <string name="player_playlist_search_hint">Search playlists</string>
+    <string name="player_playlist_search_empty">No results</string>
+    <string name="player_reorder_cd">Reorder track</string>
+    <string name="player_create_new_playlist">Create new playlist</string>
+    <string name="player_playlist_song_count_only">Tracks: %1$d</string>
     <string name="player_duplicates_title">Duplicates detected</string>
     <string name="player_duplicates_message">%1$d song(s) already exist in the playlist. Duplicate them all?</string>
     <string name="player_duplicates_added">Duplicates added to the playlist.</string>

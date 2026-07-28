@@ -4,6 +4,19 @@ All notable changes to BeatMyBeat are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2] — 2026-07-28
+
+### Added
+- **Playback queue screen.** "Up next" is now a dedicated full-screen view instead of a bottom sheet, with drag-to-reorder on the up-next list (long-press the handle and drag).
+- **Add to playlist screen.** Also a dedicated full-screen view now: search when you have many playlists, a collapsible "create new playlist" row kept separate from picking an existing one, and each playlist shows a cover mosaic built from its first songs.
+- **Screen stays on** while BeatMyBeat is in the foreground.
+
+### Changed
+- **Karaoke Mode is voice-recording-free.** Recording your own takes over a song — added in 1.1 — has been removed, along with the **microphone** permission. Pitch/speed transposition and synced-lyrics highlighting are unaffected.
+
+### Removed
+- **Microphone permission** and everything that used it (recording, saved takes, per-song takes list, storage usage in Profile).
+
 ## [1.0.4] — 2026-07-17
 
 ### Added

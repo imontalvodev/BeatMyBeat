@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.provider.DocumentsContract
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -80,6 +81,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Solo afecta mientras la ventana está visible en primer plano: Android deja de
+        // respetar el flag en cuanto la app pasa a segundo plano, sin necesidad de limpiarlo
+        // manualmente en onPause.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // Android 13+ requiere permiso runtime para notificaciones.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
