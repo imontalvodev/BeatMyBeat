@@ -214,32 +214,6 @@
     <string name="player_lyrics_select_song">Selecione uma música</string>
     <string name="player_lyrics_unavailable">Letra não disponível para esta música</string>
     <string name="player_lyrics_network_error">Não foi possível ligar. Verifica a tua ligação e tenta de novo</string>
-    <string name="karaoke_record_start">Gravar</string>
-    <string name="karaoke_record_stop">Parar</string>
-    <string name="karaoke_record_save">Guardar</string>
-    <string name="karaoke_record_discard">Descartar</string>
-    <string name="karaoke_record_saved">Gravação guardada</string>
-    <string name="karaoke_record_discarded">Gravação descartada</string>
-    <string name="karaoke_record_failed">Não foi possível iniciar a gravação</string>
-    <string name="karaoke_record_too_short">Gravação demasiado curta</string>
-    <string name="karaoke_headphones_hint">Melhor com auscultadores: sem eles a música entra na gravação</string>
-    <string name="karaoke_takes_title">Gravações guardadas</string>
-    <string name="karaoke_take_play">Reproduzir</string>
-    <string name="karaoke_take_stop">Parar</string>
-    <string name="karaoke_review_replay">Ouvir</string>
-    <string name="karaoke_take_delete">Apagar gravação</string>
-    <string name="karaoke_take_deleted">Gravação apagada</string>
-    <string name="karaoke_take_delete_failed">Não foi possível apagar</string>
-    <string name="karaoke_takes_close">Fechar</string>
-    <string name="karaoke_cancel">Cancelar</string>
-    <string name="karaoke_permission_denied">Permissão de microfone negada</string>
-    <string name="profile_karaoke_recordings">Gravações de karaoke</string>
-    <string name="profile_karaoke_recordings_size">%1$s ocupados · toca para apagar</string>
-    <string name="profile_karaoke_delete_title">Apagar as gravações?</string>
-    <string name="profile_karaoke_delete_body">Serão apagadas todas as gravações de karaoke guardadas. Não é possível desfazer.</string>
-    <string name="profile_karaoke_delete_confirm">Apagar</string>
-    <string name="profile_karaoke_deleted">Gravações apagadas</string>
-    <string name="profile_karaoke_none">Sem gravações guardadas</string>
     <string name="player_lyrics_tap_download">Toque para baixar a letra (requer internet).</string>
     <string name="player_lyrics_synced_mode">Letra sincronizada</string>
     <string name="player_karaoke_mode">Modo karaoke</string>
@@ -278,6 +252,12 @@
     <string name="player_track_added_playlist">Música adicionada à playlist.</string>
     <string name="player_tracks_added_playlist">Músicas adicionadas à playlist.</string>
     <string name="player_add_button">Adicionar</string>
+    <string name="player_tracks_selected_count">%1$d músicas selecionadas</string>
+    <string name="player_playlist_search_hint">Pesquisar playlists</string>
+    <string name="player_playlist_search_empty">Sem resultados</string>
+    <string name="player_reorder_cd">Reordenar música</string>
+    <string name="player_create_new_playlist">Criar nova playlist</string>
+    <string name="player_playlist_song_count_only">Faixas: %1$d</string>
     <string name="player_duplicates_title">Duplicados detetados</string>
     <string name="player_duplicates_message">%1$d música(s) já existe(m) na playlist. Duplicar todas?</string>
     <string name="player_duplicates_added">Duplicados adicionados à playlist.</string>
@@ -295,8 +275,4 @@
     <string name="player_edit_playlist_menu">Editar nome</string>
     <string name="player_delete_playlist_menu">Excluir playlist</string>
     <string name="player_default_playlist_name">A minha playlist</string>
-    <plurals name="karaoke_saved_takes">
-        <item quantity="one">%1$d gravação guardada</item>
-        <item quantity="other">%1$d gravações guardadas</item>
-    </plurals>
 </resources>

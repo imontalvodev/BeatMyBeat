@@ -106,6 +106,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -144,6 +145,7 @@ import com.imontalvodev.beatmybeat.ui.network.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.Motion
+import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -212,6 +214,51 @@ internal fun ArtworkThumbnail(
                 placeholder = painterResource(fallback),
                 error = painterResource(fallback),
             )
+        }
+    }
+}
+
+/**
+ * Portada de playlist: mosaico 2x2 de las 4 primeras canciones, una sola carátula si hay menos
+ * de 4, o un icono placeholder si está vacía. Sin esto todas las playlists se ven idénticas en
+ * el selector — el mosaico es lo único que las distingue de un vistazo.
+ */
+@Composable
+internal fun PlaylistCoverMosaic(tracks: List<DeviceTrack>, sizeDp: Int) {
+    val half = sizeDp / 2
+    Box(
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .clip(RoundedCornerShape(Radius.sm))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            tracks.isEmpty() -> {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size((sizeDp * 0.5f).dp),
+                )
+            }
+
+            tracks.size < 4 -> {
+                ArtworkThumbnail(track = tracks.first(), sizeDp = sizeDp)
+            }
+
+            else -> {
+                Column {
+                    Row {
+                        ArtworkThumbnail(track = tracks[0], sizeDp = half)
+                        ArtworkThumbnail(track = tracks[1], sizeDp = half)
+                    }
+                    Row {
+                        ArtworkThumbnail(track = tracks[2], sizeDp = half)
+                        ArtworkThumbnail(track = tracks[3], sizeDp = half)
+                    }
+                }
+            }
         }
     }
 }

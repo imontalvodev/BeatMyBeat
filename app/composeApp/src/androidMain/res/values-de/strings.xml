@@ -214,32 +214,6 @@
     <string name="player_lyrics_select_song">Wähle einen Song</string>
     <string name="player_lyrics_unavailable">Für diesen Song sind keine Lyrics verfügbar</string>
     <string name="player_lyrics_network_error">Keine Verbindung. Prüfe deine Verbindung und versuche es erneut</string>
-    <string name="karaoke_record_start">Aufnehmen</string>
-    <string name="karaoke_record_stop">Stopp</string>
-    <string name="karaoke_record_save">Speichern</string>
-    <string name="karaoke_record_discard">Verwerfen</string>
-    <string name="karaoke_record_saved">Aufnahme gespeichert</string>
-    <string name="karaoke_record_discarded">Aufnahme verworfen</string>
-    <string name="karaoke_record_failed">Aufnahme konnte nicht gestartet werden</string>
-    <string name="karaoke_record_too_short">Aufnahme zu kurz</string>
-    <string name="karaoke_headphones_hint">Kopfhörer empfohlen: ohne sie landet der Song in der Aufnahme</string>
-    <string name="karaoke_takes_title">Gespeicherte Aufnahmen</string>
-    <string name="karaoke_take_play">Abspielen</string>
-    <string name="karaoke_take_stop">Stopp</string>
-    <string name="karaoke_review_replay">Anhören</string>
-    <string name="karaoke_take_delete">Aufnahme löschen</string>
-    <string name="karaoke_take_deleted">Aufnahme gelöscht</string>
-    <string name="karaoke_take_delete_failed">Löschen fehlgeschlagen</string>
-    <string name="karaoke_takes_close">Schließen</string>
-    <string name="karaoke_cancel">Abbrechen</string>
-    <string name="karaoke_permission_denied">Mikrofonberechtigung verweigert</string>
-    <string name="profile_karaoke_recordings">Karaoke-Aufnahmen</string>
-    <string name="profile_karaoke_recordings_size">%1$s belegt · zum Löschen tippen</string>
-    <string name="profile_karaoke_delete_title">Aufnahmen löschen?</string>
-    <string name="profile_karaoke_delete_body">Alle gespeicherten Karaoke-Aufnahmen werden gelöscht. Das lässt sich nicht rückgängig machen.</string>
-    <string name="profile_karaoke_delete_confirm">Löschen</string>
-    <string name="profile_karaoke_deleted">Aufnahmen gelöscht</string>
-    <string name="profile_karaoke_none">Keine gespeicherten Aufnahmen</string>
     <string name="player_lyrics_tap_download">Tippen, um Lyrics herunterzuladen (Internet erforderlich).</string>
     <string name="player_lyrics_synced_mode">Synchronisierte Lyrics</string>
     <string name="player_karaoke_mode">Karaoke-Modus</string>
@@ -278,6 +252,12 @@
     <string name="player_track_added_playlist">Song zur Playlist hinzugefügt.</string>
     <string name="player_tracks_added_playlist">Songs zur Playlist hinzugefügt.</string>
     <string name="player_add_button">Hinzufügen</string>
+    <string name="player_tracks_selected_count">%1$d Titel ausgewählt</string>
+    <string name="player_playlist_search_hint">Playlists durchsuchen</string>
+    <string name="player_playlist_search_empty">Keine Ergebnisse</string>
+    <string name="player_reorder_cd">Titel neu anordnen</string>
+    <string name="player_create_new_playlist">Neue Playlist erstellen</string>
+    <string name="player_playlist_song_count_only">Tracks: %1$d</string>
     <string name="player_duplicates_title">Duplikate erkannt</string>
     <string name="player_duplicates_message">%1$d Song(s) sind bereits in der Playlist. Alle duplizieren?</string>
     <string name="player_duplicates_added">Duplikate zur Playlist hinzugefügt.</string>
@@ -295,8 +275,4 @@
     <string name="player_edit_playlist_menu">Namen bearbeiten</string>
     <string name="player_delete_playlist_menu">Playlist löschen</string>
     <string name="player_default_playlist_name">Meine Playlist</string>
-    <plurals name="karaoke_saved_takes">
-        <item quantity="one">%1$d gespeicherte Aufnahme</item>
-        <item quantity="other">%1$d gespeicherte Aufnahmen</item>
-    </plurals>
 </resources>

@@ -214,32 +214,6 @@
     <string name="player_lyrics_select_song">Odaberi pjesmu</string>
     <string name="player_lyrics_unavailable">Tekst nije dostupan za ovu pjesmu</string>
     <string name="player_lyrics_network_error">Povezivanje nije uspjelo. Provjeri vezu i pokušaj ponovno</string>
-    <string name="karaoke_record_start">Snimaj</string>
-    <string name="karaoke_record_stop">Zaustavi</string>
-    <string name="karaoke_record_save">Spremi</string>
-    <string name="karaoke_record_discard">Odbaci</string>
-    <string name="karaoke_record_saved">Snimka spremljena</string>
-    <string name="karaoke_record_discarded">Snimka odbačena</string>
-    <string name="karaoke_record_failed">Snimanje se nije moglo pokrenuti</string>
-    <string name="karaoke_record_too_short">Snimka prekratka</string>
-    <string name="karaoke_headphones_hint">Bolje sa slušalicama: bez njih pjesma ulazi u snimku</string>
-    <string name="karaoke_takes_title">Spremljene snimke</string>
-    <string name="karaoke_take_play">Reproduciraj</string>
-    <string name="karaoke_take_stop">Zaustavi</string>
-    <string name="karaoke_review_replay">Poslušaj</string>
-    <string name="karaoke_take_delete">Obriši snimku</string>
-    <string name="karaoke_take_deleted">Snimka obrisana</string>
-    <string name="karaoke_take_delete_failed">Brisanje nije uspjelo</string>
-    <string name="karaoke_takes_close">Zatvori</string>
-    <string name="karaoke_cancel">Odustani</string>
-    <string name="karaoke_permission_denied">Dopuštenje za mikrofon odbijeno</string>
-    <string name="profile_karaoke_recordings">Karaoke snimke</string>
-    <string name="profile_karaoke_recordings_size">Zauzeto %1$s · dodirni za brisanje</string>
-    <string name="profile_karaoke_delete_title">Obrisati snimke?</string>
-    <string name="profile_karaoke_delete_body">Sve spremljene karaoke snimke bit će obrisane. Radnja se ne može poništiti.</string>
-    <string name="profile_karaoke_delete_confirm">Obriši</string>
-    <string name="profile_karaoke_deleted">Snimke obrisane</string>
-    <string name="profile_karaoke_none">Nema spremljenih snimki</string>
     <string name="player_lyrics_tap_download">Dodirni za preuzimanje teksta (potreban internet).</string>
     <string name="player_lyrics_synced_mode">Sinkronizirani tekst</string>
     <string name="player_karaoke_mode">Karaoke način</string>
@@ -278,6 +252,12 @@
     <string name="player_track_added_playlist">Pjesma dodana u playlistu.</string>
     <string name="player_tracks_added_playlist">Pjesme dodane u playlistu.</string>
     <string name="player_add_button">Dodaj</string>
+    <string name="player_tracks_selected_count">%1$d pjesama odabrano</string>
+    <string name="player_playlist_search_hint">Pretraži playliste</string>
+    <string name="player_playlist_search_empty">Nema rezultata</string>
+    <string name="player_reorder_cd">Promijeni redoslijed pjesme</string>
+    <string name="player_create_new_playlist">Stvori novu playlistu</string>
+    <string name="player_playlist_song_count_only">Pjesme: %1$d</string>
     <string name="player_duplicates_title">Otkriveni duplikati</string>
     <string name="player_duplicates_message">%1$d pjesma već postoji u playlisti. Duplicirati sve?</string>
     <string name="player_duplicates_added">Duplikati dodani u playlistu.</string>
@@ -295,8 +275,4 @@
     <string name="player_edit_playlist_menu">Uredi naziv</string>
     <string name="player_delete_playlist_menu">Obriši playlistu</string>
     <string name="player_default_playlist_name">Moja playlista</string>
-    <plurals name="karaoke_saved_takes">
-        <item quantity="one">%1$d spremljena snimka</item>
-        <item quantity="other">%1$d spremljenih snimki</item>
-    </plurals>
 </resources>

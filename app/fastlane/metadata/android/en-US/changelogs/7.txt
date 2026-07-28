@@ -1,0 +1,1 @@
+Playback queue and add-to-playlist are now full-screen, with drag-to-reorder in the queue. Screen stays on while the app is in the foreground. Removed voice recording from Karaoke Mode and the microphone permission.

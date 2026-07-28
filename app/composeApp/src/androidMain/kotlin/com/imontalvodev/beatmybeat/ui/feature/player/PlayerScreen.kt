@@ -16,6 +16,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -33,6 +34,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,31 +46,40 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.outlined.Loop
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Shuffle
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
@@ -97,6 +108,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
@@ -116,6 +128,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
@@ -123,14 +136,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import android.provider.MediaStore
+import android.view.WindowManager
 import androidx.media3.common.Player
-import android.media.MediaPlayer
 import java.io.File
 import java.net.URLDecoder
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -165,6 +182,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 private fun Context.sendPlaybackForegroundAction(action: String) {
@@ -323,13 +341,6 @@ fun PlayerScreen(
     val shuffleOn by viewModel.shuffleEnabled.collectAsState()
     val karaokeMode by viewModel.karaokeMode.collectAsState()
     val karaokePitchSemitones by viewModel.karaokePitchSemitones.collectAsState()
-    val karaokeRecording by viewModel.karaokeRecording.collectAsState()
-    val karaokeRecorder = remember(context) { KaraokeRecorder(context) }
-    /** Recomendación de auriculares; se muestra inline, no bloquea la grabación. */
-    val headphonesConnected = rememberHeadphonesConnected()
-    /** Tomas ya guardadas de la canción actual, para mostrarlas en el Modo Karaoke. */
-    var karaokeTakeCount by remember { mutableStateOf(0) }
-    var takesSheetOpen by remember { mutableStateOf(false) }
     val karaokeSpeed by viewModel.karaokeSpeed.collectAsState()
     var repeatMode by remember { mutableStateOf(RepeatMode.OFF) }
     // Repetición de la cola (cuando Shuffle está OFF y repeatMode == LIST)
@@ -463,25 +474,6 @@ fun PlayerScreen(
         }
     }
 
-    // Temporales huerfanos de una grabacion interrumpida (app matada a media toma). Estan en
-    // cacheDir, asi que el sistema acabaria reclamandolos, pero no hay razon para esperar.
-    LaunchedEffect(Unit) {
-        // Solo si no hay toma viva: en estado Review el temporal AUN NO se ha guardado, y
-        // borrarlo al volver a la pantalla le quitaria al usuario la toma que esta escuchando.
-        if (viewModel.karaokeRecording.value is PlayerViewModel.KaraokeRecordingState.Idle) {
-            withContext(Dispatchers.IO) { KaraokeRecordings.clearTemp(context) }
-        }
-    }
-
-    LaunchedEffect(currentTrack?.id) {
-        val id = currentTrack?.id
-        karaokeTakeCount = if (id == null) {
-            0
-        } else {
-            withContext(Dispatchers.IO) { KaraokeRecordingIndex.forTrack(context, id).size }
-        }
-    }
-
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     var playlistDetailOpen by remember { mutableStateOf(false) }
     var isSelectionModeActive by remember { mutableStateOf(false) }
@@ -589,6 +581,8 @@ fun PlayerScreen(
     var addToPlaylistExistingId by remember { mutableStateOf<Long?>(null) }
     var addToPlaylistNewName by remember { mutableStateOf("") }
     var addToPlaylistPickerExpanded by remember { mutableStateOf(false) }
+    var addToPlaylistSearchQuery by remember { mutableStateOf("") }
+    var creatingNewPlaylistInline by remember { mutableStateOf(false) }
 
     data class DuplicateConfirmState(
         val trackIds: List<Long>,
@@ -870,180 +864,6 @@ fun PlayerScreen(
                 }
             } finally {
                 lyricsDownloadingUris = lyricsDownloadingUris - track.uri
-            }
-        }
-    }
-
-    // ── Modo Karaoke: grabación de voz (Fase F) ─────────────────────────────
-    //
-    // La toma vive en almacenamiento privado desde que se pulsa grabar, pero NO se considera
-    // guardada hasta que el usuario lo dice: descartar la borra. Es lo que evita que la carpeta
-    // se llene de tomas que nadie va a volver a oír.
-
-    /** Reproductor de la voz durante la revisión. La canción queda pausada mientras tanto. */
-    var reviewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-
-    /**
-     * ¿Está sonando la toma en revisión? Necesario para pintar reproducir/parar: la toma se
-     * escucha entera y sin él no habría forma de volver a oírla antes de decidir.
-     */
-    var reviewPlaying by remember { mutableStateOf(false) }
-
-    fun releaseReviewPlayer() {
-        reviewPlayer?.let { player ->
-            runCatching { player.stop() }
-            runCatching { player.release() }
-        }
-        reviewPlayer = null
-        reviewPlaying = false
-    }
-
-    /** Arranca la toma desde el principio. Suelta cualquier reproducción anterior. */
-    fun startReviewPlayback(file: File) {
-        releaseReviewPlayer()
-        runCatching {
-            MediaPlayer().apply {
-                setDataSource(file.absolutePath)
-                setOnCompletionListener { reviewPlaying = false }
-                prepare()
-                start()
-            }
-        }.onSuccess { player ->
-            reviewPlayer = player
-            reviewPlaying = true
-        }.onFailure { error ->
-            Logger.e("Karaoke", "No se pudo reproducir la toma", error)
-            showToast(resources.getString(R.string.karaoke_record_failed))
-        }
-    }
-
-    /** Reproducir/parar la toma en revisión, para poder oírla las veces que haga falta. */
-    fun toggleReviewPlayback() {
-        val state = viewModel.karaokeRecording.value
-        if (state !is PlayerViewModel.KaraokeRecordingState.Review) return
-        if (reviewPlaying) releaseReviewPlayer() else startReviewPlayback(state.session.file)
-    }
-
-    fun beginKaraokeRecording() {
-        val track = currentTrack ?: return
-        val session = karaokeRecorder.start(
-            trackId = track.id,
-            trackPositionMs = playbackPositionMs,
-        )
-        if (session == null) {
-            showToast(resources.getString(R.string.karaoke_record_failed))
-            return
-        }
-        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Recording(session))
-    }
-
-    val recordPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            beginKaraokeRecording()
-        } else {
-            showToast(resources.getString(R.string.karaoke_permission_denied))
-        }
-    }
-
-    fun requestKaraokeRecording() {
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) {
-            recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-        // Los auriculares son recomendables, no obligatorios: sin ellos el micro capta la
-        // canción y la toma sale con la pista encima, pero grabar sigue estando permitido. El
-        // aviso va inline junto al botón (ver KaraokeRecordingControls), sin cortar el flujo.
-        beginKaraokeRecording()
-    }
-
-    fun stopKaraokeRecording() {
-        val session = karaokeRecorder.stop()
-        if (session == null) {
-            viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
-            showToast(resources.getString(R.string.karaoke_record_too_short))
-            return
-        }
-        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Review(session))
-
-        // Revisión: suena SOLO la voz. La canción se pausa donde esté.
-        //
-        // Antes se rebobinaba a session.trackOffsetMs y se forzaba a reproducir, para oír la toma
-        // en contexto. En la práctica no dejaba oír nada: la canción tapa la voz, y si la toma
-        // arrancó al principio el rebobinado se lee como "se ha reiniciado sola". Además la
-        // grabación casi siempre lleva ya la canción colada por el micro (sin auriculares), así
-        // que superponerla otra vez la duplica desfasada.
-        //
-        // Así coincide con KaraokeTakesSheet, que ya reproducía las tomas solas. No se toca la
-        // posición de la canción: al guardar o descartar, sigue donde el usuario la dejó.
-        if (isPlaying) {
-            context.sendPlaybackForegroundAction(PlaybackService.ACTION_PAUSE)
-        }
-        startReviewPlayback(session.file)
-    }
-
-    fun saveKaraokeRecording() {
-        releaseReviewPlayer()
-        val state = karaokeRecording
-        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
-        if (state !is PlayerViewModel.KaraokeRecordingState.Review) return
-        // Publicar es E/S: fuera del hilo principal. Solo aquí la toma sale del temporal privado
-        // y entra en la carpeta del usuario.
-        val track = currentTrack
-        uiScope.launch {
-            val savedName = withContext(Dispatchers.IO) {
-                val name = KaraokeRecordings.publish(context, state.session.file)
-                // El indice relaciona la toma con su cancion: el nombre REC-fecha no lleva id.
-                if (name != null && track != null) {
-                    KaraokeRecordingIndex.add(
-                        context,
-                        KaraokeRecordingIndex.Entry(
-                            fileName = name,
-                            trackId = track.id,
-                            trackTitle = track.title,
-                            trackArtist = track.artist,
-                            recordedAtMs = state.session.startedAtMs,
-                        ),
-                    )
-                }
-                name
-            }
-            showToast(
-                resources.getString(
-                    if (savedName != null) R.string.karaoke_record_saved
-                    else R.string.karaoke_record_failed,
-                ),
-            )
-            karaokeTakeCount = withContext(Dispatchers.IO) {
-                track?.let { KaraokeRecordingIndex.forTrack(context, it.id).size } ?: 0
-            }
-        }
-    }
-
-    fun discardKaraokeRecording() {
-        releaseReviewPlayer()
-        val state = karaokeRecording
-        if (state is PlayerViewModel.KaraokeRecordingState.Review) {
-            // Solo se borra el temporal: nunca llegó a la carpeta del usuario.
-            runCatching { state.session.file.delete() }
-        }
-        viewModel.setKaraokeRecordingState(PlayerViewModel.KaraokeRecordingState.Idle)
-        showToast(resources.getString(R.string.karaoke_record_discarded))
-    }
-
-    // Salir de la pantalla con el micro abierto dejaría un archivo a medias y el micro tomado:
-    // se cancela la toma en curso y se suelta el reproductor de revisión.
-    DisposableEffect(Unit) {
-        onDispose {
-            if (karaokeRecorder.isRecording) karaokeRecorder.cancel()
-            reviewPlayer?.let { player ->
-                runCatching { player.stop() }
-                runCatching { player.release() }
             }
         }
     }
@@ -2336,50 +2156,72 @@ fun PlayerScreen(
                     onKaraokePitchChange = { viewModel.setKaraokePitchSemitones(it) },
                     onKaraokeSpeedChange = { viewModel.setKaraokeSpeed(it) },
                     onResetKaraokeTuning = { viewModel.resetKaraokeTuning() },
-                    karaokeRecording = karaokeRecording,
-                    onStartRecording = { requestKaraokeRecording() },
-                    onStopRecording = { stopKaraokeRecording() },
-                    reviewPlaying = reviewPlaying,
-                    onToggleReviewPlayback = { toggleReviewPlayback() },
-                    onSaveRecording = { saveKaraokeRecording() },
-                    onDiscardRecording = { discardKaraokeRecording() },
-                    headphonesConnected = headphonesConnected,
-                    savedTakeCount = karaokeTakeCount,
-                    onOpenTakes = { takesSheetOpen = true },
                 )
-            }
-
-            if (takesSheetOpen) {
-                val takesTrack = currentTrack
-                if (takesTrack == null) {
-                    takesSheetOpen = false
-                } else {
-                    KaraokeTakesSheet(
-                        trackId = takesTrack.id,
-                        trackTitle = takesTrack.title,
-                        onDismiss = { takesSheetOpen = false },
-                        onTakesChanged = { karaokeTakeCount = it },
-                    )
-                }
             }
 
             // SHEET: Cola de reproducción en tiempo real
             if (queueSheetOpen) {
-                ModalBottomSheet(
+                Dialog(
                     onDismissRequest = { queueSheetOpen = false },
+                    properties = DialogProperties(usePlatformDefaultWidth = false),
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = 32.dp),
-                    ) {
+                // usePlatformDefaultWidth = false solo quita el límite de ancho; la ventana
+                // sigue midiéndose por su contenido a menos que se fuerce a ocupar la pantalla.
+                val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
+                SideEffect {
+                    dialogWindowProvider?.window?.setLayout(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                    )
+                }
+                val visibleState = remember {
+                    MutableTransitionState(false).apply { targetState = true }
+                }
+                AnimatedVisibility(
+                    visibleState = visibleState,
+                    enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+                ) {
+                BackHandler { queueSheetOpen = false }
+
+                // displayQueue: en shuffle muestra el resto del orden aleatorio derivado de la
+                // posición real de currentTrack (más reactivo que shuffleIndex). El reordenado
+                // por arrastre solo tiene sentido fuera de shuffle: ahí displayQueue es
+                // literalmente `queue`, así que el índice del item coincide con el de la cola real.
+                val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty()) {
+                    val ct = currentTrack
+                    val pos = if (ct != null) {
+                        shuffleOrder.indexOfFirst { it.uri == ct.uri }
+                            .takeIf { it >= 0 } ?: shuffleIndex
+                    } else shuffleIndex
+                    shuffleOrder.drop((pos + 1).coerceAtLeast(0))
+                } else {
+                    queue.toList()
+                }
+                val canReorder = !shuffleOn
+                val queueListState = rememberLazyListState()
+                var draggingIndex by remember { mutableStateOf(-1) }
+                var dragOffsetPx by remember { mutableStateOf(0f) }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column {
+                            IconButton(onClick = { queueSheetOpen = false }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = stringResource(R.string.common_cancel),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = stringResource(R.string.player_queue_title),
                                     style = MaterialTheme.typography.titleLarge,
@@ -2394,19 +2236,6 @@ fun PlayerScreen(
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                 )
                             }
-                            // displayQueue: en shuffle muestra el resto del orden aleatorio
-                            // derivado de la posición real de currentTrack (más reactivo que shuffleIndex).
-                            val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty()) {
-                                val ct = currentTrack
-                                val pos = if (ct != null) {
-                                    shuffleOrder.indexOfFirst { it.uri == ct.uri }
-                                        .takeIf { it >= 0 } ?: shuffleIndex
-                                } else shuffleIndex
-                                shuffleOrder.drop((pos + 1).coerceAtLeast(0))
-                            } else {
-                                queue.toList()
-                            }
-
                             if (displayQueue.isNotEmpty()) {
                                 TextButton(onClick = {
                                     clearPlaybackQueueState(keepCurrentInShuffle = shuffleOn)
@@ -2416,18 +2245,14 @@ fun PlayerScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                        ) {
 
-                        val displayQueue = if (shuffleOn && shuffleOrder.isNotEmpty()) {
-                            val ct = currentTrack
-                            val pos = if (ct != null) {
-                                shuffleOrder.indexOfFirst { it.uri == ct.uri }
-                                    .takeIf { it >= 0 } ?: shuffleIndex
-                            } else shuffleIndex
-                            shuffleOrder.drop((pos + 1).coerceAtLeast(0))
-                        } else {
-                            queue.toList()
-                        }
+                        Spacer(modifier = Modifier.height(4.dp))
 
                         if (currentTrack != null) {
                             Text(
@@ -2501,31 +2326,93 @@ fun PlayerScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             LazyColumn(
-                                modifier = Modifier.fillMaxHeight(0.6f),
+                                state = queueListState,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                items(displayQueue.size, key = { idx -> displayQueue[idx].id.toString() + idx }) { idx ->
-                                    val t = displayQueue[idx]
+                                itemsIndexed(
+                                    items = displayQueue,
+                                    key = { idx, t -> t.id.toString() + idx },
+                                ) { idx, t ->
+                                    val isDragging = idx == draggingIndex
                                     Card(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .zIndex(if (isDragging) 1f else 0f)
+                                            .offset {
+                                                IntOffset(0, if (isDragging) dragOffsetPx.roundToInt() else 0)
+                                            },
                                         shape = RoundedCornerShape(12.dp),
                                         colors = CardDefaults.cardColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            containerColor = if (isDragging) {
+                                                MaterialTheme.colorScheme.surfaceContainerHighest
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceContainerHigh
+                                            },
                                         ),
                                     ) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                .padding(horizontal = 8.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         ) {
-                                            Text(
-                                                text = "${idx + 1}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                                                modifier = Modifier.width(20.dp),
-                                            )
+                                            if (canReorder) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.DragHandle,
+                                                    contentDescription = stringResource(R.string.player_reorder_cd),
+                                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                                    modifier = Modifier
+                                                        .size(20.dp)
+                                                        .pointerInput(idx) {
+                                                            detectDragGesturesAfterLongPress(
+                                                                onDragStart = {
+                                                                    draggingIndex = idx
+                                                                    dragOffsetPx = 0f
+                                                                },
+                                                                onDrag = { change, dragAmount ->
+                                                                    change.consume()
+                                                                    dragOffsetPx += dragAmount.y
+                                                                    val itemHeight = queueListState.layoutInfo.visibleItemsInfo
+                                                                        .firstOrNull { it.index == draggingIndex }
+                                                                        ?.size ?: return@detectDragGesturesAfterLongPress
+                                                                    if (dragOffsetPx > itemHeight / 2 &&
+                                                                        draggingIndex < queue.lastIndex
+                                                                    ) {
+                                                                        queue.add(draggingIndex + 1, queue.removeAt(draggingIndex))
+                                                                        draggingIndex += 1
+                                                                        dragOffsetPx -= itemHeight
+                                                                    } else if (dragOffsetPx < -itemHeight / 2 &&
+                                                                        draggingIndex > 0
+                                                                    ) {
+                                                                        queue.add(draggingIndex - 1, queue.removeAt(draggingIndex))
+                                                                        draggingIndex -= 1
+                                                                        dragOffsetPx += itemHeight
+                                                                    }
+                                                                },
+                                                                onDragEnd = {
+                                                                    draggingIndex = -1
+                                                                    dragOffsetPx = 0f
+                                                                    syncQueueToService()
+                                                                },
+                                                                onDragCancel = {
+                                                                    draggingIndex = -1
+                                                                    dragOffsetPx = 0f
+                                                                },
+                                                            )
+                                                        },
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "${idx + 1}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                                                    modifier = Modifier.width(20.dp),
+                                                )
+                                            }
                                             Box(
                                                 modifier = Modifier
                                                     .size(34.dp)
@@ -2588,119 +2475,291 @@ fun PlayerScreen(
                                 }
                             }
                         }
+                        }
                     }
+                }
+                }
                 }
             }
 
-            // DIALOG: Añadir a playlist (crear o seleccionar)
+            // PANTALLA: Añadir a playlist (crear o seleccionar)
             if (addToPlaylistDialogOpen && addToPlaylistTracks.isNotEmpty()) {
+                fun closeAddToPlaylistSheet() {
+                    addToPlaylistDialogOpen = false
+                    addToPlaylistPickerExpanded = false
+                    addToPlaylistTracks = emptyList()
+                    addToPlaylistSearchQuery = ""
+                    creatingNewPlaylistInline = false
+                    duplicateDialog = null
+                }
+
+                Dialog(
+                    onDismissRequest = { closeAddToPlaylistSheet() },
+                    properties = DialogProperties(usePlatformDefaultWidth = false),
+                ) {
+                val dialogWindowProvider = LocalView.current.parent as? DialogWindowProvider
+                SideEffect {
+                    dialogWindowProvider?.window?.setLayout(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                    )
+                }
+                val visibleState = remember {
+                    MutableTransitionState(false).apply { targetState = true }
+                }
+                AnimatedVisibility(
+                    visibleState = visibleState,
+                    enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+                ) {
                 val tracksToAdd = addToPlaylistTracks
                 val currentSelectedId = addToPlaylistExistingId
                     ?: selectedPlaylistId
                     ?: playlists.firstOrNull()?.id
+                val tracksById = remember(deviceTracks) { deviceTracks.associateBy { it.id } }
+                val filteredPlaylists = remember(playlists, addToPlaylistSearchQuery) {
+                    if (addToPlaylistSearchQuery.isBlank()) {
+                        playlists
+                    } else {
+                        playlists.filter { it.name.contains(addToPlaylistSearchQuery, ignoreCase = true) }
+                    }
+                }
 
-                ModalBottomSheet(
-                    onDismissRequest = {
-                        addToPlaylistDialogOpen = false
-                        addToPlaylistPickerExpanded = false
-                        addToPlaylistTracks = emptyList()
-                        duplicateDialog = null
-                    },
+                BackHandler { closeAddToPlaylistSheet() }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.player_add_to_playlist_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(onClick = { closeAddToPlaylistSheet() }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = stringResource(R.string.common_cancel),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.player_add_to_playlist_title),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = if (tracksToAdd.size == 1) {
+                                        tracksToAdd.first().title.toTitleCaseSimple()
+                                    } else {
+                                        stringResource(R.string.player_tracks_selected_count, tracksToAdd.size)
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
 
-                        if (playlists.isNotEmpty()) {
-                            Text(
-                                text = stringResource(R.string.player_playlist_target),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                            )
-                            Column(
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+
+                        if (playlists.size > 6) {
+                            OutlinedTextField(
+                                value = addToPlaylistSearchQuery,
+                                onValueChange = { addToPlaylistSearchQuery = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                playlists.forEach { p ->
-                                    val selected = p.id == (addToPlaylistExistingId ?: currentSelectedId)
-                                    Card(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { addToPlaylistExistingId = p.id },
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = if (selected) {
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                            } else {
-                                                MaterialTheme.colorScheme.surfaceContainer
-                                            },
-                                        ),
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(
-                                                text = stringResource(
-                                                    R.string.player_playlist_song_count,
-                                                    p.name,
-                                                    p.songIds.size,
-                                                ),
-                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                            )
-                                            if (selected) {
-                                                Text(
-                                                    text = stringResource(R.string.player_playlist_selected),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                )
-                                            }
-                                        }
+                                singleLine = true,
+                                placeholder = { Text(stringResource(R.string.player_playlist_search_hint)) },
+                                leadingIcon = {
+                                    Icon(imageVector = Icons.Filled.Search, contentDescription = null)
+                                },
+                            )
+                        }
+
+                        // Crear nueva playlist: fila expandible, separada de la selección de una
+                        // existente para que las dos acciones no se confundan.
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { creatingNewPlaylistInline = !creatingNewPlaylistInline },
+                            shape = RoundedCornerShape(Radius.sm),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            ),
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Add,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.player_create_new_playlist),
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Icon(
+                                        imageVector = if (creatingNewPlaylistInline) {
+                                            Icons.Filled.KeyboardArrowUp
+                                        } else {
+                                            Icons.Filled.KeyboardArrowDown
+                                        },
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    )
+                                }
+                                AnimatedVisibility(visible = creatingNewPlaylistInline) {
+                                    Column {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        OutlinedTextField(
+                                            value = addToPlaylistNewName,
+                                            onValueChange = { addToPlaylistNewName = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            singleLine = true,
+                                            label = { Text(stringResource(R.string.player_new_playlist_optional)) },
+                                            placeholder = { Text(stringResource(R.string.player_new_playlist_placeholder)) },
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = stringResource(R.string.player_new_playlist_hint),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                        )
                                     }
                                 }
                             }
                         }
 
-                        OutlinedTextField(
-                            value = addToPlaylistNewName,
-                            onValueChange = { addToPlaylistNewName = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(stringResource(R.string.player_new_playlist_optional)) },
-                            placeholder = { Text(stringResource(R.string.player_new_playlist_placeholder)) },
-                        )
+                        if (filteredPlaylists.isNotEmpty()) {
+                            Text(
+                                text = stringResource(R.string.player_playlist_target),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                            )
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                items(filteredPlaylists, key = { it.id }) { p ->
+                                    val selected = p.id == (addToPlaylistExistingId ?: currentSelectedId)
+                                    val coverTracks = remember(p.songIds, tracksById) {
+                                        p.songIds.take(4).mapNotNull { tracksById[it] }
+                                    }
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                addToPlaylistExistingId = p.id
+                                                creatingNewPlaylistInline = false
+                                            },
+                                        shape = RoundedCornerShape(Radius.sm),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (selected) {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceContainer
+                                            },
+                                        ),
+                                        border = if (selected) {
+                                            androidx.compose.foundation.BorderStroke(
+                                                width = 1.dp,
+                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                            )
+                                        } else {
+                                            null
+                                        },
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            PlaylistCoverMosaic(tracks = coverTracks, sizeDp = 40)
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = p.name,
+                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                                Text(
+                                                    text = stringResource(
+                                                        R.string.player_playlist_song_count_only,
+                                                        p.songIds.size,
+                                                    ),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                                )
+                                            }
+                                            Icon(
+                                                imageVector = if (selected) {
+                                                    Icons.Filled.CheckCircle
+                                                } else {
+                                                    Icons.Outlined.RadioButtonUnchecked
+                                                },
+                                                contentDescription = if (selected) {
+                                                    stringResource(R.string.player_playlist_selected)
+                                                } else {
+                                                    null
+                                                },
+                                                tint = if (selected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (addToPlaylistSearchQuery.isNotBlank()) {
+                            Text(
+                                text = stringResource(R.string.player_playlist_search_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(vertical = 12.dp),
+                            )
+                        }
+                        }
 
-                        Text(
-                            text = stringResource(R.string.player_new_playlist_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
 
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            TextButton(
-                                onClick = {
-                                    addToPlaylistDialogOpen = false
-                                    addToPlaylistTracks = emptyList()
-                                    duplicateDialog = null
-                                },
-                            ) {
+                            OutlinedButton(onClick = { closeAddToPlaylistSheet() }) {
                                 Text(stringResource(R.string.common_cancel))
                             }
-                            TextButton(
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                enabled = addToPlaylistNewName.isNotBlank() ||
+                                    addToPlaylistExistingId != null ||
+                                    playlists.isEmpty(),
                                 onClick = {
                                 val newName = addToPlaylistNewName.trim()
                                 val chosenId =
@@ -2790,6 +2849,8 @@ fun PlayerScreen(
                             }
                         }
                     }
+                }
+                }
                 }
             }
 

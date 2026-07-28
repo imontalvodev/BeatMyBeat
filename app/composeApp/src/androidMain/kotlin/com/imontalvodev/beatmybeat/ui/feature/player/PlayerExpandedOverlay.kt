@@ -182,179 +182,6 @@ import org.json.JSONObject
 import kotlin.random.Random
 
 /**
- * Controles de grabación del Modo Karaoke (Fase F).
- *
- * Tres estados excluyentes: sin grabar (botón de grabar), grabando (tiempo + parar) y revisando
- * (guardar / descartar). La toma en revisión **existe en disco pero no está guardada**: descartar
- * la borra. Ver `PlayerViewModel.KaraokeRecordingState`.
- */
-@Composable
-private fun KaraokeRecordingControls(
-    state: PlayerViewModel.KaraokeRecordingState,
-    headphonesConnected: Boolean,
-    savedTakeCount: Int,
-    reviewPlaying: Boolean,
-    onOpenTakes: () -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onToggleReview: () -> Unit,
-    onSave: () -> Unit,
-    onDiscard: () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = Spacing.xs),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            when (state) {
-                is PlayerViewModel.KaraokeRecordingState.Idle -> {
-                    // Los auriculares son recomendables, no obligatorios: el aviso informa y se
-                    // quita solo al conectarlos, pero nunca impide grabar.
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        TextButton(onClick = onStart) {
-                            Icon(
-                                imageVector = Icons.Filled.FiberManualRecord,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.sm))
-                            Text(
-                                text = stringResource(R.string.karaoke_record_start),
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                        }
-                        AnimatedVisibility(visible = !headphonesConnected) {
-                            Text(
-                                text = stringResource(R.string.karaoke_headphones_hint),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(bottom = Spacing.xs),
-                            )
-                        }
-                        // Tomas ya guardadas de esta canción: la relación no está en el nombre
-                        // del archivo sino en KaraokeRecordingIndex.
-                        AnimatedVisibility(visible = savedTakeCount > 0) {
-                            // Clicable: el contador sin poder abrir las tomas solo informaba de
-                            // que existen en algun sitio del telefono.
-                            TextButton(onClick = onOpenTakes) {
-                                Text(
-                                    text = pluralStringResource(
-                                        R.plurals.karaoke_saved_takes,
-                                        savedTakeCount,
-                                        savedTakeCount,
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                is PlayerViewModel.KaraokeRecordingState.Recording -> {
-                    // El punto parpadea para que quede claro que el micro está abierto: grabar sin
-                    // señal visible es de las cosas que más incomodan en una app.
-                    val blink = rememberInfiniteTransition(label = "rec_blink")
-                    val dotAlpha by blink.animateFloat(
-                        initialValue = 1f,
-                        targetValue = 0.25f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(Motion.AMBIENT),
-                            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
-                        ),
-                        label = "rec_dot_alpha",
-                    )
-                    var elapsedMs by remember(state.session.startedAtMs) { mutableStateOf(0L) }
-                    LaunchedEffect(state.session.startedAtMs) {
-                        while (true) {
-                            elapsedMs = System.currentTimeMillis() - state.session.startedAtMs
-                            delay(250)
-                        }
-                    }
-                    Icon(
-                        imageVector = Icons.Filled.FiberManualRecord,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(14.dp)
-                            .alpha(dotAlpha),
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.sm))
-                    Text(
-                        text = formatMs(elapsedMs.toInt()),
-                        style = AppText.meta,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.md))
-                    TextButton(onClick = onStop) {
-                        Text(
-                            text = stringResource(R.string.karaoke_record_stop),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                }
-
-                is PlayerViewModel.KaraokeRecordingState.Review -> {
-                    // La toma suena sola (la canción queda pausada) y se puede repetir: decidir
-                    // guardar o descartar tras una única escucha no es decidir.
-                    TextButton(onClick = onToggleReview) {
-                        Icon(
-                            imageVector = if (reviewPlaying) Icons.Filled.Stop
-                            else Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text(
-                            text = stringResource(
-                                if (reviewPlaying) R.string.karaoke_take_stop
-                                else R.string.karaoke_review_replay,
-                            ),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(Spacing.sm))
-                    TextButton(onClick = onDiscard) {
-                        Icon(
-                            imageVector = Icons.Filled.DeleteOutline,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text(
-                            text = stringResource(R.string.karaoke_record_discard),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(Spacing.md))
-                    TextButton(onClick = onSave) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text(
-                            text = stringResource(R.string.karaoke_record_save),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
  * Tono y velocidad del Modo Karaoke (Fase E). Plegado por defecto: se abre desde la fila
  * compacta, que ya muestra los valores actuales para no obligar a desplegar solo por mirar.
  */
@@ -480,16 +307,6 @@ internal fun ExpandedPlayerOverlay(
     onKaraokePitchChange: (Float) -> Unit,
     onKaraokeSpeedChange: (Float) -> Unit,
     onResetKaraokeTuning: () -> Unit,
-    karaokeRecording: PlayerViewModel.KaraokeRecordingState,
-    onStartRecording: () -> Unit,
-    onStopRecording: () -> Unit,
-    reviewPlaying: Boolean,
-    onToggleReviewPlayback: () -> Unit,
-    onSaveRecording: () -> Unit,
-    onDiscardRecording: () -> Unit,
-    headphonesConnected: Boolean,
-    savedTakeCount: Int,
-    onOpenTakes: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val expandedPlayScale by animateFloatAsState(
@@ -903,27 +720,13 @@ internal fun ExpandedPlayerOverlay(
                     // Fase E: tono y velocidad. Solo en karaoke y plegado por defecto, para no
                     // competir con los controles de transporte.
                     AnimatedVisibility(visible = karaokeActive) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            KaraokeTuningControls(
-                                pitchSemitones = karaokePitchSemitones,
-                                speed = karaokeSpeed,
-                                onPitchChange = onKaraokePitchChange,
-                                onSpeedChange = onKaraokeSpeedChange,
-                                onReset = onResetKaraokeTuning,
-                            )
-                            KaraokeRecordingControls(
-                                state = karaokeRecording,
-                                headphonesConnected = headphonesConnected,
-                                savedTakeCount = savedTakeCount,
-                                onOpenTakes = onOpenTakes,
-                                reviewPlaying = reviewPlaying,
-                                onStart = onStartRecording,
-                                onStop = onStopRecording,
-                                onToggleReview = onToggleReviewPlayback,
-                                onSave = onSaveRecording,
-                                onDiscard = onDiscardRecording,
-                            )
-                        }
+                        KaraokeTuningControls(
+                            pitchSemitones = karaokePitchSemitones,
+                            speed = karaokeSpeed,
+                            onPitchChange = onKaraokePitchChange,
+                            onSpeedChange = onKaraokeSpeedChange,
+                            onReset = onResetKaraokeTuning,
+                        )
                     }
                 }
             }
