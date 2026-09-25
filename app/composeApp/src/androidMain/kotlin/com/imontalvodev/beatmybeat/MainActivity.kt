@@ -37,6 +37,11 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.imontalvodev.beatmybeat.ui.theme.Motion
+import com.imontalvodev.beatmybeat.ui.theme.DownloadStatusBar
+import com.imontalvodev.beatmybeat.download.DownloadProgressBus
+import com.imontalvodev.beatmybeat.service.SongDownloadService
+import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -163,15 +168,35 @@ class MainActivity : AppCompatActivity() {
                         modifier = Modifier.fillMaxSize(),
                         snackbarHost = { SnackbarHost(snackbarHostState) },
                         bottomBar = {
-                            AnimatedVisibility(
-                                visible = showBottomBar,
-                                enter = expandVertically(tween(Motion.LAYOUT)) + fadeIn(tween(Motion.STANDARD)),
-                                exit = shrinkVertically(tween(Motion.LAYOUT)) + fadeOut(tween(Motion.QUICK)),
-                            ) {
-                                AppNavigationBar(
-                                    currentRoute = currentRoute,
-                                    onSelect = ::navigateToTab,
-                                )
+                            Column {
+                                // Se conserva el último estado para que la barra no se vacíe
+                                // durante la animación de salida al terminar la descarga.
+                                val activeDownload by DownloadProgressBus.state.collectAsState()
+                                var lastDownload by remember { mutableStateOf(activeDownload) }
+                                if (activeDownload != null) lastDownload = activeDownload
+                                AnimatedVisibility(
+                                    visible = activeDownload != null && !playerImmersive,
+                                    enter = expandVertically(tween(Motion.LAYOUT)) + fadeIn(tween(Motion.STANDARD)),
+                                    exit = shrinkVertically(tween(Motion.LAYOUT)) + fadeOut(tween(Motion.QUICK)),
+                                ) {
+                                    lastDownload?.let { download ->
+                                        DownloadStatusBar(
+                                            download = download,
+                                            onOpen = { navigateToTab("analyze") },
+                                            onCancel = { SongDownloadService.cancelDownload(this@MainActivity) },
+                                        )
+                                    }
+                                }
+                                AnimatedVisibility(
+                                    visible = showBottomBar,
+                                    enter = expandVertically(tween(Motion.LAYOUT)) + fadeIn(tween(Motion.STANDARD)),
+                                    exit = shrinkVertically(tween(Motion.LAYOUT)) + fadeOut(tween(Motion.QUICK)),
+                                ) {
+                                    AppNavigationBar(
+                                        currentRoute = currentRoute,
+                                        onSelect = ::navigateToTab,
+                                    )
+                                }
                             }
                         },
                     ) { innerPadding ->

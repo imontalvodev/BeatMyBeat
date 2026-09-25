@@ -78,7 +78,6 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.HorizontalDivider
-import com.imontalvodev.beatmybeat.ui.theme.ActiveDownloadProgressSection
 import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import com.imontalvodev.beatmybeat.download.LyricsLibraryStats
 import com.imontalvodev.beatmybeat.download.LyricsLibraryStatsCalculator
@@ -87,6 +86,7 @@ import com.imontalvodev.beatmybeat.service.LyricsBatchService
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerViewModel
 import com.imontalvodev.beatmybeat.ui.theme.ActiveLyricsBatchProgressSection
 import com.imontalvodev.beatmybeat.ui.network.fetchYouTubeSongMetadata
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -104,26 +104,27 @@ fun AnalyzeScreen(
         )
     }
 
-    var mode by remember { mutableStateOf("url") }
-    var urlInput by remember { mutableStateOf("") }
-    var songTitle by remember { mutableStateOf("") }
-    var songArtist by remember { mutableStateOf("") }
-    var songAlbum by remember { mutableStateOf("") }
-    var searchingSuggestions by remember { mutableStateOf(false) }
-    var suggestionError by remember { mutableStateOf<String?>(null) }
-    var suggestions by remember { mutableStateOf<List<SongSuggestion>>(emptyList()) }
-    var selectedSuggestion by remember { mutableStateOf<SongSuggestion?>(null) }
-    var downloadingSuggestion by remember { mutableStateOf(false) }
-    var downloadError by remember { mutableStateOf<String?>(null) }
-    var songDownloadInfo by remember { mutableStateOf<String?>(null) }
-    var urlInputError by remember { mutableStateOf<String?>(null) }
-    var selectedFormat by remember { mutableStateOf(DownloadFormat.MP3) }
-
-    // URL preview state
-    var urlResolving by remember { mutableStateOf(false) }
-    var urlPreviewTitle by remember { mutableStateOf("") }
-    var urlPreviewTracks by remember { mutableStateOf<List<PreviewTrack>>(emptyList()) }
-    var urlPreviewError by remember { mutableStateOf<String?>(null) }
+    // En un ViewModel y no en remember: la navegación lo conserva al cambiar de pestaña, así
+    // que el enlace, los resultados y la playlist analizada siguen ahí al volver.
+    val form: AnalyzeFormState = viewModel()
+    var mode by form.mode
+    var urlInput by form.urlInput
+    var songTitle by form.songTitle
+    var songArtist by form.songArtist
+    var songAlbum by form.songAlbum
+    var searchingSuggestions by form.searchingSuggestions
+    var suggestionError by form.suggestionError
+    var suggestions by form.suggestions
+    var selectedSuggestion by form.selectedSuggestion
+    var downloadingSuggestion by form.downloadingSuggestion
+    var downloadError by form.downloadError
+    var songDownloadInfo by form.songDownloadInfo
+    var urlInputError by form.urlInputError
+    var selectedFormat by form.selectedFormat
+    var urlResolving by form.urlResolving
+    var urlPreviewTitle by form.urlPreviewTitle
+    var urlPreviewTracks by form.urlPreviewTracks
+    var urlPreviewError by form.urlPreviewError
 
     val activeDownload by DownloadProgressBus.state.collectAsState()
     val downloadInProgress = activeDownload != null
@@ -508,13 +509,7 @@ fun AnalyzeScreen(
                         )
                     }
 
-                    if (activeDownload != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        ActiveDownloadProgressSection(
-                            download = activeDownload!!,
-                            onCancel = { SongDownloadService.cancelDownload(context) },
-                        )
-                    } else if (songDownloadInfo != null) {
+                    if (activeDownload == null && songDownloadInfo != null) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = songDownloadInfo!!,
@@ -688,14 +683,6 @@ fun AnalyzeScreen(
                             suggestion.artist,
                         ),
                     )
-                    activeDownload?.let { progress ->
-                        Spacer(modifier = Modifier.height(12.dp))
-                        ActiveDownloadProgressSection(
-                            download = progress,
-                            onCancel = { SongDownloadService.cancelDownload(context) },
-                            showBackgroundHint = false,
-                        )
-                    }
                     if (downloadError != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -758,7 +745,7 @@ fun AnalyzeScreen(
     }
 }
 
-private data class PreviewTrack(
+internal data class PreviewTrack(
     val videoId: String,
     val title: String,
     val artist: String,
@@ -901,3 +888,24 @@ private fun SuggestionThumbnail(url: String, contentDescription: String) {
  * También elimina sufijos comunes como "(Official Audio)", "[Lyrics]", etc.
  */
 
+/** Estado del formulario de Descargar que debe sobrevivir al cambio de pestaña. */
+internal class AnalyzeFormState : ViewModel() {
+    val mode = mutableStateOf("url")
+    val urlInput = mutableStateOf("")
+    val songTitle = mutableStateOf("")
+    val songArtist = mutableStateOf("")
+    val songAlbum = mutableStateOf("")
+    val searchingSuggestions = mutableStateOf(false)
+    val suggestionError = mutableStateOf<String?>(null)
+    val suggestions = mutableStateOf<List<SongSuggestion>>(emptyList())
+    val selectedSuggestion = mutableStateOf<SongSuggestion?>(null)
+    val downloadingSuggestion = mutableStateOf(false)
+    val downloadError = mutableStateOf<String?>(null)
+    val songDownloadInfo = mutableStateOf<String?>(null)
+    val urlInputError = mutableStateOf<String?>(null)
+    val selectedFormat = mutableStateOf(DownloadFormat.MP3)
+    val urlResolving = mutableStateOf(false)
+    val urlPreviewTitle = mutableStateOf("")
+    val urlPreviewTracks = mutableStateOf<List<PreviewTrack>>(emptyList())
+    val urlPreviewError = mutableStateOf<String?>(null)
+}
