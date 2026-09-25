@@ -302,4 +302,6 @@
 
     <string name="player_playlist_empty">Diese Playlist ist leer</string>
     <string name="player_playlist_empty_body">Füge Songs über das ⋮-Menü eines Songs hinzu.</string>
+
+    <string name="player_lyrics_instrumental">Instrumentalstück</string>
 </resources>

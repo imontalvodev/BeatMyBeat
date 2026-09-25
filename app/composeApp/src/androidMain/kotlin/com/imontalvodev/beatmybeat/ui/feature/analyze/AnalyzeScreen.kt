@@ -48,7 +48,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.annotation.StringRes
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.imontalvodev.beatmybeat.R
@@ -58,7 +57,7 @@ import com.imontalvodev.beatmybeat.ui.network.SongSuggestion
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchClient
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchSource
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSongMetadata
-import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
+import com.imontalvodev.beatmybeat.shared.lyrics.cleanArtistForLyrics
 import com.imontalvodev.beatmybeat.service.SongDownloadService
 import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.Radius
@@ -68,6 +67,9 @@ import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.SuggestionListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.ScreenHeader
+import com.imontalvodev.beatmybeat.shared.youtube.InvalidReason
+import com.imontalvodev.beatmybeat.shared.youtube.ParsedYouTubeInput
+import com.imontalvodev.beatmybeat.shared.youtube.parseYouTubeInput
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
@@ -87,8 +89,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 @Composable
 fun AnalyzeScreen(
     modifier: Modifier = Modifier,
@@ -419,7 +419,13 @@ fun AnalyzeScreen(
                                 } else {
                                     when (val parsed = parseYouTubeInput(normalizedUrl)) {
                                         is ParsedYouTubeInput.Invalid -> {
-                                            urlInputError = resources.getString(parsed.reasonRes)
+                                            urlInputError = resources.getString(
+                                                when (parsed.reason) {
+                                                    InvalidReason.Format -> R.string.analyze_url_invalid_format
+                                                    InvalidReason.HostNotAllowed -> R.string.analyze_url_host_not_allowed
+                                                    InvalidReason.Unsupported -> R.string.analyze_url_invalid_generic
+                                                },
+                                            )
                                         }
                                         is ParsedYouTubeInput.PlaylistOrAlbum -> {
                                             scope.launch {
@@ -757,69 +763,6 @@ private data class PreviewTrack(
     val artist: String,
     val thumbnailUrl: String,
 )
-
-internal sealed interface ParsedYouTubeInput {
-    data class PlaylistOrAlbum(val url: String, val listId: String) : ParsedYouTubeInput
-    data class SingleSong(val videoId: String) : ParsedYouTubeInput
-    data class Invalid(@StringRes val reasonRes: Int) : ParsedYouTubeInput
-}
-
-internal fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
-    val url = raw.toHttpUrlOrNull()
-        ?: return ParsedYouTubeInput.Invalid(R.string.analyze_url_invalid_format)
-
-    val host = url.host.lowercase().removePrefix("www.")
-    val allowedHosts = setOf("youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be")
-    if (host !in allowedHosts) {
-        return ParsedYouTubeInput.Invalid(R.string.analyze_url_host_not_allowed)
-    }
-
-    val listId = url.queryParameter("list")?.trim().orEmpty()
-    if (listId.isNotBlank()) {
-        val normalized = buildCanonicalPlaylistUrl(url, listId)
-        return ParsedYouTubeInput.PlaylistOrAlbum(normalized, listId)
-    }
-
-    val videoId = extractYouTubeVideoId(url)
-    if (videoId != null) {
-        return ParsedYouTubeInput.SingleSong(videoId)
-    }
-
-    return ParsedYouTubeInput.Invalid(R.string.analyze_url_invalid_generic)
-}
-
-private fun buildCanonicalPlaylistUrl(url: HttpUrl, listId: String): String {
-    val builder = HttpUrl.Builder()
-        .scheme("https")
-        .host("www.youtube.com")
-        .addPathSegment("playlist")
-        .addQueryParameter("list", listId)
-
-    // Para casos como youtu.be/<videoId>?list=... preservamos v para resolver la canción concreta.
-    val v = extractYouTubeVideoId(url)
-    if (!v.isNullOrBlank()) builder.addQueryParameter("v", v)
-    return builder.build().toString()
-}
-
-internal fun extractYouTubeVideoId(url: HttpUrl): String? {
-    val host = url.host.lowercase().removePrefix("www.")
-    if (host == "youtu.be") {
-        val shortId = url.pathSegments.firstOrNull().orEmpty()
-        return shortId.takeIf { it.length == 11 }
-    }
-
-    val path = url.encodedPath.lowercase()
-    val fromQuery = url.queryParameter("v")?.trim().orEmpty()
-    if (path == "/watch" && fromQuery.length == 11) {
-        return fromQuery
-    }
-
-    val segments = url.pathSegments
-    if (segments.size >= 2 && (segments[0] == "shorts" || segments[0] == "live")) {
-        return segments[1].takeIf { it.length == 11 }
-    }
-    return null
-}
 
 @Composable
 private fun UrlPreviewSection(

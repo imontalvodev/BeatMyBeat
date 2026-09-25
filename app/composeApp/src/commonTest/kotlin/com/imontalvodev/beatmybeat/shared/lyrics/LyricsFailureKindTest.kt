@@ -1,4 +1,4 @@
-package com.imontalvodev.beatmybeat.ui.network
+package com.imontalvodev.beatmybeat.shared.lyrics
 
 import kotlin.test.Test
 import kotlin.test.assertFalse

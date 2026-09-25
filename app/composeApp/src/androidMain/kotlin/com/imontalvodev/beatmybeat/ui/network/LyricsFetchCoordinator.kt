@@ -1,5 +1,7 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import com.imontalvodev.beatmybeat.shared.lyrics.LyricsResponse
+import com.imontalvodev.beatmybeat.shared.lyrics.buildLyricsArtistCandidates
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart

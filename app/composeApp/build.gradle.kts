@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.kotlinSerialization)
 }
 
 kotlin {
@@ -38,6 +39,7 @@ kotlin {
             implementation(libs.reorderable)
             implementation(libs.newpipeextractor)
             implementation(libs.ffmpeg.kit)
+            implementation(libs.ktor.client.okhttp)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -48,9 +50,16 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.kotlinx.json)
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.ktor.client.mock)
+            implementation(libs.kotlinx.coroutines.test)
         }
         androidUnitTest.dependencies {
             implementation(libs.kotlin.test)
@@ -138,4 +147,14 @@ android {
 dependencies {
     debugImplementation(libs.compose.uiTooling)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+}
+
+// Ktor 3.6 trae OkHttp 5.5, que exige compileSdk 37 (AGP 8.13 llega a 36). Mismo major 5.x:
+// se fija la versión del catálogo hasta subir AGP.
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "com.squareup.okhttp3" && requested.name.startsWith("okhttp")) {
+            useVersion(libs.versions.okhttp.get())
+        }
+    }
 }

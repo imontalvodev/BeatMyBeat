@@ -303,4 +303,6 @@
 
     <string name="player_playlist_empty">Ova playlista je prazna</string>
     <string name="player_playlist_empty_body">Dodaj pjesme preko izbornika ⋮ bilo koje pjesme.</string>
+
+    <string name="player_lyrics_instrumental">Instrumentalna pjesma</string>
 </resources>

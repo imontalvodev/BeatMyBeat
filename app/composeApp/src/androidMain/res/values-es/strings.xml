@@ -303,4 +303,6 @@
 
     <string name="player_playlist_empty">Esta playlist está vacía</string>
     <string name="player_playlist_empty_body">Añade canciones desde el menú ⋮ de cualquier canción.</string>
+
+    <string name="player_lyrics_instrumental">Canción instrumental</string>
 </resources>

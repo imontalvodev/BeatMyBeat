@@ -139,8 +139,8 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
-import com.imontalvodev.beatmybeat.ui.network.LrcLine
-import com.imontalvodev.beatmybeat.ui.network.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
@@ -259,14 +259,14 @@ internal fun resolveTrackMetadata(track: com.imontalvodev.beatmybeat.ui.data.Dev
             ?: track.durationMs
         TrackLyricsMetadata(
             title = t,
-            artist = com.imontalvodev.beatmybeat.ui.network.extractPrimaryArtistForLyrics(rawArtist),
+            artist = com.imontalvodev.beatmybeat.shared.lyrics.extractPrimaryArtistForLyrics(rawArtist),
             album = album,
             durationMs = durationMs,
         )
     }.getOrNull()?.let { return it }
     return TrackLyricsMetadata(
         title = track.title,
-        artist = com.imontalvodev.beatmybeat.ui.network.extractPrimaryArtistForLyrics(track.artist),
+        artist = com.imontalvodev.beatmybeat.shared.lyrics.extractPrimaryArtistForLyrics(track.artist),
         album = track.album.orEmpty(),
         durationMs = track.durationMs,
     )
@@ -279,7 +279,7 @@ internal fun resolveTrackMeta(track: com.imontalvodev.beatmybeat.ui.data.DeviceT
 }
 
 internal fun String.toDisplayArtist(): String =
-    com.imontalvodev.beatmybeat.ui.network.formatArtistForDisplay(this).toTitleCaseSimple()
+    com.imontalvodev.beatmybeat.shared.lyrics.formatArtistForDisplay(this).toTitleCaseSimple()
 
 internal fun String.toTitleCaseSimple(): String {
     val trimmed = trim()

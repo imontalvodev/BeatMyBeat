@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import com.imontalvodev.beatmybeat.shared.lyrics.cleanArtistForLyrics
 import okhttp3.Request
 import org.json.JSONObject
 

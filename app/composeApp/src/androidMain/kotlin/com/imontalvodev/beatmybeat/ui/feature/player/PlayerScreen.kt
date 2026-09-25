@@ -156,12 +156,12 @@ import coil.compose.AsyncImage
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
-import com.imontalvodev.beatmybeat.ui.network.isLyricsNetworkFailure
+import com.imontalvodev.beatmybeat.shared.lyrics.isLyricsNetworkFailure
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetchCoordinator
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
-import com.imontalvodev.beatmybeat.ui.network.LrcLine
-import com.imontalvodev.beatmybeat.ui.network.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.Motion
@@ -725,6 +725,10 @@ fun PlayerScreen(
         val cachedEntry = withContext(Dispatchers.IO) {
             LyricsCache.getEntry(context, title, artist)
         }
+        if (cachedEntry?.instrumental == true) {
+            lyricsState = LyricsUiState.Empty(resources.getString(R.string.player_lyrics_instrumental))
+            return@LaunchedEffect
+        }
         if (cachedEntry != null && cachedEntry.hasAnyLyrics()) {
             lyricsState = LyricsUiState.Ready(
                 lyrics = cachedEntry.displayPlain(),
@@ -736,7 +740,7 @@ fun PlayerScreen(
             LyricsUiState.Loading
         } else {
             LyricsUiState.Empty(
-                resources.getString(R.string.player_lyrics_tap_download),
+                resources.getString(R.string.player_lyrics_none_hint),
             )
         }
     }
@@ -784,7 +788,7 @@ fun PlayerScreen(
             sanitizeTitle(uriTitle),
             track.title.trim(),
         ).distinct().filter { it.isNotBlank() }
-        val artists = com.imontalvodev.beatmybeat.ui.network.buildLyricsArtistCandidates(
+        val artists = com.imontalvodev.beatmybeat.shared.lyrics.buildLyricsArtistCandidates(
             meta.artist,
             listOf(track.artist.trim(), metaPair.second.trim()),
         )
@@ -861,10 +865,10 @@ fun PlayerScreen(
                     } else {
                         // Un fallo de red no es lo mismo que "esta canción no tiene letra":
                         // en el primer caso reintentar sirve de algo, en el segundo no.
-                        val message = if (isLyricsNetworkFailure(res.error)) {
-                            R.string.player_lyrics_network_error
-                        } else {
-                            R.string.player_lyrics_unavailable
+                        val message = when {
+                            res.isInstrumental -> R.string.player_lyrics_instrumental
+                            isLyricsNetworkFailure(res.error) -> R.string.player_lyrics_network_error
+                            else -> R.string.player_lyrics_unavailable
                         }
                         lyricsState = LyricsUiState.Empty(resources.getString(message))
                     }
@@ -880,7 +884,7 @@ fun PlayerScreen(
         uiScope.launch {
             withContext(Dispatchers.IO) { clearLyricsCacheForTrack(track) }
             lyricsState = LyricsUiState.Empty(
-                resources.getString(R.string.player_lyrics_tap_download),
+                resources.getString(R.string.player_lyrics_none_hint),
             )
             showToast(resources.getString(R.string.player_lyrics_deleted))
         }

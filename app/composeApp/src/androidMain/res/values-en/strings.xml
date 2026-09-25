@@ -305,4 +305,6 @@
 
     <string name="player_playlist_empty">This playlist is empty</string>
     <string name="player_playlist_empty_body">Add songs from the ⋮ menu on any song.</string>
+
+    <string name="player_lyrics_instrumental">Instrumental track</string>
 </resources>
