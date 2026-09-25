@@ -1,22 +1,21 @@
 <resources>
     <string name="app_name">BeatMyBeat</string>
     <string name="nav_download">Preuzmi</string>
-    <string name="nav_player">Reproduktor</string>
-    <string name="nav_profile">Profil</string>
+    <string name="nav_player">Knjižnica</string>
+    <string name="nav_profile">Postavke</string>
     <string name="profile_folder_open_failed">Nije moguće otvoriti mapu na ovom uređaju.</string>
     <string name="common_cancel">Odustani</string>
     <string name="common_apply">Primijeni</string>
     <string name="common_delete">Obriši</string>
-    <string name="player_play_all_tracks">REPRODUCIRAJ SVE PJESME</string>
     <string name="player_header_songs">POPIS PJESAMA</string>
     <string name="player_header_favorites">FAVORITI</string>
     <string name="player_header_playlist_fallback">PLAYLIST</string>
     <string name="player_downloader_button">Downloader</string>
-    <string name="player_search_placeholder">Pretraga</string>
+    <string name="player_search_placeholder">Pretraži knjižnicu</string>
     <string name="player_search_clear_cd">Očisti pretragu</string>
     <string name="player_section_songs">Pjesme</string>
     <string name="player_section_favorites">Favoriti</string>
-    <string name="player_section_playlist">Playlist</string>
+    <string name="player_section_playlist">Playliste</string>
     <string name="player_sort_name_asc">Naziv A-Z</string>
     <string name="player_sort_name_desc">Naziv Z-A</string>
     <string name="player_sort_recent">Nedavne</string>
@@ -40,8 +39,8 @@
     <string name="analyze_lyrics_summary">%1$d pjesama · %2$d s tekstom · %3$d na čekanju</string>
     <string name="analyze_lyrics_scanning">Analiza biblioteke…</string>
     <string name="analyze_lyrics_no_tracks">Nema pjesama u biblioteci playera.</string>
-    <string name="analyze_lyrics_cta">PREUZMI SVE TEKSTOVE</string>
-    <string name="analyze_lyrics_fetching">PREUZIMANJE TEKSTOVA…</string>
+    <string name="analyze_lyrics_cta">Preuzmi sve tekstove</string>
+    <string name="analyze_lyrics_fetching">Preuzimanje tekstova…</string>
     <string name="lyrics_batch_title">Preuzimanje tekstova</string>
     <string name="lyrics_batch_notification_title">Preuzimanje tekstova</string>
     <string name="lyrics_batch_preparing">Priprema serije…</string>
@@ -61,9 +60,9 @@
     <string name="analyze_artist_placeholder">Izvođač (preporučeno)</string>
     <string name="analyze_album_placeholder">Album (opcionalno)</string>
     <string name="analyze_download_format">Format preuzimanja</string>
-    <string name="analyze_cta_song">ANALIZIRAJ PJESMU</string>
-    <string name="analyze_cta_downloading">PREUZIMANJE…</string>
-    <string name="analyze_cta_url">ANALIZIRAJ URL</string>
+    <string name="analyze_cta_song">Traži pjesmu</string>
+    <string name="analyze_cta_downloading">Preuzimanje…</string>
+    <string name="analyze_cta_url">Analiziraj poveznicu</string>
     <string name="theme_tab_background">Pozadina</string>
     <string name="theme_tab_text">Tekst</string>
     <string name="theme_customize_background">Prilagodi pozadinu i naglaske</string>
@@ -118,9 +117,6 @@
     <string name="profile_check_updates_running">Provjera…</string>
     <string name="update_up_to_date">Već imaš najnoviju verziju (%1$s).</string>
     <string name="update_check_failed">Provjera ažuriranja nije uspjela. Provjeri vezu.</string>
-    <string name="splash_tagline">Tvoja glazba, tvoj ritam</string>
-    <string name="splash_download_music">Preuzmi glazbu</string>
-    <string name="splash_go_to_player">Idi na reproduktor</string>
     <string name="player_selection_count">%1$d odabrano</string>
     <string name="player_select_all">Sve</string>
     <string name="player_selection_actions_cd">Radnje nad odabirom</string>
@@ -180,8 +176,8 @@
     <string name="analyze_url_resolving">Razrješavanje sadržaja…</string>
     <string name="analyze_url_preview_single">Pjesma pronađena</string>
     <string name="analyze_url_preview_playlist">%1$d pjesama pronađeno</string>
-    <string name="analyze_url_download_all">PREUZMI SVE (%1$d)</string>
-    <string name="analyze_url_download_single">PREUZMI</string>
+    <string name="analyze_url_download_all">Preuzmi sve (%1$d)</string>
+    <string name="analyze_url_download_single">Preuzmi</string>
     <string name="analyze_no_results">Nema rezultata za tu pretragu.</string>
     <string name="analyze_connection_error">Greška veze. Provjeri internet i pokušaj ponovno.</string>
     <string name="analyze_playlist_url_required">Unesi YouTube ili YouTube Music URL.</string>
@@ -275,4 +271,36 @@
     <string name="player_edit_playlist_menu">Uredi naziv</string>
     <string name="player_delete_playlist_menu">Obriši playlistu</string>
     <string name="player_default_playlist_name">Moja playlista</string>
+
+    <string name="analyze_subtitle">Zalijepi YouTube poveznicu ili potraži pjesmu</string>
+    <string name="player_play">Reproduciraj</string>
+    <string name="player_shuffle_play">Nasumično</string>
+    <string name="player_sort_cd">Poredaj</string>
+    <string name="player_action_favorite_add">Dodaj u favorite</string>
+    <string name="player_action_favorite_remove">Ukloni iz favorita</string>
+    <string name="player_playlists_empty">Još nemaš nijednu playlistu</string>
+    <string name="player_playlists_empty_body">Grupiraj omiljene pjesme i slušaj ih kad god želiš.</string>
+    <string name="player_playlists_create_first">Stvori playlistu</string>
+    <string name="player_playlists_header">Moje playliste</string>
+    <string name="player_playlist_options_cd">Opcije playliste</string>
+    <string name="player_favorites_empty">Još nema favorita</string>
+    <string name="player_favorites_empty_body">Dodirni srce u reproduktoru da spremiš pjesmu ovdje.</string>
+    <string name="player_search_no_results">Nema rezultata za „%1$s”</string>
+    <string name="player_lyrics_find">Pronađi tekst</string>
+    <string name="player_lyrics_none_hint">Nema spremljenog teksta za ovu pjesmu</string>
+    <string name="player_cd_repeat_one">Ponovi jednu</string>
+    <string name="player_playing_from_library">Svira</string>
+    <string name="settings_section_library">Knjižnica</string>
+    <string name="settings_section_appearance">Izgled</string>
+    <string name="settings_section_general">Općenito</string>
+    <string name="settings_section_about">O aplikaciji</string>
+    <string name="settings_app_tagline">Tvoja glazba, tvoj ritam</string>
+    <plurals name="library_track_count">
+        <item quantity="one">%1$d pjesma</item>
+        <item quantity="few">%1$d pjesme</item>
+        <item quantity="other">%1$d pjesama</item>
+    </plurals>
+
+    <string name="player_playlist_empty">Ova playlista je prazna</string>
+    <string name="player_playlist_empty_body">Dodaj pjesme preko izbornika ⋮ bilo koje pjesme.</string>
 </resources>

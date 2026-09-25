@@ -35,6 +35,7 @@ kotlin {
             implementation(libs.coil.compose)
             implementation(libs.androidx.palette.ktx)
             implementation(libs.compose.shimmer)
+            implementation(libs.reorderable)
             implementation(libs.newpipeextractor)
             implementation(libs.ffmpeg.kit)
         }

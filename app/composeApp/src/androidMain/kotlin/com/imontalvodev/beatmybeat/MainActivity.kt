@@ -11,20 +11,32 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.imontalvodev.beatmybeat.ui.theme.Motion
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -55,7 +67,6 @@ import com.imontalvodev.beatmybeat.playback.PlaybackServiceBinding
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
 import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
-import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
 import com.imontalvodev.beatmybeat.ui.feature.update.ApkUpdateInstaller
 import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdatePrompt
 import com.imontalvodev.beatmybeat.ui.feature.update.UpdateDownloadStatusPrompt
@@ -137,120 +148,63 @@ class MainActivity : AppCompatActivity() {
                         val navController = rememberNavController()
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route
-                    val showBottomBar = currentRoute in setOf("analyze", "player", "profile")
+                    var playerImmersive by remember { mutableStateOf(false) }
+                    val showBottomBar = currentRoute in TOP_LEVEL_ROUTES && !playerImmersive
+
+                    fun navigateToTab(route: String) {
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
 
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         snackbarHost = { SnackbarHost(snackbarHostState) },
                         bottomBar = {
-                            if (showBottomBar) {
-                                NavigationBar {
-                                    NavigationBarItem(
-                                        selected = currentRoute == "analyze",
-                                        onClick = {
-                                            navController.navigate("analyze") { launchSingleTop = true }
-                                        },
-                                        icon = {
-                                            Icon(
-                                                Icons.Filled.Download,
-                                                contentDescription = stringResource(R.string.nav_download),
-                                            )
-                                        },
-                                        label = {
-                                            Text(
-                                                text = stringResource(R.string.nav_download),
-                                                modifier = Modifier.fillMaxWidth(),
-                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                            )
-                                        },
-                                    )
-                                    NavigationBarItem(
-                                        selected = currentRoute == "player",
-                                        onClick = {
-                                            navController.navigate("player") { launchSingleTop = true }
-                                        },
-                                        icon = {
-                                            Icon(
-                                                Icons.Filled.MusicNote,
-                                                contentDescription = stringResource(R.string.nav_player),
-                                            )
-                                        },
-                                        label = {
-                                            Text(
-                                                text = stringResource(R.string.nav_player),
-                                                modifier = Modifier.fillMaxWidth(),
-                                                textAlign = TextAlign.Center,
-                                            )
-                                        },
-                                    )
-                                    NavigationBarItem(
-                                        selected = currentRoute == "profile",
-                                        onClick = {
-                                            navController.navigate("profile") { launchSingleTop = true }
-                                        },
-                                        icon = {
-                                            Icon(
-                                                Icons.Filled.Person,
-                                                contentDescription = stringResource(R.string.nav_profile),
-                                            )
-                                        },
-                                        label = {
-                                            Text(
-                                                text = stringResource(R.string.nav_profile),
-                                                modifier = Modifier.fillMaxWidth(),
-                                                textAlign = TextAlign.Center,
-                                            )
-                                        },
-                                    )
-                                }
+                            AnimatedVisibility(
+                                visible = showBottomBar,
+                                enter = expandVertically(tween(Motion.LAYOUT)) + fadeIn(tween(Motion.STANDARD)),
+                                exit = shrinkVertically(tween(Motion.LAYOUT)) + fadeOut(tween(Motion.QUICK)),
+                            ) {
+                                AppNavigationBar(
+                                    currentRoute = currentRoute,
+                                    onSelect = ::navigateToTab,
+                                )
                             }
                         },
                     ) { innerPadding ->
                         NavHost(
                             navController = navController,
-                            startDestination = "splash",
+                            startDestination = "player",
                             modifier = Modifier.padding(innerPadding),
+                            // Entre pestañas: fundido (Material "fade through"). Deslizar lateralmente
+                            // sugiere jerarquía, y las pestañas son hermanas.
                             enterTransition = {
-                                fadeIn(animationSpec = tween(280)) +
-                                    slideInHorizontally(animationSpec = tween(280)) { it / 10 }
+                                if (isTabSwitch()) fadeIn(tween(Motion.STANDARD))
+                                else fadeIn(tween(Motion.STANDARD)) + slideInHorizontally(tween(Motion.LAYOUT)) { it / 10 }
                             },
                             exitTransition = {
-                                fadeOut(animationSpec = tween(220)) +
-                                    slideOutHorizontally(animationSpec = tween(240)) { -it / 10 }
+                                if (isTabSwitch()) fadeOut(tween(Motion.QUICK))
+                                else fadeOut(tween(Motion.QUICK)) + slideOutHorizontally(tween(Motion.LAYOUT)) { -it / 10 }
                             },
                             popEnterTransition = {
-                                fadeIn(animationSpec = tween(280)) +
-                                    slideInHorizontally(animationSpec = tween(280)) { -it / 10 }
+                                if (isTabSwitch()) fadeIn(tween(Motion.STANDARD))
+                                else fadeIn(tween(Motion.STANDARD)) + slideInHorizontally(tween(Motion.LAYOUT)) { -it / 10 }
                             },
                             popExitTransition = {
-                                fadeOut(animationSpec = tween(220)) +
-                                    slideOutHorizontally(animationSpec = tween(240)) { it / 10 }
+                                if (isTabSwitch()) fadeOut(tween(Motion.QUICK))
+                                else fadeOut(tween(Motion.QUICK)) + slideOutHorizontally(tween(Motion.LAYOUT)) { it / 10 }
                             },
                         ) {
-                            composable("splash") {
-                                SplashScreen(
-                                    onGoToDownloader = {
-                                        navController.navigate("analyze") {
-                                            popUpTo("splash") { inclusive = true }
-                                        }
-                                    },
-                                    onGoToPlayer = {
-                                        navController.navigate("player") {
-                                            popUpTo("splash") { inclusive = true }
-                                        }
-                                    },
-                                )
-                            }
                             composable("analyze") {
                                 AnalyzeScreen()
                             }
                             composable("player") {
                                 PlayerScreen(
-                                    onNavigateToDownloader = {
-                                        navController.navigate("analyze") {
-                                            launchSingleTop = true
-                                        }
-                                    },
+                                    onNavigateToDownloader = { navigateToTab("analyze") },
+                                    onImmersiveChange = { playerImmersive = it },
                                 )
                             }
                             composable("profile") {
@@ -307,6 +261,7 @@ class MainActivity : AppCompatActivity() {
                             composable("theme-customizer/background") {
                                 ThemeCustomizerScreen(
                                     section = ThemeCustomizerSection.Background,
+                                    onBack = { navController.popBackStack() },
                                     profiles = profiles,
                                     activeProfileId = activeProfileId,
                                     onApplyProfile = { id ->
@@ -336,6 +291,7 @@ class MainActivity : AppCompatActivity() {
                             composable("theme-customizer/text") {
                                 ThemeCustomizerScreen(
                                     section = ThemeCustomizerSection.Text,
+                                    onBack = { navController.popBackStack() },
                                     profiles = profiles,
                                     activeProfileId = activeProfileId,
                                     onApplyProfile = { id ->
@@ -374,5 +330,49 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         ApkUpdateInstaller.tryCompletePendingInstall(this)
+    }
+}
+
+private val TOP_LEVEL_ROUTES = setOf("player", "analyze", "profile")
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(): Boolean =
+    initialState.destination.route in TOP_LEVEL_ROUTES && targetState.destination.route in TOP_LEVEL_ROUTES
+
+private data class NavTab(
+    val route: String,
+    val labelRes: Int,
+    val selectedIcon: ImageVector,
+    val icon: ImageVector,
+)
+
+private val NAV_TABS = listOf(
+    NavTab("player", R.string.nav_player, Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
+    NavTab("analyze", R.string.nav_download, Icons.Filled.Download, Icons.Outlined.Download),
+    NavTab("profile", R.string.nav_profile, Icons.Filled.Settings, Icons.Outlined.Settings),
+)
+
+@Composable
+private fun AppNavigationBar(
+    currentRoute: String?,
+    onSelect: (String) -> Unit,
+) {
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp,
+    ) {
+        NAV_TABS.forEach { tab ->
+            val selected = currentRoute == tab.route
+            NavigationBarItem(
+                selected = selected,
+                onClick = { if (!selected) onSelect(tab.route) },
+                icon = {
+                    Icon(
+                        imageVector = if (selected) tab.selectedIcon else tab.icon,
+                        contentDescription = null,
+                    )
+                },
+                label = { Text(stringResource(tab.labelRes)) },
+            )
+        }
     }
 }

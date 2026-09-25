@@ -1,22 +1,21 @@
 <resources>
     <string name="app_name">BeatMyBeat</string>
     <string name="nav_download">Herunterladen</string>
-    <string name="nav_player">Player</string>
-    <string name="nav_profile">Profil</string>
+    <string name="nav_player">Bibliothek</string>
+    <string name="nav_profile">Einstellungen</string>
     <string name="profile_folder_open_failed">Ordner konnte auf diesem Gerät nicht geöffnet werden.</string>
     <string name="common_cancel">Abbrechen</string>
     <string name="common_apply">Anwenden</string>
     <string name="common_delete">Löschen</string>
-    <string name="player_play_all_tracks">ALLE TRACKS ABSPIELEN</string>
     <string name="player_header_songs">SONGLISTE</string>
     <string name="player_header_favorites">FAVORITEN</string>
     <string name="player_header_playlist_fallback">PLAYLIST</string>
     <string name="player_downloader_button">Downloader</string>
-    <string name="player_search_placeholder">Suche</string>
+    <string name="player_search_placeholder">Bibliothek durchsuchen</string>
     <string name="player_search_clear_cd">Suche löschen</string>
     <string name="player_section_songs">Songs</string>
     <string name="player_section_favorites">Favoriten</string>
-    <string name="player_section_playlist">Playlist</string>
+    <string name="player_section_playlist">Playlists</string>
     <string name="player_sort_name_asc">Name A-Z</string>
     <string name="player_sort_name_desc">Name Z-A</string>
     <string name="player_sort_recent">Neueste</string>
@@ -40,8 +39,8 @@
     <string name="analyze_lyrics_summary">%1$d Titel erkannt · %2$d mit Text · %3$d ausstehend</string>
     <string name="analyze_lyrics_scanning">Bibliothek wird analysiert…</string>
     <string name="analyze_lyrics_no_tracks">Keine Titel in der Player-Bibliothek.</string>
-    <string name="analyze_lyrics_cta">ALLE TEXTE HERUNTERLADEN</string>
-    <string name="analyze_lyrics_fetching">TEXTE WERDEN HERUNTERGELADEN…</string>
+    <string name="analyze_lyrics_cta">Alle Songtexte herunterladen</string>
+    <string name="analyze_lyrics_fetching">Songtexte werden geladen…</string>
     <string name="lyrics_batch_title">Text-Download</string>
     <string name="lyrics_batch_notification_title">Texte werden heruntergeladen</string>
     <string name="lyrics_batch_preparing">Stapel wird vorbereitet…</string>
@@ -61,9 +60,9 @@
     <string name="analyze_artist_placeholder">Künstler (empfohlen)</string>
     <string name="analyze_album_placeholder">Album (optional)</string>
     <string name="analyze_download_format">Download-Format</string>
-    <string name="analyze_cta_song">SONG ANALYSIEREN</string>
-    <string name="analyze_cta_downloading">WIRD HERUNTERGELADEN…</string>
-    <string name="analyze_cta_url">URL ANALYSIEREN</string>
+    <string name="analyze_cta_song">Song suchen</string>
+    <string name="analyze_cta_downloading">Wird heruntergeladen…</string>
+    <string name="analyze_cta_url">Link analysieren</string>
     <string name="theme_tab_background">Hintergrund</string>
     <string name="theme_tab_text">Text</string>
     <string name="theme_customize_background">Hintergrund und Akzente anpassen</string>
@@ -118,9 +117,6 @@
     <string name="profile_check_updates_running">Wird geprüft…</string>
     <string name="update_up_to_date">Du hast bereits die neueste Version (%1$s).</string>
     <string name="update_check_failed">Update-Prüfung fehlgeschlagen. Verbindung prüfen.</string>
-    <string name="splash_tagline">Deine Musik, dein Rhythmus</string>
-    <string name="splash_download_music">Musik herunterladen</string>
-    <string name="splash_go_to_player">Zum Player</string>
     <string name="player_selection_count">%1$d ausgewählt</string>
     <string name="player_select_all">Alle</string>
     <string name="player_selection_actions_cd">Aktionen für Auswahl</string>
@@ -180,8 +176,8 @@
     <string name="analyze_url_resolving">Inhalt wird aufgelöst…</string>
     <string name="analyze_url_preview_single">Song gefunden</string>
     <string name="analyze_url_preview_playlist">%1$d Songs gefunden</string>
-    <string name="analyze_url_download_all">ALLE HERUNTERLADEN (%1$d)</string>
-    <string name="analyze_url_download_single">HERUNTERLADEN</string>
+    <string name="analyze_url_download_all">Alle herunterladen (%1$d)</string>
+    <string name="analyze_url_download_single">Herunterladen</string>
     <string name="analyze_no_results">Keine Ergebnisse für diese Suche.</string>
     <string name="analyze_connection_error">Verbindungsfehler. Prüfe deine Internetverbindung und versuche es erneut.</string>
     <string name="analyze_playlist_url_required">Gib eine YouTube- oder YouTube Music-URL ein.</string>
@@ -275,4 +271,35 @@
     <string name="player_edit_playlist_menu">Namen bearbeiten</string>
     <string name="player_delete_playlist_menu">Playlist löschen</string>
     <string name="player_default_playlist_name">Meine Playlist</string>
+
+    <string name="analyze_subtitle">YouTube-Link einfügen oder Song suchen</string>
+    <string name="player_play">Abspielen</string>
+    <string name="player_shuffle_play">Zufällig</string>
+    <string name="player_sort_cd">Sortieren</string>
+    <string name="player_action_favorite_add">Zu Favoriten hinzufügen</string>
+    <string name="player_action_favorite_remove">Aus Favoriten entfernen</string>
+    <string name="player_playlists_empty">Du hast noch keine Playlists</string>
+    <string name="player_playlists_empty_body">Fasse deine Lieblingssongs zusammen und hör sie jederzeit.</string>
+    <string name="player_playlists_create_first">Playlist erstellen</string>
+    <string name="player_playlists_header">Meine Playlists</string>
+    <string name="player_playlist_options_cd">Playlist-Optionen</string>
+    <string name="player_favorites_empty">Noch keine Favoriten</string>
+    <string name="player_favorites_empty_body">Tippe im Player auf das Herz, um einen Song hier zu speichern.</string>
+    <string name="player_search_no_results">Keine Ergebnisse für „%1$s“</string>
+    <string name="player_lyrics_find">Songtext suchen</string>
+    <string name="player_lyrics_none_hint">Kein Songtext für diesen Song gespeichert</string>
+    <string name="player_cd_repeat_one">Einen wiederholen</string>
+    <string name="player_playing_from_library">Wiedergabe</string>
+    <string name="settings_section_library">Bibliothek</string>
+    <string name="settings_section_appearance">Darstellung</string>
+    <string name="settings_section_general">Allgemein</string>
+    <string name="settings_section_about">Info</string>
+    <string name="settings_app_tagline">Deine Musik, dein Rhythmus</string>
+    <plurals name="library_track_count">
+        <item quantity="one">%1$d Song</item>
+        <item quantity="other">%1$d Songs</item>
+    </plurals>
+
+    <string name="player_playlist_empty">Diese Playlist ist leer</string>
+    <string name="player_playlist_empty_body">Füge Songs über das ⋮-Menü eines Songs hinzu.</string>
 </resources>

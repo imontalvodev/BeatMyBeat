@@ -146,7 +146,6 @@ import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService

@@ -4,6 +4,20 @@ All notable changes to BeatMyBeat are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- **UI redesign.** The app opens straight into the library (the start-up "Download / Go to player" choice screen is gone). Tabs are now Library · Download · Settings, and switch with a fade instead of a sideways slide.
+- **Library:** large title with song count, a filled search field, Songs / Favorites / Playlists chips (no more combined dropdown), sort behind an icon, and separate **Play** and **Shuffle** buttons. Empty favorites, empty playlists and searches with no results now explain what to do.
+- **Multi-select:** long-pressing a song opens a contextual bar with the count, "select all" and every bulk action, instead of hiding them behind the ⋮ of a selected row.
+- **Mini player:** floating card with play/pause and next; tap or swipe up to open the full player. The thin progress line is display-only, so a stray tap no longer seeks.
+- **Full player:** the bottom navigation hides while it is open; new favorite (heart) and queue buttons; lyrics actions moved to a ⋮ menu; "repeat one" has its own icon; slimmer seek bar; clear "Find lyrics" button when a song has no lyrics.
+- **Queue:** same row style as the library, tap a row to play it, smoother drag-to-reorder with haptics.
+- **Download & Settings:** screen titles instead of the repeated logo, settings grouped into sections, a language picker that shows the current language, sentence-case buttons.
+
+### Fixed
+- Several strings that were hard-coded in Spanish (favorites menu item, playlist labels) are now translated in every supported language.
+
 ## [1.2] — 2026-07-28
 
 ### Added

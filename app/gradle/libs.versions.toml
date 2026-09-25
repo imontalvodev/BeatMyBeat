@@ -25,9 +25,11 @@ documentfile = "1.1.0"
 coil = "2.7.0"
 androidx-palette = "1.0.0"
 shimmer = "1.4.0"
+reorderable = "3.1.0"
 json = "20250517"
 
 [libraries]
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { module = "junit:junit", version.ref = "junit" }

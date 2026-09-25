@@ -1,5 +1,10 @@
 package com.imontalvodev.beatmybeat.ui.feature.theme
 
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.Icons
 import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
@@ -50,7 +55,6 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -73,6 +77,7 @@ fun ThemeCustomizerScreen(
     onApplyProfile: (String) -> Unit,
     onDeleteProfile: (String) -> Unit,
     onSaveProfile: (BeatMyBeatThemeProfile) -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val palette = currentBeatMyBeatThemeProfile()
     val activeProfile = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.firstOrNull()
@@ -122,30 +127,26 @@ fun ThemeCustomizerScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            AppMiniBrand()
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip(
-                    text = stringResource(R.string.theme_tab_background),
-                    selected = section == ThemeCustomizerSection.Background,
-                    onClick = {},
-                )
-                ModeChip(
-                    text = stringResource(R.string.theme_tab_text),
-                    selected = section == ThemeCustomizerSection.Text,
-                    onClick = {},
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.common_cancel),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Text(
+                    text = if (section == ThemeCustomizerSection.Background) {
+                        stringResource(R.string.theme_customize_background)
+                    } else {
+                        stringResource(R.string.theme_customize_text)
+                    },
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-
-            Text(
-                text = if (section == ThemeCustomizerSection.Background) {
-                    stringResource(R.string.theme_customize_background)
-                } else {
-                    stringResource(R.string.theme_customize_text)
-                },
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
 
             Card(
                 shape = RoundedCornerShape(Radius.md),

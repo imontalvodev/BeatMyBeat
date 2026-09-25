@@ -67,7 +67,11 @@ import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.SuggestionListSkeleton
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
+import com.imontalvodev.beatmybeat.ui.theme.ScreenHeader
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.HorizontalDivider
 import com.imontalvodev.beatmybeat.ui.theme.ActiveDownloadProgressSection
 import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import com.imontalvodev.beatmybeat.download.LyricsLibraryStats
@@ -161,12 +165,13 @@ fun AnalyzeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 24.dp),
+                .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.xl),
             verticalArrangement = Arrangement.Top,
         ) {
-            AppMiniBrand()
-
-            Spacer(modifier = Modifier.height(16.dp))
+            ScreenHeader(
+                title = stringResource(R.string.nav_download),
+                subtitle = stringResource(R.string.analyze_subtitle),
+            )
 
             val tabUrl = stringResource(R.string.analyze_tab_url)
             val tabSong = stringResource(R.string.analyze_tab_song)
@@ -176,7 +181,13 @@ fun AnalyzeScreen(
                 "song" -> 1
                 else -> 2
             }
-            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
+            PrimaryTabRow(
+                selectedTabIndex = selectedTabIndex,
+                containerColor = Color.Transparent,
+                divider = {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                },
+            ) {
                 Tab(
                     selected = mode == "url",
                     onClick = { mode = "url" },
@@ -194,28 +205,21 @@ fun AnalyzeScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(Radius.xl),
+                shape = RoundedCornerShape(Radius.lg),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
                     contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 18.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 ),
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
+                        .padding(Spacing.lg),
                 ) {
-
-                    Spacer(modifier = Modifier.height(16.dp))
 
                     if (mode == "lyrics") {
                         when {
@@ -307,12 +311,13 @@ fun AnalyzeScreen(
                     }
 
                     if (mode != "lyrics") {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(Spacing.lg))
                         Text(
                             text = stringResource(R.string.analyze_download_format),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                            style = AppText.sectionLabel,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Spacer(modifier = Modifier.height(Spacing.sm))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -329,9 +334,7 @@ fun AnalyzeScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(Spacing.xl))
 
                     if (mode == "lyrics") {
                         PrimaryButton(
@@ -605,7 +608,7 @@ fun AnalyzeScreen(
                                                 },
                                             shape = RoundedCornerShape(Radius.sm),
                                             colors = CardDefaults.cardColors(
-                                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                                containerColor = Color.Transparent,
                                                 contentColor = MaterialTheme.colorScheme.onSurface,
                                             ),
                                         ) {
@@ -860,43 +863,41 @@ private fun UrlPreviewSection(
         Spacer(modifier = Modifier.height(4.dp))
 
         tracks.forEach { track ->
-            Card(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = downloadEnabled) { onDownloadSingle(track) },
-                shape = RoundedCornerShape(Radius.sm),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .clickable(enabled = downloadEnabled) { onDownloadSingle(track) }
+                    .padding(vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    SuggestionThumbnail(
-                        url = track.thumbnailUrl,
-                        contentDescription = track.title,
+                SuggestionThumbnail(
+                    url = track.thumbnailUrl,
+                    contentDescription = track.title,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        style = AppText.trackTitle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = track.title,
-                            style = AppText.trackTitle,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                        )
-                        Text(
-                            text = track.artist,
-                            style = AppText.trackArtist,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            maxLines = 1,
-                        )
-                    }
+                    Text(
+                        text = track.artist,
+                        style = AppText.trackArtist,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
+                Icon(
+                    imageVector = Icons.Outlined.Download,
+                    contentDescription = null,
+                    tint = if (downloadEnabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
