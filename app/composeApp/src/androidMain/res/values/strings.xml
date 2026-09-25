@@ -312,4 +312,27 @@
     <string name="player_playlist_empty_body">Añade canciones desde el menú ⋮ de cualquier canción.</string>
 
     <string name="player_lyrics_instrumental">Canción instrumental</string>
+
+    <string name="download_phase_searching">Buscando vídeo…</string>
+    <string name="download_phase_resolving">Obteniendo enlace de audio…</string>
+    <string name="download_phase_downloading">Descargando audio… %1$d%%</string>
+    <string name="download_phase_converting">Convirtiendo a %1$s…</string>
+    <string name="download_phase_saving">Guardando en la biblioteca…</string>
+    <string name="download_phase_lyrics">Buscando letra…</string>
+    <string name="download_notification_downloading">Descargando: %1$s</string>
+    <string name="download_failed_title">Error en la descarga</string>
+    <string name="download_completed_title">Descarga completada</string>
+    <string name="download_error_video_not_found">No se encontró el vídeo en YouTube.</string>
+    <string name="download_error_age_restricted">Este vídeo tiene restricción de edad y no se puede descargar.</string>
+    <string name="download_error_geo_blocked">Este vídeo no está disponible en tu país.</string>
+    <string name="download_error_private">Este vídeo es privado.</string>
+    <string name="download_error_premium">Este contenido requiere YouTube Premium.</string>
+    <string name="download_error_bot_check">YouTube está limitando las peticiones. Espera unos minutos y vuelve a intentarlo.</string>
+    <string name="download_error_unavailable">Este vídeo no está disponible.</string>
+    <string name="download_error_no_audio">No se encontró audio descargable para este vídeo.</string>
+    <string name="download_error_network">Sin conexión con YouTube. Revisa tu internet.</string>
+    <string name="download_error_incomplete">La descarga se interrumpió antes de terminar. Inténtalo de nuevo.</string>
+    <string name="download_error_convert">No se pudo convertir el audio a %1$s.</string>
+    <string name="download_error_save">No se pudo guardar el archivo en la carpeta configurada.</string>
+    <string name="download_error_unknown">No se pudo completar la descarga. Inténtalo de nuevo.</string>
 </resources>

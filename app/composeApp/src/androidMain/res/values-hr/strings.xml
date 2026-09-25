@@ -305,4 +305,27 @@
     <string name="player_playlist_empty_body">Dodaj pjesme preko izbornika ⋮ bilo koje pjesme.</string>
 
     <string name="player_lyrics_instrumental">Instrumentalna pjesma</string>
+
+    <string name="download_phase_searching">Traženje videa…</string>
+    <string name="download_phase_resolving">Dohvaćanje audio poveznice…</string>
+    <string name="download_phase_downloading">Preuzimanje zvuka… %1$d%%</string>
+    <string name="download_phase_converting">Pretvaranje u %1$s…</string>
+    <string name="download_phase_saving">Spremanje u knjižnicu…</string>
+    <string name="download_phase_lyrics">Traženje teksta…</string>
+    <string name="download_notification_downloading">Preuzimanje: %1$s</string>
+    <string name="download_failed_title">Preuzimanje nije uspjelo</string>
+    <string name="download_completed_title">Preuzimanje dovršeno</string>
+    <string name="download_error_video_not_found">Video nije pronađen na YouTubeu.</string>
+    <string name="download_error_age_restricted">Ovaj video ima dobno ograničenje i ne može se preuzeti.</string>
+    <string name="download_error_geo_blocked">Ovaj video nije dostupan u tvojoj zemlji.</string>
+    <string name="download_error_private">Ovaj video je privatan.</string>
+    <string name="download_error_premium">Ovaj sadržaj zahtijeva YouTube Premium.</string>
+    <string name="download_error_bot_check">YouTube ograničava zahtjeve. Pričekaj nekoliko minuta i pokušaj ponovno.</string>
+    <string name="download_error_unavailable">Ovaj video nije dostupan.</string>
+    <string name="download_error_no_audio">Za ovaj video nije pronađen zvuk za preuzimanje.</string>
+    <string name="download_error_network">YouTube nije dostupan. Provjeri vezu.</string>
+    <string name="download_error_incomplete">Preuzimanje je prekinuto prije kraja. Pokušaj ponovno.</string>
+    <string name="download_error_convert">Zvuk nije moguće pretvoriti u %1$s.</string>
+    <string name="download_error_save">Datoteku nije moguće spremiti u odabranu mapu.</string>
+    <string name="download_error_unknown">Preuzimanje nije dovršeno. Pokušaj ponovno.</string>
 </resources>

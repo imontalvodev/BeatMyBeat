@@ -137,6 +137,7 @@ object BeatMyBeatNotification {
             .setSmallIcon(R.drawable.ic_stat_logo)
             .setContentTitle(title)
             .setContentText(subtitle)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(subtitle))
             .setContentIntent(baseContentIntent(context))
             .setOngoing(false)
             .setAutoCancel(true)
@@ -145,6 +146,10 @@ object BeatMyBeatNotification {
             .build()
 
         runCatching { nm.notify(notificationId, notification) }
+    }
+
+    fun cancelDownloadNotification(context: Context, notificationId: Int = DOWNLOAD_NOTIFICATION_ID) {
+        runCatching { NotificationManagerCompat.from(context).cancel(notificationId) }
     }
 
     fun showUpdateReadyToInstall(

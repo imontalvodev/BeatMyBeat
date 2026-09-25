@@ -15,8 +15,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Queue:** same row style as the library, tap a row to play it, smoother drag-to-reorder with haptics.
 - **Download & Settings:** screen titles instead of the repeated logo, settings grouped into sections, a language picker that shows the current language, sentence-case buttons.
 
+- **Downloads keep the original quality.** M4A and AAC are copied straight from YouTube's AAC stream and OGG from its Opus stream, with no re-encoding. MP3/FLAC/WAV are converted in a single pass from the best source, instead of going through an intermediate 192 kbps MP3.
+- **Clear download errors.** Age-restricted, region-blocked, private, Premium-only and rate-limited videos now say so instead of "try again".
+- **Synced lyrics first.** LRCLIB lookups now prefer time-synced lyrics over plain text, use the real song duration for downloads, remember instrumental tracks, and don't cache a temporary LRCLIB outage as "no lyrics".
+- **Cleaner tags.** Songs found on YouTube Music get the right artist and album (the artist used to include "• Album • 2:06"), and video titles like "Artist - Song (Official Video)" are split properly.
+- Paste YouTube links without `https://`; "Mix" links download the song instead of failing as a playlist.
+
 ### Fixed
 - Several strings that were hard-coded in Spanish (favorites menu item, playlist labels) are now translated in every supported language.
+- **Truncated downloads.** A network hiccup mid-download used to save a cut-off song as if it were complete; chunks are now retried and incomplete files are discarded.
+- Cancelling a download now stops it immediately.
+- Playlist links pick up every track (not just the first ~100) and no longer include unrelated recommended videos.
+- Streams delivered as DASH/HLS manifests or dubbed audio tracks are no longer chosen for download.
+
+### Internal
+- Shared, platform-independent logic (LRCLIB and lyrics.ovh clients on Ktor, lyrics matching, LRC parsing, YouTube link/metadata parsing, stream selection, ffmpeg arguments, ranged downloads) moved to Kotlin Multiplatform `commonMain` with `commonTest` coverage.
+- NewPipe Extractor 0.26.5.
 
 ## [1.2] — 2026-07-28
 

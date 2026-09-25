@@ -1,26 +1,60 @@
 package com.imontalvodev.beatmybeat.ui.network
 
 import com.imontalvodev.beatmybeat.core.Logger
+import com.imontalvodev.beatmybeat.shared.download.AudioCodec
+import com.imontalvodev.beatmybeat.shared.download.SourceStream
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
+import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
+import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException
+import org.schabi.newpipe.extractor.exceptions.PaidContentException
+import org.schabi.newpipe.extractor.exceptions.PrivateContentException
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException
+import org.schabi.newpipe.extractor.exceptions.UnsupportedContentInCountryException
+import org.schabi.newpipe.extractor.exceptions.YoutubeMusicPremiumContentException
 import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.AudioStream
+import org.schabi.newpipe.extractor.stream.AudioTrackType
+import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.VideoStream
+import java.io.IOException
 
-data class AudioStreamInfo(
-    val url: String,
-    val mimeType: String,
-    val averageBitrate: Int,
-    val totalBytes: Long = -1L,
+/** Motivo de fallo de una descarga, para mostrar al usuario un mensaje que le sirva. */
+enum class DownloadError {
+    VideoNotFound,
+    AgeRestricted,
+    GeoBlocked,
+    Private,
+    PremiumOnly,
+    BotCheck,
+    Unavailable,
+    NoAudio,
+    Network,
+    Incomplete,
+    Convert,
+    Save,
+    Unknown,
+}
+
+class DownloadException(val error: DownloadError, cause: Throwable? = null) :
+    Exception(error.name + (cause?.message?.let { ": $it" } ?: ""), cause)
+
+/** Lo que el descargador necesita de un vídeo: duración y streams candidatos. */
+data class ExtractedMedia(
+    val durationSeconds: Long,
+    val streams: List<SourceStream>,
 )
 
 object NewPipeStreamExtractor {
+
+    private const val TAG = "NewPipeStream"
 
     @Volatile
     private var initialized = false
@@ -29,114 +63,75 @@ object NewPipeStreamExtractor {
         if (initialized) return
         synchronized(this) {
             if (initialized) return
-            NewPipe.init(
-                OkHttpDownloader.instance,
-                Localization.DEFAULT,
-                ContentCountry.DEFAULT,
-            )
+            NewPipe.init(OkHttpDownloader, Localization.DEFAULT, ContentCountry.DEFAULT)
             initialized = true
         }
     }
 
-    fun extractBestAudioStream(videoId: String): AudioStreamInfo {
+    /** @throws DownloadException con el motivo clasificado. */
+    fun extract(videoId: String): ExtractedMedia {
         init()
         val url = "https://www.youtube.com/watch?v=$videoId"
-        Logger.d("NewPipeStream", "Extracting: $url")
-
-        val streamInfo = try {
+        val info = try {
             StreamInfo.getInfo(ServiceList.YouTube, url)
         } catch (e: Exception) {
-            throw Exception("No se pudo obtener el vídeo: ${e.message}", e)
+            val error = classify(e)
+            Logger.w(TAG, "extract($videoId) failed: $error (${e.javaClass.simpleName}: ${e.message})")
+            throw DownloadException(error, e)
         }
 
-        val audioStreams = streamInfo.audioStreams.orEmpty()
-        val videoStreams = streamInfo.videoStreams.orEmpty()
-        val videoOnlyStreams = streamInfo.videoOnlyStreams.orEmpty()
+        val audio = info.audioStreams.orEmpty().map { it.toSource() }
+        val muxed = info.videoStreams.orEmpty().filter { !it.isVideoOnly }.map { it.toSource() }
+        Logger.d(TAG, "streams audio=${audio.size} muxed=${muxed.size} duration=${info.duration}s")
+        if (audio.isEmpty() && muxed.isEmpty()) throw DownloadException(DownloadError.NoAudio)
+        return ExtractedMedia(durationSeconds = info.duration, streams = audio + muxed)
+    }
 
-        Logger.d(
-            "NewPipeStream",
-            "Streams: audio=${audioStreams.size} muxedVideo=${videoStreams.count { !it.isVideoOnly }} " +
-                "videoOnly=${videoOnlyStreams.size}",
-        )
+    private fun classify(e: Throwable): DownloadError = when (e) {
+        is AgeRestrictedContentException -> DownloadError.AgeRestricted
+        is GeographicRestrictionException, is UnsupportedContentInCountryException -> DownloadError.GeoBlocked
+        is PrivateContentException -> DownloadError.Private
+        is PaidContentException, is YoutubeMusicPremiumContentException -> DownloadError.PremiumOnly
+        is SignInConfirmNotBotException, is ReCaptchaException -> DownloadError.BotCheck
+        is ContentNotAvailableException -> DownloadError.Unavailable
+        is IOException -> DownloadError.Network
+        else -> e.cause?.let { if (it !== e) classify(it) else null } ?: DownloadError.Unknown
+    }
 
-        pickFromAudioStreams(audioStreams)?.let { return it }
-
-        pickFromMuxedVideo(videoStreams)?.let {
-            Logger.d("NewPipeStream", "Using muxed progressive stream (audio+video)")
-            return it
-        }
-
-        // Algunos vídeos solo exponen audio en la lista de "video" sin flag videoOnly
-        pickFromMuxedVideo(videoStreams.filter { it.content.isNotBlank() })?.let {
-            Logger.d("NewPipeStream", "Using fallback video stream")
-            return it
-        }
-
-        throw Exception(
-            "No se encontraron streams de audio para $videoId " +
-                "(audio=0, video=${videoStreams.size}, videoOnly=${videoOnlyStreams.size})",
+    private fun AudioStream.toSource(): SourceStream {
+        val kbps = averageBitrate.takeIf { it > 0 } ?: (bitrate / 1000).coerceAtLeast(0)
+        val codec = AudioCodec.fromCodecString(codec).takeIf { it != AudioCodec.UNKNOWN }
+            ?: when (format) {
+                MediaFormat.M4A, MediaFormat.MPEG_4 -> AudioCodec.AAC
+                MediaFormat.WEBMA_OPUS, MediaFormat.OPUS -> AudioCodec.OPUS
+                MediaFormat.MP3 -> AudioCodec.MP3
+                else -> AudioCodec.UNKNOWN
+            }
+        return SourceStream(
+            url = content,
+            codec = codec,
+            bitrateKbps = kbps,
+            containerExtension = format?.suffix ?: "m4a",
+            isVideo = false,
+            isOriginalAudio = audioTrackType == null || audioTrackType == AudioTrackType.ORIGINAL,
+            isDirectDownload = isUrl && deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP,
+            contentLength = itagItem?.contentLength ?: -1L,
         )
     }
 
-    private fun pickFromAudioStreams(streams: List<AudioStream>): AudioStreamInfo? {
-        if (streams.isEmpty()) return null
-        val best = streams
-            .filter { it.content.isNotBlank() }
-            .maxWithOrNull(
-                compareBy<AudioStream>(
-                    { if (it.format == MediaFormat.M4A || it.format == MediaFormat.MPEG_4) 1 else 0 },
-                    { it.averageBitrate },
-                ),
-            ) ?: streams.firstOrNull { it.content.isNotBlank() } ?: return null
-
-        Logger.d(
-            "NewPipeStream",
-            "Best audio stream: format=${best.format} bitrate=${best.averageBitrate}",
-        )
-        return AudioStreamInfo(
-            url = best.content,
-            mimeType = mimeFromFormat(best.format, audio = true),
-            averageBitrate = best.averageBitrate,
-        )
-    }
-
-    /** Vídeo progresivo con pista de audio embebida (FFmpeg extrae el audio después). */
-    private fun pickFromMuxedVideo(streams: List<VideoStream>): AudioStreamInfo? {
-        val muxed = streams.filter { !it.isVideoOnly && it.content.isNotBlank() }
-        if (muxed.isEmpty()) return null
-
-        val best = muxed.maxWithOrNull(
-            compareBy<VideoStream>(
-                { if (it.format == MediaFormat.M4A || it.format == MediaFormat.MPEG_4) 1 else 0 },
-                { it.bitrate },
-            ),
-        ) ?: return null
-
-        Logger.d(
-            "NewPipeStream",
-            "Best muxed stream: format=${best.format} bitrate=${best.bitrate} res=${best.resolution}",
-        )
-        return AudioStreamInfo(
-            url = best.content,
-            mimeType = mimeFromFormat(best.format, audio = false),
-            averageBitrate = best.bitrate,
-        )
-    }
-
-    private fun mimeFromFormat(format: MediaFormat?, audio: Boolean): String = when (format) {
-        null -> if (audio) "audio/mp4" else "video/mp4"
-        MediaFormat.M4A, MediaFormat.MPEG_4 ->
-            if (audio) "audio/mp4" else "video/mp4"
-        MediaFormat.WEBMA, MediaFormat.WEBMA_OPUS ->
-            if (audio) "audio/webm" else "video/webm"
-        MediaFormat.MP3 -> "audio/mpeg"
-        else -> if (audio) "audio/mp4" else "video/mp4"
-    }
+    /** Vídeo progresivo con audio: último recurso, ffmpeg extrae la pista de audio. */
+    private fun VideoStream.toSource() = SourceStream(
+        url = content,
+        codec = if (format == MediaFormat.MPEG_4) AudioCodec.AAC else AudioCodec.UNKNOWN,
+        bitrateKbps = (bitrate / 1000).coerceAtLeast(0),
+        containerExtension = format?.suffix ?: "mp4",
+        isVideo = true,
+        isDirectDownload = isUrl && deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP,
+        contentLength = itagItem?.contentLength ?: -1L,
+    )
 }
 
 object OkHttpDownloader : org.schabi.newpipe.extractor.downloader.Downloader() {
-
-    val instance: OkHttpDownloader = this
 
     /** Same strategy as NewPipe app — YouTube rejects custom/bot user agents on HTML pages. */
     private const val USER_AGENT =
@@ -149,7 +144,9 @@ object OkHttpDownloader : org.schabi.newpipe.extractor.downloader.Downloader() {
         followRedirects = true,
     )
 
-    override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): org.schabi.newpipe.extractor.downloader.Response {
+    override fun execute(
+        request: org.schabi.newpipe.extractor.downloader.Request,
+    ): org.schabi.newpipe.extractor.downloader.Response {
         val okRequest = Request.Builder().apply {
             url(request.url())
             addHeader("User-Agent", USER_AGENT)
@@ -158,31 +155,25 @@ object OkHttpDownloader : org.schabi.newpipe.extractor.downloader.Downloader() {
                 values.forEach { value -> addHeader(key, value) }
             }
             when (request.httpMethod()) {
-                "POST" -> {
-                    val body = request.dataToSend() ?: ByteArray(0)
-                    post(body.toRequestBody(null))
-                }
+                "POST" -> post((request.dataToSend() ?: ByteArray(0)).toRequestBody(null))
                 "HEAD" -> head()
                 else -> get()
             }
         }.build()
 
-        val okResponse: Response = client.newCall(okRequest).execute()
-        val responseBody = okResponse.body?.string() ?: ""
-        if (okResponse.code == 429) {
-            Logger.w("NewPipeStream", "YouTube rate limit (429) for ${request.url()}")
+        client.newCall(okRequest).execute().use { okResponse ->
+            if (okResponse.code == 429) {
+                // Igual que NewPipe: el 429 de YouTube es un captcha, no un fallo de red.
+                throw ReCaptchaException("YouTube rate limit (429)", request.url())
+            }
+            val headers = okResponse.headers.names().associateWith { okResponse.headers.values(it) }
+            return org.schabi.newpipe.extractor.downloader.Response(
+                okResponse.code,
+                okResponse.message,
+                headers,
+                okResponse.body.string(),
+                okResponse.request.url.toString(),
+            )
         }
-        val headers = mutableMapOf<String, List<String>>()
-        okResponse.headers.names().forEach { name ->
-            headers[name] = okResponse.headers.values(name)
-        }
-
-        return org.schabi.newpipe.extractor.downloader.Response(
-            okResponse.code,
-            okResponse.message,
-            headers,
-            responseBody,
-            okResponse.request.url.toString(),
-        )
     }
 }

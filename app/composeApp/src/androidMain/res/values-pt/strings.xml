@@ -304,4 +304,27 @@
     <string name="player_playlist_empty_body">Adicione músicas pelo menu ⋮ de qualquer música.</string>
 
     <string name="player_lyrics_instrumental">Faixa instrumental</string>
+
+    <string name="download_phase_searching">Buscando vídeo…</string>
+    <string name="download_phase_resolving">Obtendo link de áudio…</string>
+    <string name="download_phase_downloading">Baixando áudio… %1$d%%</string>
+    <string name="download_phase_converting">Convertendo para %1$s…</string>
+    <string name="download_phase_saving">Salvando na biblioteca…</string>
+    <string name="download_phase_lyrics">Buscando letra…</string>
+    <string name="download_notification_downloading">Baixando: %1$s</string>
+    <string name="download_failed_title">Falha no download</string>
+    <string name="download_completed_title">Download concluído</string>
+    <string name="download_error_video_not_found">O vídeo não foi encontrado no YouTube.</string>
+    <string name="download_error_age_restricted">Este vídeo tem restrição de idade e não pode ser baixado.</string>
+    <string name="download_error_geo_blocked">Este vídeo não está disponível no seu país.</string>
+    <string name="download_error_private">Este vídeo é privado.</string>
+    <string name="download_error_premium">Este conteúdo requer YouTube Premium.</string>
+    <string name="download_error_bot_check">O YouTube está limitando as solicitações. Aguarde alguns minutos e tente novamente.</string>
+    <string name="download_error_unavailable">Este vídeo não está disponível.</string>
+    <string name="download_error_no_audio">Nenhum áudio baixável foi encontrado para este vídeo.</string>
+    <string name="download_error_network">Não foi possível acessar o YouTube. Verifique sua conexão.</string>
+    <string name="download_error_incomplete">O download foi interrompido antes de terminar. Tente novamente.</string>
+    <string name="download_error_convert">Não foi possível converter o áudio para %1$s.</string>
+    <string name="download_error_save">Não foi possível salvar o arquivo na pasta escolhida.</string>
+    <string name="download_error_unknown">Não foi possível concluir o download. Tente novamente.</string>
 </resources>

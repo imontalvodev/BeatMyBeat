@@ -1,39 +1,52 @@
 package com.imontalvodev.beatmybeat.ui.network
 
 import android.content.Context
+import android.util.Base64
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.download.DownloadProgressUpdate
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
+import com.imontalvodev.beatmybeat.shared.download.ChunkResponse
+import com.imontalvodev.beatmybeat.shared.download.DownloadFormat
+import com.imontalvodev.beatmybeat.shared.download.RangedDownloadResult
+import com.imontalvodev.beatmybeat.shared.download.SourceStream
+import com.imontalvodev.beatmybeat.shared.download.TrackTags
+import com.imontalvodev.beatmybeat.shared.download.buildFfmpegArguments
+import com.imontalvodev.beatmybeat.shared.download.chooseSourceStream
+import com.imontalvodev.beatmybeat.shared.download.downloadInRanges
+import com.imontalvodev.beatmybeat.shared.download.downloadFileBaseName
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import kotlin.coroutines.coroutineContext
 
 object AudioDownloader {
-    enum class DownloadFormat(val id: String, val extension: String, val label: String) {
-        MP3("mp3", "mp3", "MP3"),
-        M4A("m4a", "m4a", "M4A"),
-        AAC("aac", "aac", "AAC"),
-        OGG("ogg", "ogg", "OGG"),
-        FLAC("flac", "flac", "FLAC"),
-        WAV("wav", "wav", "WAV");
 
-        companion object {
-            fun fromId(raw: String?): DownloadFormat =
-                entries.firstOrNull { it.id.equals(raw.orEmpty(), ignoreCase = true) } ?: MP3
-        }
-    }
+    private const val TAG = "AudioDownloader"
+
+    /** Los googlevideo de clientes móviles esperan un UA de la app de YouTube. */
+    private const val STREAM_USER_AGENT = "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip"
 
     data class DownloadResult(
         val success: Boolean,
         val fileName: String?,
-        val error: String? = null,
+        val error: DownloadError? = null,
     )
+
+    private val downloadClient: OkHttpClient by lazy {
+        AppHttpClient.withTimeouts(connectSeconds = 20, readSeconds = 30)
+    }
 
     suspend fun downloadAutoToAppMusic(
         context: Context,
@@ -41,7 +54,6 @@ object AudioDownloader {
         artist: String,
         album: String,
         format: DownloadFormat = DownloadFormat.MP3,
-        imageUrl: String = "",
         videoId: String = "",
         thumbnailUrl: String = "",
         onProgress: ((DownloadProgressUpdate) -> Unit)? = null,
@@ -49,442 +61,251 @@ object AudioDownloader {
         fun report(phase: String, fraction: Float? = null) {
             onProgress?.invoke(DownloadProgressUpdate(phase = phase, fileFraction = fraction))
         }
+
         val safeTitle = title.trim()
         val safeArtist = artist.trim()
+        val safeAlbum = album.trim()
+        val workDir = File(context.cacheDir, ".music_tmp").apply { mkdirs() }
+        val baseName = downloadFileBaseName(safeTitle, safeArtist)
+        val scratch = mutableListOf<File>()
+
         BeatMyBeatNotification.showDownloadInProgress(
             context,
-            if (safeTitle.isNotBlank()) "Descargando: $safeTitle" else "Descargando canción",
+            if (safeTitle.isNotBlank()) context.getString(R.string.download_notification_downloading, safeTitle)
+            else context.getString(R.string.download_song_title),
             safeArtist,
         )
+
         try {
-            // --- Paso 1: resolver videoId y thumbnail si no se proporcionaron ---
-            report("Buscando vídeo…")
-            var resolvedThumbnail = thumbnailUrl
-            val resolvedVideoId = if (videoId.length == 11) {
-                videoId
-            } else {
-                val query = listOf(safeTitle, safeArtist, album.trim()).filter { it.isNotBlank() }.joinToString(" ")
-                val results = YouTubeSearchClient.search(query, limit = 1)
-                val first = results.firstOrNull() ?: run {
-                    BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se encontró el vídeo en YouTube.")
-                    return@withContext DownloadResult(false, null, "VideoNotFound")
+            report(context.getString(R.string.download_phase_searching))
+            val resolvedVideoId = videoId.takeIf { it.length == 11 } ?: findVideoId(safeTitle, safeArtist, safeAlbum)
+
+            report(context.getString(R.string.download_phase_resolving))
+            val media = NewPipeStreamExtractor.extract(resolvedVideoId)
+            val stream = chooseSourceStream(media.streams, format)
+                ?: throw DownloadException(DownloadError.NoAudio)
+            Logger.d(TAG, "source codec=${stream.codec} ${stream.bitrateKbps}kbps video=${stream.isVideo} → $format")
+
+            val sourceFile = File(workDir, "$baseName.source.${stream.containerExtension}").also { scratch += it }
+            report(context.getString(R.string.download_phase_downloading, 0), 0f)
+            downloadStream(stream, sourceFile) { written, total ->
+                if (total > 0) {
+                    val pct = (written * 100 / total).toInt().coerceIn(0, 99)
+                    report(context.getString(R.string.download_phase_downloading, pct), pct / 100f)
                 }
-                if (resolvedThumbnail.isBlank()) resolvedThumbnail = first.thumbnailUrl
-                first.videoId
-            }
-            // Construir siempre la URL de maxresdefault basada en el videoId real
-            resolvedThumbnail = "https://i.ytimg.com/vi/$resolvedVideoId/maxresdefault.jpg"
-
-            Logger.d("NewPipeStream", "title='$safeTitle' artist='$safeArtist' thumbnail='$resolvedThumbnail'")
-
-            // --- Paso 2: extraer URL de stream con NewPipe ---
-            report("Obteniendo enlace de audio…")
-            val streamInfo = try {
-                NewPipeStreamExtractor.extractBestAudioStream(resolvedVideoId)
-            } catch (e: Exception) {
-                Logger.e("NewPipeStream", "extractBestAudioStream failed: ${e.javaClass.simpleName}: ${e.message}", e)
-                BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
-                return@withContext DownloadResult(false, null, e.message)
             }
 
-            // --- Paso 3: descargar por rangos para evitar bloqueo con streams chunked ---
-            report("Descargando audio…", fraction = 0f)
-            val sourceExt = when {
-                streamInfo.mimeType.contains("mp4") || streamInfo.mimeType.contains("m4a") -> "m4a"
-                streamInfo.mimeType.contains("webm") || streamInfo.mimeType.contains("opus") -> "webm"
-                else -> "m4a"
+            coroutineContext.ensureActive()
+            report(context.getString(R.string.download_phase_converting, format.label), 1f)
+            val artwork = fetchArtwork(resolvedVideoId, thumbnailUrl)
+            val coverFile = artwork?.let { bytes ->
+                File(workDir, "$baseName.cover.jpg").also { it.writeBytes(bytes); scratch += it }
             }
-            val baseName = safeTitle.ifBlank { "track" }.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180)
-            val tempFileName = "${baseName}.source.$sourceExt"
-            val fileName = "${baseName}.${format.extension}"
-            val dir = File(context.cacheDir, ".music_tmp").also { if (!it.exists()) it.mkdirs() }
-            val tempFile = File(dir, tempFileName)
-            val outFile = File(dir, fileName)
-            val masterMp3 = File(dir, "${baseName}.master.mp3")
-
-            Logger.d("NewPipeStream", "Downloading: ${streamInfo.url.take(100)} mimeType=${streamInfo.mimeType}")
-
-            val downloadClient = AppHttpClient.withTimeouts(
-                connectSeconds = 20,
-                readSeconds = 30,
+            val outFile = File(workDir, "$baseName.${format.extension}").also { scratch += it }
+            val tags = TrackTags(
+                title = safeTitle.ifBlank { "Track" },
+                artist = safeArtist.ifBlank { "Unknown artist" },
+                album = safeAlbum.ifBlank { safeTitle.ifBlank { "BeatMyBeat" } },
             )
+            convert(sourceFile, coverFile, outFile, stream, format, tags)
+            sourceFile.delete()
 
-            // Obtener tamaño total
-            val totalBytes = try {
-                downloadClient.newCall(
-                    Request.Builder().url(streamInfo.url)
-                        .header("User-Agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip")
-                        .header("Range", "bytes=0-0").get().build()
-                ).execute().use { r ->
-                    r.header("Content-Range")?.substringAfterLast("/")?.toLongOrNull()
-                        ?: r.body?.contentLength() ?: -1L
-                }
-            } catch (e: Exception) { -1L }
+            val metaFile = writeSidecar(outFile, tags, thumbnailUrlFor(resolvedVideoId), artwork)
+                ?.also { scratch += it }
 
-            Logger.d("NewPipeStream", "Total bytes: $totalBytes, writing to $fileName")
-
-            val chunkSize = 1_048_576L
-            var offset = 0L
-            var totalWritten = 0L
-            // Si un CDN/proxy ignora el header Range y responde 200 con el archivo completo en
-            // cada iteración, el offset avanzaría el tamaño completo de la respuesta y el bucle
-            // escribiría el archivo entero varias veces -> salida duplicada/corrupta. Solo se
-            // acepta 200 (sin rango) en la primera iteración, tratando esa respuesta como el
-            // archivo completo; un 200 en cualquier iteración posterior aborta la descarga.
-            var rangeUnsupportedMidDownload = false
-
-            FileOutputStream(tempFile).use { out ->
-                while (totalBytes < 0 || offset < totalBytes) {
-                    val end = if (totalBytes > 0) minOf(offset + chunkSize - 1, totalBytes - 1) else offset + chunkSize - 1
-                    val chunkResp = downloadClient.newCall(
-                        Request.Builder().url(streamInfo.url)
-                            .header("User-Agent", "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip")
-                            .header("Accept-Encoding", "identity")
-                            .header("Range", "bytes=$offset-$end")
-                            .get().build()
-                    ).execute()
-
-                    val chunkBody = chunkResp.body
-                    if (!chunkResp.isSuccessful || chunkBody == null) {
-                        Logger.e("NewPipeStream", "Chunk HTTP ${chunkResp.code}")
-                        chunkResp.close()
-                        break
-                    }
-
-                    if (chunkResp.code != 206) {
-                        if (offset == 0L && chunkResp.code == 200) {
-                            val bytes = chunkBody.bytes()
-                            chunkResp.close()
-                            out.write(bytes)
-                            totalWritten += bytes.size
-                            Logger.d("NewPipeStream", "Servidor sin soporte de Range: archivo completo en una respuesta (${bytes.size}B)")
-                            break
-                        }
-                        Logger.e("NewPipeStream", "Chunk sin Range tras offset>0 (code=${chunkResp.code}), abortando descarga")
-                        chunkResp.close()
-                        rangeUnsupportedMidDownload = true
-                        break
-                    }
-
-                    val bytes = chunkBody.bytes()
-                    chunkResp.close()
-                    if (bytes.isEmpty()) break
-                    out.write(bytes)
-                    totalWritten += bytes.size
-                    offset += bytes.size
-                    if (totalBytes > 0) {
-                        val pct = (totalWritten * 100L / totalBytes).toInt().coerceIn(0, 99)
-                        report("Descargando audio… $pct%", fraction = pct / 100f)
-                    }
-                    if (bytes.size < chunkSize) break
-                }
-                out.flush()
-            }
-
-            if (rangeUnsupportedMidDownload) {
-                totalWritten = 0L
-            }
-
-            Logger.d("NewPipeStream", "Download complete: ${totalWritten}B")
-
-            if (totalWritten == 0L) {
-                tempFile.delete()
-                BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
-                return@withContext DownloadResult(false, null, "ZeroBytes")
-            }
-
-            // --- Paso 4: crear MP3 master con metadata/carátula ---
-            report("Procesando metadatos…", fraction = 1f)
-            outFile.delete()
-            masterMp3.delete()
-            val artworkBytes = fetchArtworkBytes(resolvedThumbnail, downloadClient)
-            val artworkFile = artworkBytes?.let {
-                File(dir, "${baseName}.cover.jpg").also { f -> f.writeBytes(it) }
-            }
-            val escapedTitle = ffmpegEscape(safeTitle.ifBlank { "Track" })
-            val escapedArtist = ffmpegEscape(safeArtist.ifBlank { "Unknown artist" })
-            val escapedAlbum = ffmpegEscape(album.trim().ifBlank { safeTitle.ifBlank { "BeatMyBeat" } })
-            val masterCmd = buildMp3MasterCommand(
-                inputPath = tempFile.absolutePath,
-                outputPath = masterMp3.absolutePath,
-                artworkPath = artworkFile?.takeIf { it.exists() }?.absolutePath,
-                escapedTitle = escapedTitle,
-                escapedArtist = escapedArtist,
-                escapedAlbum = escapedAlbum,
-            )
-            val masterSession = FFmpegKit.execute(masterCmd)
-            val masterRc = masterSession.returnCode
-            if (!ReturnCode.isSuccess(masterRc) || !masterMp3.exists() || masterMp3.length() <= 0L) {
-                tempFile.delete()
-                artworkFile?.delete()
-                outFile.delete()
-                masterMp3.delete()
-                BeatMyBeatNotification.showDownloadFailed(
-                    context,
-                    "Error en la descarga",
-                    "No se pudo crear el archivo master de audio.",
-                )
-                return@withContext DownloadResult(false, null, "FfmpegMasterFailed:${masterRc?.value}")
-            }
-            // Reutilizamos la lógica existente para sidecar/artwork metadata.
-            runCatching {
-                embedMetadata(masterMp3, safeTitle, safeArtist, album.trim(), resolvedThumbnail, downloadClient)
-            }.onFailure { Logger.w("NewPipeStream", "embedMetadata failed: ${it.message}") }
-
-            // --- Paso 5: si no es MP3, convertir desde master al formato final ---
-            report("Convirtiendo a ${format.label}…", fraction = 1f)
-            if (format == DownloadFormat.MP3) {
-                masterMp3.copyTo(outFile, overwrite = true)
-            } else {
-                val finalCmd = buildFormatFromMasterCommand(
-                    masterPath = masterMp3.absolutePath,
-                    outputPath = outFile.absolutePath,
-                    format = format,
-                    artworkPath = artworkFile?.takeIf { it.exists() }?.absolutePath,
-                    escapedTitle = escapedTitle,
-                    escapedArtist = escapedArtist,
-                    escapedAlbum = escapedAlbum,
-                )
-                val finalSession = FFmpegKit.execute(finalCmd)
-                val finalRc = finalSession.returnCode
-                if (!ReturnCode.isSuccess(finalRc) || !outFile.exists() || outFile.length() <= 0L) {
-                    tempFile.delete()
-                    artworkFile?.delete()
-                    outFile.delete()
-                    masterMp3.delete()
-                    BeatMyBeatNotification.showDownloadFailed(
-                        context,
-                        "Error en la descarga",
-                        "No se pudo convertir el audio a ${format.label}.",
-                    )
-                    return@withContext DownloadResult(false, null, "FfmpegFinalFailed:${finalRc?.value}")
-                }
-                // Renombrar sidecar del master para que acompañe al archivo final.
-                val masterMeta = File(masterMp3.parentFile, "${masterMp3.nameWithoutExtension}.meta.json")
-                if (masterMeta.exists()) {
-                    val finalMeta = File(outFile.parentFile, "${outFile.nameWithoutExtension}.meta.json")
-                    runCatching {
-                        if (finalMeta.exists()) finalMeta.delete()
-                        masterMeta.copyTo(finalMeta, overwrite = true)
-                    }
-                }
-            }
-            tempFile.delete()
-            artworkFile?.delete()
-            masterMp3.delete()
-
+            coroutineContext.ensureActive()
+            report(context.getString(R.string.download_phase_saving), 1f)
             val savedName = StorageSettings.saveAudioFromFile(
                 context = context,
                 source = outFile,
                 displayName = outFile.name,
                 title = safeTitle,
                 artist = safeArtist,
-                album = album.trim(),
-            )
-            if (savedName == null) {
-                tempFile.delete()
-                outFile.delete()
-                BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo guardar el archivo en la carpeta configurada.")
-                return@withContext DownloadResult(false, null, "SaveFailed")
-            }
-            val metaFile = File(outFile.parentFile, "${outFile.nameWithoutExtension}.meta.json")
-            if (metaFile.exists()) {
-                runCatching {
-                    StorageSettings.saveTextSidecar(context, metaFile.name, metaFile.readText())
-                }
-                metaFile.delete()
-            }
-            outFile.delete()
-
+                album = safeAlbum,
+            ) ?: throw DownloadException(DownloadError.Save)
+            metaFile?.let { runCatching { StorageSettings.saveTextSidecar(context, it.name, it.readText()) } }
             ArtworkCache.clear()
 
-            // --- Paso 6: letras (LRCLIB + fallback lyrics.ovh) ---
-            val isUnknown = { s: String ->
-                s.isBlank() || s.equals("unknown", ignoreCase = true) ||
-                    s.equals("unknown artist", ignoreCase = true)
-            }
-            if (!isUnknown(safeTitle) && !isUnknown(safeArtist)) {
+            if (isKnown(safeTitle) && isKnown(safeArtist)) {
+                report(context.getString(R.string.download_phase_lyrics), 1f)
                 runCatching {
-                    val album = album.trim()
                     LyricsFetchCoordinator.fetch(
                         context,
                         LyricsFetcher.Request(
                             title = safeTitle,
                             artist = safeArtist,
-                            album = album,
-                            durationMs = 0L,
+                            album = safeAlbum,
+                            // Con la duración LRCLIB puede usar sus endpoints exactos (get/get-cached),
+                            // que aciertan mucho más que la búsqueda libre.
+                            durationMs = media.durationSeconds * 1000L,
                         ),
                     )
-                }
+                }.onFailure { if (it is CancellationException) throw it }
             }
 
-            report("Guardando en biblioteca…", fraction = 1f)
-            BeatMyBeatNotification.showDownloadCompleted(context, "Descarga completada", savedName)
-            return@withContext DownloadResult(true, savedName, null)
-
-        } catch (e: Exception) {
-            Logger.e("NewPipeStream", "Download exception: ${e.javaClass.simpleName}: ${e.message}", e)
-            BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "No se pudo completar la descarga. Inténtalo de nuevo.")
-            return@withContext DownloadResult(false, null, "${e.javaClass.simpleName}: ${e.message}")
-        } catch (t: Throwable) {
-            // Captura también Error (NoSuchMethodError, OutOfMemoryError, etc.)
-            Logger.e("NewPipeStream", "Download fatal: ${t.javaClass.simpleName}: ${t.message}", t)
-            BeatMyBeatNotification.showDownloadFailed(context, "Error en la descarga", "Error crítico: ${t.javaClass.simpleName}")
-            return@withContext DownloadResult(false, null, "${t.javaClass.simpleName}: ${t.message}")
+            BeatMyBeatNotification.showDownloadCompleted(
+                context,
+                context.getString(R.string.download_completed_title),
+                savedName,
+            )
+            DownloadResult(success = true, fileName = savedName)
+        } catch (e: CancellationException) {
+            BeatMyBeatNotification.cancelDownloadNotification(context)
+            throw e
+        } catch (e: Throwable) {
+            val error = (e as? DownloadException)?.error ?: DownloadError.Unknown
+            Logger.e(TAG, "download failed: $error", e)
+            BeatMyBeatNotification.showDownloadFailed(
+                context,
+                context.getString(R.string.download_failed_title),
+                errorMessage(context, error, format),
+            )
+            DownloadResult(success = false, fileName = null, error = error)
+        } finally {
+            scratch.forEach { it.delete() }
         }
     }
 
-    private fun embedMetadata(
-        file: File,
-        title: String,
-        artist: String,
-        album: String,
-        thumbnailUrl: String,
-        httpClient: OkHttpClient,
+    fun errorMessage(context: Context, error: DownloadError, format: DownloadFormat): String = when (error) {
+        DownloadError.VideoNotFound -> context.getString(R.string.download_error_video_not_found)
+        DownloadError.AgeRestricted -> context.getString(R.string.download_error_age_restricted)
+        DownloadError.GeoBlocked -> context.getString(R.string.download_error_geo_blocked)
+        DownloadError.Private -> context.getString(R.string.download_error_private)
+        DownloadError.PremiumOnly -> context.getString(R.string.download_error_premium)
+        DownloadError.BotCheck -> context.getString(R.string.download_error_bot_check)
+        DownloadError.Unavailable -> context.getString(R.string.download_error_unavailable)
+        DownloadError.NoAudio -> context.getString(R.string.download_error_no_audio)
+        DownloadError.Network -> context.getString(R.string.download_error_network)
+        DownloadError.Incomplete -> context.getString(R.string.download_error_incomplete)
+        DownloadError.Convert -> context.getString(R.string.download_error_convert, format.label)
+        DownloadError.Save -> context.getString(R.string.download_error_save)
+        DownloadError.Unknown -> context.getString(R.string.download_error_unknown)
+    }
+
+    private fun isKnown(s: String) =
+        s.isNotBlank() && !s.equals("unknown", ignoreCase = true) && !s.equals("unknown artist", ignoreCase = true)
+
+    private suspend fun findVideoId(title: String, artist: String, album: String): String {
+        val query = listOf(title, artist, album).filter { it.isNotBlank() }.joinToString(" ")
+        val first = try {
+            YouTubeSearchClient.search(query, limit = 1).firstOrNull()
+        } catch (e: IOException) {
+            throw DownloadException(DownloadError.Network, e)
+        }
+        return first?.videoId ?: throw DownloadException(DownloadError.VideoNotFound)
+    }
+
+    private suspend fun downloadStream(
+        stream: SourceStream,
+        target: File,
+        onProgress: (Long, Long) -> Unit,
     ) {
-        Logger.d("NewPipeStream", "embedMetadata: title='$title' artist='$artist' ext=${file.extension}")
+        val known = stream.contentLength.takeIf { it > 0 } ?: probeLength(stream.url)
+        val result = FileOutputStream(target).use { out ->
+            downloadInRanges(
+                knownLength = known,
+                fetchChunk = { start, end -> fetchChunk(stream.url, start, end) },
+                write = out::write,
+                onProgress = onProgress,
+                backoff = { attempt -> delay(500L * attempt * attempt) },
+                beforeChunk = { coroutineContext.ensureActive() },
+            )
+        }
+        when (result) {
+            is RangedDownloadResult.Completed -> {
+                Logger.d(TAG, "downloaded ${result.bytesWritten}B")
+                if (result.bytesWritten == 0L) throw DownloadException(DownloadError.Incomplete)
+            }
+            is RangedDownloadResult.Incomplete -> {
+                Logger.w(TAG, "incomplete ${result.bytesWritten}/${result.expected}: ${result.reason}")
+                throw DownloadException(DownloadError.Incomplete)
+            }
+        }
+    }
 
-        // 1. Descargar la carátula (maxresdefault → hqdefault → mqdefault)
-        val artworkBytes: ByteArray? = if (thumbnailUrl.isNotBlank()) {
-            runCatching {
-                val urls = listOf(
-                    thumbnailUrl,
-                    thumbnailUrl.replace("maxresdefault", "hqdefault"),
-                    thumbnailUrl.replace("maxresdefault", "mqdefault"),
-                )
-                var bytes: ByteArray? = null
-                for (url in urls) {
-                    runCatching {
-                        val resp = httpClient.newCall(Request.Builder().url(url).get().build()).execute()
-                        if (resp.isSuccessful) {
-                            val b = resp.body?.bytes()
-                            resp.close()
-                            if (b != null && b.isNotEmpty()) bytes = b
-                        } else { resp.close() }
-                    }
-                    if (bytes != null) break
+    private fun streamRequest(url: String) = Request.Builder().url(url)
+        .header("User-Agent", STREAM_USER_AGENT)
+        .header("Accept-Encoding", "identity")
+
+    private fun probeLength(url: String): Long = runCatching {
+        downloadClient.newCall(streamRequest(url).header("Range", "bytes=0-0").get().build())
+            .execute().use { r ->
+                r.header("Content-Range")?.substringAfterLast("/")?.toLongOrNull() ?: -1L
+            }
+    }.getOrDefault(-1L)
+
+    private fun fetchChunk(url: String, start: Long, end: Long): ChunkResponse = try {
+        downloadClient.newCall(streamRequest(url).header("Range", "bytes=$start-$end").get().build())
+            .execute().use { r ->
+                when {
+                    r.code == 206 -> ChunkResponse.Partial(
+                        bytes = r.body.bytes(),
+                        totalLength = r.header("Content-Range")?.substringAfterLast("/")?.toLongOrNull() ?: -1L,
+                    )
+                    r.code == 200 -> ChunkResponse.Full(r.body.bytes())
+                    r.code == 429 || r.code >= 500 -> ChunkResponse.RetryableError("HTTP ${r.code}")
+                    else -> ChunkResponse.FatalError("HTTP ${r.code}")
                 }
-                Logger.d("NewPipeStream", "Artwork: ${bytes?.size ?: 0} bytes")
-                bytes
-            }.getOrNull()
-        } else null
+            }
+    } catch (e: IOException) {
+        ChunkResponse.RetryableError(e.javaClass.simpleName)
+    }
 
-        // 2. Guardar SIEMPRE el .meta.json — fuente de verdad para el scanner
+    private fun convert(
+        source: File,
+        cover: File?,
+        output: File,
+        stream: SourceStream,
+        format: DownloadFormat,
+        tags: TrackTags,
+    ) {
+        output.delete()
+        val args = buildFfmpegArguments(
+            inputPath = source.absolutePath,
+            coverPath = cover?.absolutePath,
+            outputPath = output.absolutePath,
+            source = stream.codec,
+            target = format,
+            tags = tags,
+        )
+        val session = FFmpegKit.executeWithArguments(args.toTypedArray())
+        if (!ReturnCode.isSuccess(session.returnCode) || !output.exists() || output.length() == 0L) {
+            Logger.e(TAG, "ffmpeg rc=${session.returnCode?.value}: ${session.failStackTrace ?: session.output?.takeLast(600)}")
+            throw DownloadException(DownloadError.Convert)
+        }
+    }
+
+    private fun thumbnailUrlFor(videoId: String) = "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg"
+
+    /** maxresdefault no existe en todos los vídeos: se baja de resolución hasta encontrar una. */
+    private fun fetchArtwork(videoId: String, fallbackUrl: String): ByteArray? {
+        val urls = listOf("maxresdefault", "hqdefault", "mqdefault")
+            .map { "https://i.ytimg.com/vi/$videoId/$it.jpg" } + listOfNotNull(fallbackUrl.takeIf { it.isNotBlank() })
+        return urls.firstNotNullOfOrNull { url ->
+            runCatching {
+                downloadClient.newCall(Request.Builder().url(url).get().build()).execute().use { resp ->
+                    if (!resp.isSuccessful) null else resp.body.bytes().takeIf { it.isNotEmpty() }
+                }
+            }.getOrNull()
+        }
+    }
+
+    /**
+     * Escribe el `.meta.json` que lee el escáner de la biblioteca: título, artista y carátula en
+     * base64, fuente de verdad aunque el contenedor no admita etiquetas (AAC, WAV, OGG).
+     */
+    private fun writeSidecar(file: File, tags: TrackTags, thumbnailUrl: String, artwork: ByteArray?): File? {
         val metaFile = File(file.parentFile, "${file.nameWithoutExtension}.meta.json")
         runCatching {
-            org.json.JSONObject().apply {
-                put("title", title)
-                put("artist", artist)
-                put("album", album.ifBlank { title })
+            JSONObject().apply {
+                put("title", tags.title)
+                put("artist", tags.artist)
+                put("album", tags.album)
                 put("thumbnailUrl", thumbnailUrl)
-                if (artworkBytes != null) {
-                    put("artworkBase64", android.util.Base64.encodeToString(artworkBytes, android.util.Base64.NO_WRAP))
-                }
+                if (artwork != null) put("artworkBase64", Base64.encodeToString(artwork, Base64.NO_WRAP))
             }.also { metaFile.writeText(it.toString()) }
-            Logger.d("NewPipeStream", "meta.json saved: ${metaFile.name}")
-        }.onFailure { Logger.w("NewPipeStream", "meta.json failed: ${it.message}") }
+        }.onFailure { Logger.w(TAG, "meta.json failed: ${it.message}") }
 
-        // 3. Intentar también embeber tags MP4 en el contenedor (best-effort)
-        if (file.extension.lowercase() == "m4a") {
-            val tmp = File(file.parentFile, "${file.nameWithoutExtension}.tmp.m4a")
-            runCatching {
-                Mp4TagWriter.write(
-                    src = file, dst = tmp,
-                    title = title, artist = artist,
-                    album = album.ifBlank { title },
-                    artworkJpeg = artworkBytes,
-                )
-                if (tmp.exists() && tmp.length() > 0) {
-                    file.delete(); tmp.renameTo(file)
-                    Logger.d("NewPipeStream", "MP4 tags embedded OK")
-                } else { tmp.delete() }
-            }.onFailure {
-                tmp.delete()
-                Logger.w("NewPipeStream", "MP4 tags failed (meta.json fallback active): ${it.message}")
-            }
-        }
+        return metaFile.takeIf { it.exists() }
     }
-
-    private fun fetchArtworkBytes(thumbnailUrl: String, httpClient: OkHttpClient): ByteArray? {
-        if (thumbnailUrl.isBlank()) return null
-        return runCatching {
-            val urls = listOf(
-                thumbnailUrl,
-                thumbnailUrl.replace("maxresdefault", "hqdefault"),
-                thumbnailUrl.replace("maxresdefault", "mqdefault"),
-            )
-            urls.firstNotNullOfOrNull { url ->
-                runCatching {
-                    httpClient.newCall(Request.Builder().url(url).get().build()).execute().use { resp ->
-                        if (!resp.isSuccessful) return@use null
-                        resp.body?.bytes()?.takeIf { it.isNotEmpty() }
-                    }
-                }.getOrNull()
-            }
-        }.getOrNull()
-    }
-
-    private fun ffmpegEscape(raw: String): String = raw.replace("\"", "\\\"")
-
-    private fun buildMp3MasterCommand(
-        inputPath: String,
-        outputPath: String,
-        artworkPath: String?,
-        escapedTitle: String,
-        escapedArtist: String,
-        escapedAlbum: String,
-    ): String {
-        val metadata = "-metadata title=\"$escapedTitle\" -metadata artist=\"$escapedArtist\" -metadata album=\"$escapedAlbum\""
-        return if (!artworkPath.isNullOrBlank()) {
-            "-y -i \"$inputPath\" -i \"$artworkPath\" " +
-                "-map 0:a -map 1:v -c:a mp3 -b:a 192k -c:v mjpeg -id3v2_version 3 " +
-                "$metadata -metadata:s:v title=\"Album cover\" -metadata:s:v comment=\"Cover (front)\" " +
-                "\"$outputPath\""
-        } else {
-            "-y -i \"$inputPath\" -vn -c:a mp3 -b:a 192k -id3v2_version 3 $metadata \"$outputPath\""
-        }
-    }
-
-    private fun buildFormatFromMasterCommand(
-        masterPath: String,
-        outputPath: String,
-        format: DownloadFormat,
-        artworkPath: String?,
-        escapedTitle: String,
-        escapedArtist: String,
-        escapedAlbum: String,
-    ): String {
-        val metadata = "-metadata title=\"$escapedTitle\" -metadata artist=\"$escapedArtist\" -metadata album=\"$escapedAlbum\""
-        return when (format) {
-            DownloadFormat.MP3 ->
-                "-y -i \"$masterPath\" -vn -c:a mp3 -b:a 192k -id3v2_version 3 $metadata \"$outputPath\""
-            DownloadFormat.M4A -> {
-                if (!artworkPath.isNullOrBlank()) {
-                    "-y -i \"$masterPath\" -i \"$artworkPath\" " +
-                        "-map 0:a -map 1:v -map_metadata 0 -c:a aac -b:a 192k -c:v mjpeg -disposition:v:0 attached_pic " +
-                        "$metadata \"$outputPath\""
-                } else {
-                    "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a aac -b:a 192k $metadata \"$outputPath\""
-                }
-            }
-            DownloadFormat.AAC ->
-                "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a aac -b:a 192k -f adts $metadata \"$outputPath\""
-            DownloadFormat.OGG ->
-                "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a libvorbis -q:a 5 $metadata \"$outputPath\""
-            DownloadFormat.FLAC -> {
-                if (!artworkPath.isNullOrBlank()) {
-                    // FLAC requiere insertar explícitamente la portada en la conversión final.
-                    "-y -i \"$masterPath\" -i \"$artworkPath\" " +
-                        "-map 0:a -map 1:v -map_metadata 0 -c:a flac -c:v mjpeg -disposition:v:0 attached_pic " +
-                        "$metadata \"$outputPath\""
-                } else {
-                    "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a flac $metadata \"$outputPath\""
-                }
-            }
-            DownloadFormat.WAV ->
-                "-y -i \"$masterPath\" -vn -map_metadata 0 -c:a pcm_s16le $metadata \"$outputPath\""
-        }
-    }
-
 }
-

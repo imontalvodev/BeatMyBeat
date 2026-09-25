@@ -304,4 +304,27 @@
     <string name="player_playlist_empty_body">Füge Songs über das ⋮-Menü eines Songs hinzu.</string>
 
     <string name="player_lyrics_instrumental">Instrumentalstück</string>
+
+    <string name="download_phase_searching">Video wird gesucht…</string>
+    <string name="download_phase_resolving">Audio-Link wird abgerufen…</string>
+    <string name="download_phase_downloading">Audio wird geladen… %1$d%%</string>
+    <string name="download_phase_converting">Umwandlung in %1$s…</string>
+    <string name="download_phase_saving">Wird in der Bibliothek gespeichert…</string>
+    <string name="download_phase_lyrics">Songtext wird gesucht…</string>
+    <string name="download_notification_downloading">Wird geladen: %1$s</string>
+    <string name="download_failed_title">Download fehlgeschlagen</string>
+    <string name="download_completed_title">Download abgeschlossen</string>
+    <string name="download_error_video_not_found">Das Video wurde auf YouTube nicht gefunden.</string>
+    <string name="download_error_age_restricted">Dieses Video ist altersbeschränkt und kann nicht geladen werden.</string>
+    <string name="download_error_geo_blocked">Dieses Video ist in deinem Land nicht verfügbar.</string>
+    <string name="download_error_private">Dieses Video ist privat.</string>
+    <string name="download_error_premium">Dieser Inhalt erfordert YouTube Premium.</string>
+    <string name="download_error_bot_check">YouTube begrenzt gerade Anfragen. Warte ein paar Minuten und versuche es erneut.</string>
+    <string name="download_error_unavailable">Dieses Video ist nicht verfügbar.</string>
+    <string name="download_error_no_audio">Für dieses Video wurde kein ladbarer Ton gefunden.</string>
+    <string name="download_error_network">YouTube ist nicht erreichbar. Prüfe deine Verbindung.</string>
+    <string name="download_error_incomplete">Der Download wurde vor dem Ende unterbrochen. Versuche es erneut.</string>
+    <string name="download_error_convert">Audio konnte nicht in %1$s umgewandelt werden.</string>
+    <string name="download_error_save">Die Datei konnte nicht im gewählten Ordner gespeichert werden.</string>
+    <string name="download_error_unknown">Der Download konnte nicht abgeschlossen werden. Versuche es erneut.</string>
 </resources>

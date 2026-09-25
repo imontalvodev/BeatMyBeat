@@ -1,6 +1,12 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import com.imontalvodev.beatmybeat.shared.lyrics.cleanArtistForLyrics
+import com.imontalvodev.beatmybeat.shared.youtube.TrackIdentity
+import com.imontalvodev.beatmybeat.shared.youtube.extractYouTubeVideoId
+import com.imontalvodev.beatmybeat.shared.youtube.parseYouTubeMusicSubtitle
+import com.imontalvodev.beatmybeat.shared.youtube.parseYouTubeVideoTitle
 import okhttp3.MediaType.Companion.toMediaType
+import org.schabi.newpipe.extractor.ServiceList
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
@@ -18,6 +24,7 @@ data class YouTubeSearchResult(
     val durationText: String,
     val thumbnailUrl: String,
     val source: YouTubeSearchSource,
+    val album: String = "",
 )
 
 object YouTubeSearchClient {
@@ -140,46 +147,57 @@ object YouTubeSearchClient {
         }
     }
 
-    data class PlaylistInfo(
+    data class PlaylistEntry(
+        val videoId: String,
         val title: String,
-        val videoIds: List<String>,
+        val artist: String,
+        val album: String,
+        val thumbnailUrl: String,
     )
 
-    fun fetchPlaylistVideoIds(listId: String, limit: Int = 200): List<String> =
-        fetchPlaylistInfo(listId, limit).videoIds
+    data class PlaylistInfo(
+        val title: String,
+        val entries: List<PlaylistEntry>,
+    )
 
+    /**
+     * Playlist o álbum vía NewPipe, con paginación. Antes se sacaban los IDs del HTML con una
+     * regex: se colaban vídeos recomendados de la barra lateral y se perdía todo lo que pasara
+     * de la primera página (~100 elementos).
+     */
     fun fetchPlaylistInfo(listId: String, limit: Int = 200): PlaylistInfo {
         val safeListId = listId.trim()
         if (safeListId.isBlank()) return PlaylistInfo("", emptyList())
-
-        val playlistUrl = "https://www.youtube.com/playlist?list=$safeListId"
-        val request = Request.Builder()
-            .url(playlistUrl)
-            .get()
-            .header("User-Agent", DESKTOP_USER_AGENT)
-            .header("Accept-Language", "es-ES,es;q=0.9")
-            .build()
-
-        val html = client.newCall(request).execute().use { res ->
-            if (!res.isSuccessful) return PlaylistInfo("", emptyList())
-            res.body?.string().orEmpty()
+        NewPipeStreamExtractor.init()
+        val url = "https://www.youtube.com/playlist?list=$safeListId"
+        val info = org.schabi.newpipe.extractor.playlist.PlaylistInfo.getInfo(ServiceList.YouTube, url)
+        val isAlbum = safeListId.startsWith("OLAK5uy")
+        val items = info.relatedItems.toMutableList()
+        var page = info.nextPage
+        while (items.size < limit && page != null) {
+            val more = org.schabi.newpipe.extractor.playlist.PlaylistInfo.getMoreItems(ServiceList.YouTube, url, page)
+            items += more.items
+            page = more.nextPage
         }
-        if (html.isBlank()) return PlaylistInfo("", emptyList())
-
-        val titleRegex = Regex(""""title":\s*\{"simpleText":"([^"]+)"\}""")
-        val ogTitleRegex = Regex("""<meta\s+property="og:title"\s+content="([^"]+)"""")
-        val title = titleRegex.find(html)?.groupValues?.get(1)
-            ?: ogTitleRegex.find(html)?.groupValues?.get(1)
-            ?: ""
-
-        val videoRegex = Regex("\"videoId\":\"([A-Za-z0-9_-]{11})\"")
-        val ids = videoRegex.findAll(html)
-            .map { it.groupValues[1] }
-            .distinct()
-            .take(limit)
-            .toList()
-
-        return PlaylistInfo(title, ids)
+        val entries = items.take(limit).mapNotNull { item ->
+            val videoId = extractYouTubeVideoId(item.url) ?: return@mapNotNull null
+            val uploader = item.uploaderName.orEmpty()
+            // Los canales "Artista - Topic" publican títulos ya limpios; los vídeos normales
+            // traen "Artista - Canción (Official Video)".
+            val identity = if (uploader.endsWith("- Topic", ignoreCase = true)) {
+                TrackIdentity(item.name.trim(), cleanArtistForLyrics(uploader))
+            } else {
+                parseYouTubeVideoTitle(item.name, uploader)
+            }
+            PlaylistEntry(
+                videoId = videoId,
+                title = identity.title,
+                artist = identity.artist,
+                album = if (isAlbum) info.name.orEmpty() else "",
+                thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+            )
+        }
+        return PlaylistInfo(info.name.orEmpty(), entries)
     }
 
     private fun parseYouTubeWebResults(json: String, limit: Int): List<YouTubeSearchResult> {
@@ -276,7 +294,7 @@ object YouTubeSearchClient {
         }
 
         val title = flexTexts.firstOrNull() ?: return null
-        val artist = flexTexts.drop(1).firstOrNull { !it.equals(title, ignoreCase = true) }.orEmpty()
+        val identity = parseYouTubeMusicSubtitle(title, flexTexts.getOrNull(1).orEmpty())
 
         var duration = ""
         renderer.optJSONArray("fixedColumns")?.let { columns ->
@@ -296,11 +314,12 @@ object YouTubeSearchClient {
 
         return YouTubeSearchResult(
             videoId = videoId,
-            title = title,
-            channel = artist,
+            title = identity.title,
+            channel = identity.artist,
             durationText = duration,
             thumbnailUrl = thumbnail,
             source = YouTubeSearchSource.YOUTUBE_MUSIC,
+            album = identity.album,
         )
     }
 

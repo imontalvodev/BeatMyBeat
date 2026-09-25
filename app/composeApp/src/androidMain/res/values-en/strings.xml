@@ -307,4 +307,27 @@
     <string name="player_playlist_empty_body">Add songs from the ⋮ menu on any song.</string>
 
     <string name="player_lyrics_instrumental">Instrumental track</string>
+
+    <string name="download_phase_searching">Finding video…</string>
+    <string name="download_phase_resolving">Getting audio link…</string>
+    <string name="download_phase_downloading">Downloading audio… %1$d%%</string>
+    <string name="download_phase_converting">Converting to %1$s…</string>
+    <string name="download_phase_saving">Saving to library…</string>
+    <string name="download_phase_lyrics">Looking for lyrics…</string>
+    <string name="download_notification_downloading">Downloading: %1$s</string>
+    <string name="download_failed_title">Download failed</string>
+    <string name="download_completed_title">Download complete</string>
+    <string name="download_error_video_not_found">The video wasn\'t found on YouTube.</string>
+    <string name="download_error_age_restricted">This video is age-restricted and can\'t be downloaded.</string>
+    <string name="download_error_geo_blocked">This video isn\'t available in your country.</string>
+    <string name="download_error_private">This video is private.</string>
+    <string name="download_error_premium">This content requires YouTube Premium.</string>
+    <string name="download_error_bot_check">YouTube is limiting requests. Wait a few minutes and try again.</string>
+    <string name="download_error_unavailable">This video isn\'t available.</string>
+    <string name="download_error_no_audio">No downloadable audio was found for this video.</string>
+    <string name="download_error_network">Couldn\'t reach YouTube. Check your connection.</string>
+    <string name="download_error_incomplete">The download was interrupted before finishing. Try again.</string>
+    <string name="download_error_convert">Couldn\'t convert the audio to %1$s.</string>
+    <string name="download_error_save">Couldn\'t save the file to the chosen folder.</string>
+    <string name="download_error_unknown">The download couldn\'t be completed. Try again.</string>
 </resources>
