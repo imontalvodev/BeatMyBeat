@@ -85,6 +85,20 @@
     <string name="theme_brightness">Brilho</string>
     <string name="theme_current_color">Cor atual:</string>
     <string name="theme_accent">Destaque</string>
+    <string name="theme_color_background_top">Fundo superior</string>
+    <string name="theme_color_background_bottom">Fundo inferior</string>
+    <string name="theme_color_primary">Principal</string>
+    <string name="theme_color_primary_variant">Principal (variante)</string>
+    <string name="theme_color_secondary">Secundária</string>
+    <string name="theme_color_surface">Superfície</string>
+    <string name="theme_color_on_surface">Texto</string>
+    <string name="theme_color_on_surface_muted">Texto secundário</string>
+    <string name="theme_default_name">Meu tema</string>
+    <string name="theme_custom_name">Tema personalizado</string>
+    <string name="theme_preview_background">Pré-visualização do fundo</string>
+    <string name="theme_preview_text">Pré-visualização do texto</string>
+    <string name="theme_preview_primary_sample">Exemplo de texto principal</string>
+    <string name="theme_preview_secondary_sample">Exemplo de texto secundário</string>
     <string name="profile_avatar_cd">Avatar</string>
     <string name="profile_change_language">Alterar idioma</string>
     <string name="profile_song_location">Local das músicas</string>
@@ -175,7 +189,10 @@
     <string name="download_cancelled">Download cancelado.</string>
     <string name="analyze_url_resolving">A resolver conteúdo…</string>
     <string name="analyze_url_preview_single">Música encontrada</string>
-    <string name="analyze_url_preview_playlist">%1$d músicas encontradas</string>
+    <plurals name="analyze_url_preview_playlist">
+        <item quantity="one">%1$d música encontrada</item>
+        <item quantity="other">%1$d músicas encontradas</item>
+    </plurals>
     <string name="analyze_url_download_all">Baixar tudo (%1$d)</string>
     <string name="analyze_url_download_single">Baixar</string>
     <string name="analyze_no_results">Nenhum resultado para essa pesquisa.</string>

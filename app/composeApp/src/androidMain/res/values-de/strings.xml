@@ -85,6 +85,20 @@
     <string name="theme_brightness">Helligkeit</string>
     <string name="theme_current_color">Aktuelle Farbe:</string>
     <string name="theme_accent">Akzent</string>
+    <string name="theme_color_background_top">Hintergrund oben</string>
+    <string name="theme_color_background_bottom">Hintergrund unten</string>
+    <string name="theme_color_primary">Primär</string>
+    <string name="theme_color_primary_variant">Primär (Variante)</string>
+    <string name="theme_color_secondary">Sekundär</string>
+    <string name="theme_color_surface">Oberfläche</string>
+    <string name="theme_color_on_surface">Text</string>
+    <string name="theme_color_on_surface_muted">Sekundärer Text</string>
+    <string name="theme_default_name">Mein Design</string>
+    <string name="theme_custom_name">Eigenes Design</string>
+    <string name="theme_preview_background">Hintergrundvorschau</string>
+    <string name="theme_preview_text">Textvorschau</string>
+    <string name="theme_preview_primary_sample">Beispiel für Haupttext</string>
+    <string name="theme_preview_secondary_sample">Beispiel für Nebentext</string>
     <string name="profile_avatar_cd">Avatar</string>
     <string name="profile_change_language">Sprache ändern</string>
     <string name="profile_song_location">Speicherort der Songs</string>
@@ -175,7 +189,10 @@
     <string name="download_cancelled">Download abgebrochen.</string>
     <string name="analyze_url_resolving">Inhalt wird aufgelöst…</string>
     <string name="analyze_url_preview_single">Song gefunden</string>
-    <string name="analyze_url_preview_playlist">%1$d Songs gefunden</string>
+    <plurals name="analyze_url_preview_playlist">
+        <item quantity="one">%1$d Song gefunden</item>
+        <item quantity="other">%1$d Songs gefunden</item>
+    </plurals>
     <string name="analyze_url_download_all">Alle herunterladen (%1$d)</string>
     <string name="analyze_url_download_single">Herunterladen</string>
     <string name="analyze_no_results">Keine Ergebnisse für diese Suche.</string>

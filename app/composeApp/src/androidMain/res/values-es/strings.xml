@@ -85,6 +85,20 @@
     <string name="theme_brightness">Brillo</string>
     <string name="theme_current_color">Color actual:</string>
     <string name="theme_accent">Acento</string>
+    <string name="theme_color_background_top">Fondo superior</string>
+    <string name="theme_color_background_bottom">Fondo inferior</string>
+    <string name="theme_color_primary">Principal</string>
+    <string name="theme_color_primary_variant">Principal (variante)</string>
+    <string name="theme_color_secondary">Secundario</string>
+    <string name="theme_color_surface">Superficie</string>
+    <string name="theme_color_on_surface">Texto</string>
+    <string name="theme_color_on_surface_muted">Texto secundario</string>
+    <string name="theme_default_name">Mi tema</string>
+    <string name="theme_custom_name">Tema personalizado</string>
+    <string name="theme_preview_background">Vista previa de fondo</string>
+    <string name="theme_preview_text">Vista previa de texto</string>
+    <string name="theme_preview_primary_sample">Texto principal de ejemplo</string>
+    <string name="theme_preview_secondary_sample">Texto secundario de ejemplo</string>
     <string name="profile_avatar_cd">Avatar</string>
     <string name="profile_change_language">Cambiar idioma</string>
     <string name="profile_song_location">Ubicación de canciones</string>
@@ -251,7 +265,10 @@
     <string name="download_cancelled">Descarga cancelada.</string>
     <string name="analyze_url_resolving">Resolviendo contenido…</string>
     <string name="analyze_url_preview_single">Canción encontrada</string>
-    <string name="analyze_url_preview_playlist">%1$d canciones encontradas</string>
+    <plurals name="analyze_url_preview_playlist">
+        <item quantity="one">%1$d canción encontrada</item>
+        <item quantity="other">%1$d canciones encontradas</item>
+    </plurals>
     <string name="analyze_url_download_all">Descargar todo (%1$d)</string>
     <string name="analyze_url_download_single">Descargar</string>
     <string name="player_lyrics_synced_mode">Letra sincronizada</string>

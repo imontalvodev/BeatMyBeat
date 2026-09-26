@@ -85,6 +85,20 @@
     <string name="theme_brightness">Brightness</string>
     <string name="theme_current_color">Current color:</string>
     <string name="theme_accent">Accent</string>
+    <string name="theme_color_background_top">Background top</string>
+    <string name="theme_color_background_bottom">Background bottom</string>
+    <string name="theme_color_primary">Primary</string>
+    <string name="theme_color_primary_variant">Primary variant</string>
+    <string name="theme_color_secondary">Secondary</string>
+    <string name="theme_color_surface">Surface</string>
+    <string name="theme_color_on_surface">Text</string>
+    <string name="theme_color_on_surface_muted">Secondary text</string>
+    <string name="theme_default_name">My theme</string>
+    <string name="theme_custom_name">Custom theme</string>
+    <string name="theme_preview_background">Background preview</string>
+    <string name="theme_preview_text">Text preview</string>
+    <string name="theme_preview_primary_sample">Sample primary text</string>
+    <string name="theme_preview_secondary_sample">Sample secondary text</string>
     <string name="profile_avatar_cd">Avatar</string>
     <string name="profile_change_language">Change language</string>
     <string name="profile_song_location">Song location</string>
@@ -253,7 +267,10 @@
 
     <string name="analyze_url_resolving">Resolving content…</string>
     <string name="analyze_url_preview_single">Song found</string>
-    <string name="analyze_url_preview_playlist">%1$d songs found</string>
+    <plurals name="analyze_url_preview_playlist">
+        <item quantity="one">%1$d song found</item>
+        <item quantity="other">%1$d songs found</item>
+    </plurals>
     <string name="analyze_url_download_all">Download all (%1$d)</string>
     <string name="analyze_url_download_single">Download</string>
     <string name="player_lyrics_synced_mode">Synced lyrics</string>

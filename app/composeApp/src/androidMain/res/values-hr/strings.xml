@@ -85,6 +85,20 @@
     <string name="theme_brightness">Svjetlina</string>
     <string name="theme_current_color">Trenutna boja:</string>
     <string name="theme_accent">Naglasak</string>
+    <string name="theme_color_background_top">Pozadina gore</string>
+    <string name="theme_color_background_bottom">Pozadina dolje</string>
+    <string name="theme_color_primary">Primarna</string>
+    <string name="theme_color_primary_variant">Primarna (varijanta)</string>
+    <string name="theme_color_secondary">Sekundarna</string>
+    <string name="theme_color_surface">Površina</string>
+    <string name="theme_color_on_surface">Tekst</string>
+    <string name="theme_color_on_surface_muted">Sekundarni tekst</string>
+    <string name="theme_default_name">Moja tema</string>
+    <string name="theme_custom_name">Prilagođena tema</string>
+    <string name="theme_preview_background">Pregled pozadine</string>
+    <string name="theme_preview_text">Pregled teksta</string>
+    <string name="theme_preview_primary_sample">Primjer glavnog teksta</string>
+    <string name="theme_preview_secondary_sample">Primjer sporednog teksta</string>
     <string name="profile_avatar_cd">Avatar</string>
     <string name="profile_change_language">Promijeni jezik</string>
     <string name="profile_song_location">Lokacija pjesama</string>
@@ -175,7 +189,11 @@
     <string name="download_cancelled">Preuzimanje otkazano.</string>
     <string name="analyze_url_resolving">Razrješavanje sadržaja…</string>
     <string name="analyze_url_preview_single">Pjesma pronađena</string>
-    <string name="analyze_url_preview_playlist">%1$d pjesama pronađeno</string>
+    <plurals name="analyze_url_preview_playlist">
+        <item quantity="one">%1$d pjesma pronađena</item>
+        <item quantity="few">%1$d pjesme pronađene</item>
+        <item quantity="other">%1$d pjesama pronađeno</item>
+    </plurals>
     <string name="analyze_url_download_all">Preuzmi sve (%1$d)</string>
     <string name="analyze_url_download_single">Preuzmi</string>
     <string name="analyze_no_results">Nema rezultata za tu pretragu.</string>

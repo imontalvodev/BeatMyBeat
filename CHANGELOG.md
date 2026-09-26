@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Word-by-word lyrics.** When LRCLIB has word-level timing (Lyricsfile), the current line lights up word by word as it is sung.
+- **Mini player on every tab.** Download and Settings now show the mini player too; tapping it opens the full player.
+
 ### Changed
 - **UI redesign.** The app opens straight into the library (the start-up "Download / Go to player" choice screen is gone). Tabs are now Library · Download · Settings, and switch with a fade instead of a sideways slide.
 - **Library:** large title with song count, a filled search field, Songs / Favorites / Playlists chips (no more combined dropdown), sort behind an icon, and separate **Play** and **Shuffle** buttons. Empty favorites, empty playlists and searches with no results now explain what to do.
@@ -23,6 +27,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Several strings that were hard-coded in Spanish (favorites menu item, playlist labels) are now translated in every supported language.
+- The theme customizer is fully translated (color names, preview and default profile names were hard-coded).
+- Songs from channels that title videos "Song - Artist" no longer get title and artist swapped.
+- "1 songs found" now reads "1 song found".
 - **Truncated downloads.** A network hiccup mid-download used to save a cut-off song as if it were complete; chunks are now retried and incomplete files are discarded.
 - Cancelling a download now stops it immediately.
 - Playlist links pick up every track (not just the first ~100) and no longer include unrelated recommended videos.

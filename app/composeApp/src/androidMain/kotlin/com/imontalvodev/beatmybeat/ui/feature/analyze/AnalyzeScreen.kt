@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -774,7 +775,7 @@ private fun UrlPreviewSection(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = stringResource(R.string.analyze_url_preview_playlist, tracks.size),
+                    text = pluralStringResource(R.plurals.analyze_url_preview_playlist, tracks.size, tracks.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
