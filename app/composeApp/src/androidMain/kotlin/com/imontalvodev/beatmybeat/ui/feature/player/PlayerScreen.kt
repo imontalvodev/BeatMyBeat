@@ -187,7 +187,7 @@ import org.json.JSONObject
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-private fun Context.sendPlaybackForegroundAction(action: String) {
+internal fun Context.sendPlaybackForegroundAction(action: String) {
     val intent = Intent(this, PlaybackService::class.java).setAction(action)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         ContextCompat.startForegroundService(this, intent)
@@ -335,6 +335,14 @@ fun PlayerScreen(
         )
     }
     var isExpanded by remember { mutableStateOf(false) }
+    // Mini reproductor de otras pestañas: pide abrir el reproductor al llegar a Biblioteca.
+    val expandRequested by PlayerExpandRequest.pending.collectAsState()
+    LaunchedEffect(expandRequested, currentTrack) {
+        if (expandRequested && currentTrack != null) {
+            isExpanded = true
+            PlayerExpandRequest.consume()
+        }
+    }
     var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
     // Mantener scroll independiente por pestaña para no perder posición al alternar.
     val songsListState = rememberLazyListState()
@@ -2064,7 +2072,8 @@ fun PlayerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
-                    track = currentTrack,
+                    title = currentTrack?.title,
+                    artist = currentTrack?.artist,
                     isPlaying = isPlaying,
                     position = sliderPosition,
                     artwork = currentArtwork,

@@ -171,7 +171,8 @@ import kotlin.random.Random
 @Composable
 internal fun MiniPlayerBar(
     modifier: Modifier,
-    track: DeviceTrack?,
+    title: String?,
+    artist: String?,
     isPlaying: Boolean,
     position: Float,
     artwork: Bitmap?,
@@ -255,14 +256,14 @@ internal fun MiniPlayerBar(
                 Spacer(modifier = Modifier.size(Spacing.md))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = (track?.title ?: stringResource(R.string.player_no_song))
+                        text = (title ?: stringResource(R.string.player_no_song))
                             .toTitleCaseSimple(),
                         style = AppText.trackTitle,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    val miniArtist = (track?.artist ?: "").toDisplayArtist()
+                    val miniArtist = (artist ?: "").toDisplayArtist()
                     if (miniArtist.isNotBlank()) {
                         Text(
                             text = miniArtist,

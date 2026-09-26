@@ -70,7 +70,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import com.imontalvodev.beatmybeat.playback.PlaybackServiceBinding
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
+import com.imontalvodev.beatmybeat.ui.feature.player.GlobalMiniPlayer
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerScreen
+import com.imontalvodev.beatmybeat.ui.feature.player.rememberHasActivePlayback
 import com.imontalvodev.beatmybeat.ui.feature.profile.ProfileScreen
 import com.imontalvodev.beatmybeat.ui.feature.update.ApkUpdateInstaller
 import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdatePrompt
@@ -186,6 +188,16 @@ class MainActivity : AppCompatActivity() {
                                             onCancel = { SongDownloadService.cancelDownload(this@MainActivity) },
                                         )
                                     }
+                                }
+                                // Biblioteca pinta su propio mini reproductor (con carátula de la biblioteca);
+                                // en el resto de pestañas se muestra este, leído del servicio.
+                                val hasPlayback = rememberHasActivePlayback()
+                                AnimatedVisibility(
+                                    visible = hasPlayback && showBottomBar && currentRoute != "player",
+                                    enter = expandVertically(tween(Motion.LAYOUT)) + fadeIn(tween(Motion.STANDARD)),
+                                    exit = shrinkVertically(tween(Motion.LAYOUT)) + fadeOut(tween(Motion.QUICK)),
+                                ) {
+                                    GlobalMiniPlayer(onOpenPlayer = { navigateToTab("player") })
                                 }
                                 AnimatedVisibility(
                                     visible = showBottomBar,
