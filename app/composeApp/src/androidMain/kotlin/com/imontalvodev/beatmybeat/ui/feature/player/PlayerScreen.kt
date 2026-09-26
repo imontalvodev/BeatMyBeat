@@ -2458,8 +2458,9 @@ fun PlayerScreen(
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
                                                 Text(
-                                                    text = stringResource(
-                                                        R.string.player_playlist_song_count_only,
+                                                    text = pluralStringResource(
+                                                        R.plurals.library_track_count,
+                                                        p.songIds.size,
                                                         p.songIds.size,
                                                     ),
                                                     style = MaterialTheme.typography.labelSmall,
@@ -2667,7 +2668,7 @@ fun PlayerScreen(
                     title = { Text(stringResource(R.string.player_duplicates_title)) },
                     text = {
                         Text(
-                            stringResource(R.string.player_duplicates_message, count)
+                            pluralStringResource(R.plurals.player_duplicates_message, count, count)
                         )
                     },
                     confirmButton = {

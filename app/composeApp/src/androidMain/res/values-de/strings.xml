@@ -270,9 +270,11 @@
     <string name="player_playlist_search_empty">Keine Ergebnisse</string>
     <string name="player_reorder_cd">Titel neu anordnen</string>
     <string name="player_create_new_playlist">Neue Playlist erstellen</string>
-    <string name="player_playlist_song_count_only">Tracks: %1$d</string>
     <string name="player_duplicates_title">Duplikate erkannt</string>
-    <string name="player_duplicates_message">%1$d Song(s) waren bereits in einer der gewählten Playlists. Duplizieren?</string>
+    <plurals name="player_duplicates_message">
+        <item quantity="one">%1$d Song war bereits in einer der gewählten Playlists. Duplizieren?</item>
+        <item quantity="other">%1$d Songs waren bereits in einer der gewählten Playlists. Duplizieren?</item>
+    </plurals>
     <string name="player_duplicates_added">Duplikate hinzugefügt.</string>
     <string name="player_duplicate_action">Duplizieren</string>
     <string name="player_skip_duplicates">Keine Duplikate</string>
@@ -351,5 +353,14 @@
     <plurals name="player_add_to_playlists_button">
         <item quantity="one">Zu %1$d Playlist hinzufügen</item>
         <item quantity="other">Zu %1$d Playlists hinzufügen</item>
+    </plurals>
+    <string name="sleep_timer_title">Sleep-Timer</string>
+    <string name="sleep_timer_end_of_track">Am Ende des Songs</string>
+    <string name="sleep_timer_turn_off">Ausschalten</string>
+    <string name="sleep_timer_status_end_of_track">Stoppt am Ende dieses Songs</string>
+    <string name="sleep_timer_status_remaining">Stoppt in %1$s</string>
+    <plurals name="sleep_timer_minutes">
+        <item quantity="one">%1$d Minute</item>
+        <item quantity="other">%1$d Minuten</item>
     </plurals>
 </resources>

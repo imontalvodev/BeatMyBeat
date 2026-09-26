@@ -433,13 +433,19 @@ internal fun ExpandedPlayerOverlay(
                         modifier = Modifier.size(30.dp),
                     )
                 }
-                Text(
-                    text = stringResource(R.string.player_playing_from_library),
-                    style = AppText.sectionLabel,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                    textAlign = TextAlign.Center,
+                Column(
                     modifier = Modifier.weight(1f),
-                )
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = stringResource(R.string.player_playing_from_library),
+                        style = AppText.sectionLabel,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                    )
+                    SleepTimerStatus()
+                }
+                SleepTimerButton()
                 IconButton(onClick = onOpenQueue) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.QueueMusic,

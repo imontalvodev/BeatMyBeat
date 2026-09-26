@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Word-by-word lyrics.** When LRCLIB has word-level timing (Lyricsfile), the current line lights up word by word as it is sung.
+- **Sleep timer.** Moon button in the full player: stop after 5–90 minutes (with a short fade-out) or at the end of the current song.
 - **Add to several playlists at once.** The "Add to playlist" screen now uses checkboxes; pick any number of playlists (and optionally a new one) and add in one go.
 - **Mini player on every tab.** Download and Settings now show the mini player too; tapping it opens the full player.
 
@@ -30,7 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Several strings that were hard-coded in Spanish (favorites menu item, playlist labels) are now translated in every supported language.
 - The theme customizer is fully translated (color names, preview and default profile names were hard-coded).
 - Songs from channels that title videos "Song - Artist" no longer get title and artist swapped.
-- "1 songs found" now reads "1 song found".
+- "1 songs found" now reads "1 song found"; playlist song counts and the duplicates warning use proper plurals too.
 - **Truncated downloads.** A network hiccup mid-download used to save a cut-off song as if it were complete; chunks are now retried and incomplete files are discarded.
 - Cancelling a download now stops it immediately.
 - Playlist links pick up every track (not just the first ~100) and no longer include unrelated recommended videos.
@@ -39,6 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Internal
 - Shared, platform-independent logic (LRCLIB and lyrics.ovh clients on Ktor, lyrics matching, LRC parsing, YouTube link/metadata parsing, stream selection, ffmpeg arguments, ranged downloads) moved to Kotlin Multiplatform `commonMain` with `commonTest` coverage.
 - NewPipe Extractor 0.26.5.
+- CI on GitHub Actions: unit tests and a debug APK on every pull request.
+- The Gradle daemon pins JDK 21 and downloads it (foojay) when missing, so builds work even when the system Java is newer.
 
 ## [1.2] — 2026-07-28
 

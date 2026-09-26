@@ -271,9 +271,12 @@
     <string name="player_playlist_search_empty">Nema rezultata</string>
     <string name="player_reorder_cd">Promijeni redoslijed pjesme</string>
     <string name="player_create_new_playlist">Stvori novu playlistu</string>
-    <string name="player_playlist_song_count_only">Pjesme: %1$d</string>
     <string name="player_duplicates_title">Otkriveni duplikati</string>
-    <string name="player_duplicates_message">%1$d pjesma već je bila u nekoj od odabranih playlista. Duplicirati?</string>
+    <plurals name="player_duplicates_message">
+        <item quantity="one">%1$d pjesma već je bila u nekoj od odabranih playlista. Duplicirati?</item>
+        <item quantity="few">%1$d pjesme već su bile u nekoj od odabranih playlista. Duplicirati?</item>
+        <item quantity="other">%1$d pjesama već je bilo u nekoj od odabranih playlista. Duplicirati?</item>
+    </plurals>
     <string name="player_duplicates_added">Duplikati dodani.</string>
     <string name="player_duplicate_action">Dupliciraj</string>
     <string name="player_skip_duplicates">Preskoči duplikate</string>
@@ -355,5 +358,15 @@
         <item quantity="one">Dodaj u %1$d playlistu</item>
         <item quantity="few">Dodaj u %1$d playliste</item>
         <item quantity="other">Dodaj u %1$d playlista</item>
+    </plurals>
+    <string name="sleep_timer_title">Mjerač vremena za spavanje</string>
+    <string name="sleep_timer_end_of_track">Na kraju pjesme</string>
+    <string name="sleep_timer_turn_off">Isključi</string>
+    <string name="sleep_timer_status_end_of_track">Zaustavlja se na kraju ove pjesme</string>
+    <string name="sleep_timer_status_remaining">Zaustavlja se za %1$s</string>
+    <plurals name="sleep_timer_minutes">
+        <item quantity="one">%1$d minuta</item>
+        <item quantity="few">%1$d minute</item>
+        <item quantity="other">%1$d minuta</item>
     </plurals>
 </resources>
