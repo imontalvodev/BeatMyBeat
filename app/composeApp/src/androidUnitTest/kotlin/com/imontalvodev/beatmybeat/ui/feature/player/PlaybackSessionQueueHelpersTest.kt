@@ -35,10 +35,18 @@ class PlaybackSessionQueueHelpersTest {
 
     @Test
     fun advanceSessionToTrackUpdatesCurrentIndex() {
-        val state = SessionQueueState(listOf("a", "b", "c"), currentIndex = 0)
+        val state = SessionQueueState(listOf("a", "b", "c", "d"), currentIndex = 0)
         val updated = advanceSessionToTrack(state, "c")
         assertEquals(2, updated?.currentIndex)
-        assertEquals(listOf("c"), pendingUrisFromSession(updated!!))
+        // Pendientes = lo que viene después de la pista actual (no la incluye).
+        assertEquals(listOf("d"), pendingUrisFromSession(updated!!))
+    }
+
+    @Test
+    fun advanceSessionToLastTrackLeavesNothingPending() {
+        val state = SessionQueueState(listOf("a", "b", "c"), currentIndex = 0)
+        val updated = advanceSessionToTrack(state, "c")!!
+        assertEquals(emptyList(), pendingUrisFromSession(updated))
     }
 
     @Test
