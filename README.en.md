@@ -109,7 +109,7 @@ Module details and conventions: [`app/README.md`](app/README.md).
 
 | Requirement | Details |
 |-------------|---------|
-| IDE | Recent Android Studio or JDK 11+ with Android SDK |
+| IDE | Recent Android Studio, or JDK 21 with the Android SDK (Gradle downloads JDK 21 for its daemon if it is missing) |
 | Min SDK | Defined in [`app/composeApp/build.gradle.kts`](app/composeApp/build.gradle.kts) |
 | Release signing | Local keystore (not included in the repo) |
 
