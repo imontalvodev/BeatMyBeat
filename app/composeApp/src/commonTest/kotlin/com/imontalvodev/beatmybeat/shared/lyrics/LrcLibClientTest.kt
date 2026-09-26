@@ -182,4 +182,15 @@ class LrcLibClientTest {
         assertEquals(ERROR_MISSING_FIELDS, result.error)
         assertTrue(calls.isEmpty())
     }
+
+    @Test
+    fun wordSyncedRecordIsStoredAsEnhancedLrc() = runTest {
+        val lyricsfile = "lines:\\n- text: Hi there\\n  start_ms: 1000\\n  words:\\n  - text: 'Hi '\\n    start_ms: 1000\\n  - text: there\\n    start_ms: 1400"
+        val body = record().dropLast(1) + ""","hasWordSync":true,"lyricsfile":"$lyricsfile"}"""
+        val (lrc, _) = client { req ->
+            if (req.url.encodedPath.endsWith("/get-cached")) json(body) else notFound()
+        }
+        val result = lrc.fetchLyrics("Blinding Lights", "The Weeknd", "After Hours", 200)
+        assertEquals("[00:01.000]<00:01.000>Hi <00:01.400>there", result.syncedLrc)
+    }
 }

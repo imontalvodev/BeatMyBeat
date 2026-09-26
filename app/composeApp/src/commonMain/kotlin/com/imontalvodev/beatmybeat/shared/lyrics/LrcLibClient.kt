@@ -31,6 +31,9 @@ internal data class LrcLibRecord(
     val instrumental: Boolean = false,
     val plainLyrics: String? = null,
     val syncedLyrics: String? = null,
+    val hasWordSync: Boolean = false,
+    /** YAML [Lyricsfile][lyricsfileToEnhancedLrc]; solo interesa si [hasWordSync]. */
+    val lyricsfile: String? = null,
 ) {
     val hasSynced: Boolean get() = !syncedLyrics.isNullOrBlank()
     val hasPlain: Boolean get() = !plainLyrics.isNullOrBlank()
@@ -173,7 +176,13 @@ class LrcLibClient(
                     AppJson.decodeFromString(ListSerializer(LrcLibRecord.serializer()), body)
                 }.getOrNull() ?: continue
                 for (record in records) {
-                    val score = scoreLrcCandidate(title, artist, durationSeconds, record.toCandidate())
+                    // A igualdad de coincidencia, mejor la que trae tiempos por palabra.
+                    val base = scoreLrcCandidate(title, artist, durationSeconds, record.toCandidate())
+                    val score = if (base != Int.MIN_VALUE && record.hasWordSync && record.hasSynced) {
+                        base + WORD_SYNC_BONUS
+                    } else {
+                        base
+                    }
                     if (score > bestScore) {
                         bestScore = score
                         best = record
@@ -227,7 +236,8 @@ class LrcLibClient(
     private class Unreachable : Exception()
 
     private fun LrcLibRecord.toResponse(sourceUrl: String): LyricsResponse {
-        val synced = syncedLyrics?.takeIf { it.isNotBlank() }
+        val synced = lyricsfile?.takeIf { hasWordSync }?.let(::lyricsfileToEnhancedLrc)
+            ?: syncedLyrics?.takeIf { it.isNotBlank() }
         val plain = plainLyrics?.takeIf { it.isNotBlank() } ?: synced?.let { LrcParser.toPlainText(it) }.orEmpty()
         return LyricsResponse(
             success = true,
@@ -248,6 +258,7 @@ class LrcLibClient(
         private const val MAX_TITLE_VARIANTS = 2
         private const val MAX_ARTIST_VARIANTS = 2
         private const val STRONG_MATCH_SCORE = 75
+        private const val WORD_SYNC_BONUS = 3
 
         /** Tope total por pista: sin él, una pista lenta bloqueaba el lote de letras minutos. */
         val DEFAULT_BUDGET: Duration = 20.seconds
