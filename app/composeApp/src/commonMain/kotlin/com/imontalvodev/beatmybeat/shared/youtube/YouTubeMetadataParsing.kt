@@ -1,6 +1,7 @@
 package com.imontalvodev.beatmybeat.shared.youtube
 
 import com.imontalvodev.beatmybeat.shared.lyrics.cleanArtistForLyrics
+import com.imontalvodev.beatmybeat.shared.text.stripDiacritics
 
 data class TrackIdentity(
     val title: String,
@@ -19,20 +20,58 @@ private val SUBTITLE_SEPARATOR = Regex("""\s+[•·]\s+""")
 /**
  * Título de un vídeo normal de YouTube ("Artista - Canción (Official Video)") → título y artista
  * limpios. Sin separador, el artista es el canal (sin "- Topic", "VEVO"…).
+ *
+ * Muchos canales publican al revés ("Canción - Artista"): si la parte derecha coincide con el
+ * canal y la izquierda no, se invierten. Los canales "- Topic" de YouTube Music ya traen el
+ * título limpio y no se parten.
  */
 fun parseYouTubeVideoTitle(rawTitle: String, channel: String): TrackIdentity {
     val cleaned = rawTitle.replace(NOISE_SUFFIX, " ").replace(Regex("\\s+"), " ").trim()
+    val channelArtist = cleanArtistForLyrics(channel)
+    if (TOPIC_CHANNEL.containsMatchIn(channel)) {
+        return TrackIdentity(title = cleaned.ifBlank { rawTitle.trim() }, artist = channelArtist)
+    }
     for (separator in ARTIST_TITLE_SEPARATORS) {
         val idx = cleaned.indexOf(separator)
         if (idx > 0) {
-            val artist = cleaned.substring(0, idx).trim()
-            val title = cleaned.substring(idx + separator.length).trim()
-            if (artist.isNotBlank() && title.isNotBlank()) {
+            val left = cleaned.substring(0, idx).trim()
+            val right = cleaned.substring(idx + separator.length).trim()
+            if (left.isNotBlank() && right.isNotBlank()) {
+                val swapped = matchesChannel(right, channel) && !matchesChannel(left, channel)
+                val artist = if (swapped) right else left
+                val title = if (swapped) left else right
                 return TrackIdentity(title = title, artist = cleanArtistForLyrics(artist))
             }
         }
     }
-    return TrackIdentity(title = cleaned.ifBlank { rawTitle.trim() }, artist = cleanArtistForLyrics(channel))
+    return TrackIdentity(title = cleaned.ifBlank { rawTitle.trim() }, artist = channelArtist)
+}
+
+private val TOPIC_CHANNEL = Regex("""[\s\-–—]+Topic\s*$""", RegexOption.IGNORE_CASE)
+private val CHANNEL_SUFFIX = Regex("""(vevo|official|oficial|music|topic|tv|channel|records?)$""")
+
+/** Clave comparable: sin tildes, minúsculas, solo letras y dígitos ("Beyoncé VEVO" → "beyonce"). */
+private fun artistKey(text: String): String {
+    var key = stripDiacritics(text).lowercase().filter { it.isLetterOrDigit() }
+    while (true) {
+        val trimmed = key.replace(CHANNEL_SUFFIX, "")
+        if (trimmed == key || trimmed.isEmpty()) return key
+        key = trimmed
+    }
+}
+
+/**
+ * ¿Es [side] el artista del canal? Acepta el canal exacto, o el artista principal de una
+ * colaboración ("Rosalía, J Balvin" con canal "Rosalía").
+ */
+private fun matchesChannel(side: String, channel: String): Boolean {
+    val channelKey = artistKey(channel)
+    if (channelKey.length < 2) return false
+    val sideKey = artistKey(side)
+    if (sideKey == channelKey) return true
+    val firstArtist = side.split(Regex("""\s*(,|&|\bx\b|\bft\.?|\bfeat\.?|\by\b|\band\b)\s*""", RegexOption.IGNORE_CASE))
+        .firstOrNull().orEmpty()
+    return artistKey(firstArtist) == channelKey
 }
 
 /**

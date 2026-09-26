@@ -47,6 +47,46 @@ class YouTubeMetadataParsingTest {
     }
 
     @Test
+    fun videoTitleInTitleArtistOrderIsSwappedWhenChannelMatches() {
+        assertEquals(
+            TrackIdentity("Despechá", "ROSALÍA"),
+            parseYouTubeVideoTitle("Despechá - ROSALÍA (Official Video)", "Rosalía"),
+        )
+        assertEquals(
+            TrackIdentity("Hello", "Adele"),
+            parseYouTubeVideoTitle("Hello - Adele", "AdeleVEVO"),
+        )
+    }
+
+    @Test
+    fun videoTitleIsNotSwappedWhenLeftSideIsTheChannel() {
+        assertEquals(
+            TrackIdentity("Adele", "Adele"),
+            parseYouTubeVideoTitle("Adele - Adele", "Adele"),
+        )
+        assertEquals(
+            TrackIdentity("Blinding Lights", "The Weeknd"),
+            parseYouTubeVideoTitle("The Weeknd - Blinding Lights", "Some Label Records"),
+        )
+    }
+
+    @Test
+    fun collaborationOnTheRightIsRecognisedByFirstArtist() {
+        assertEquals(
+            TrackIdentity("Tusa", "KAROL G, Nicki Minaj"),
+            parseYouTubeVideoTitle("Tusa - KAROL G, Nicki Minaj", "KAROL G"),
+        )
+    }
+
+    @Test
+    fun topicChannelTitlesAreNotSplit() {
+        assertEquals(
+            TrackIdentity("Part 1 - Intro", "Some Band"),
+            parseYouTubeVideoTitle("Part 1 - Intro", "Some Band - Topic"),
+        )
+    }
+
+    @Test
     fun durationTextParsing() {
         assertEquals(126, parseDurationText("2:06"))
         assertEquals(3723, parseDurationText("1:02:03"))

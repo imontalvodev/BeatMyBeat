@@ -1,7 +1,5 @@
 package com.imontalvodev.beatmybeat.ui.network
 
-import com.imontalvodev.beatmybeat.shared.lyrics.cleanArtistForLyrics
-import com.imontalvodev.beatmybeat.shared.youtube.TrackIdentity
 import com.imontalvodev.beatmybeat.shared.youtube.extractYouTubeVideoId
 import com.imontalvodev.beatmybeat.shared.youtube.parseYouTubeMusicSubtitle
 import com.imontalvodev.beatmybeat.shared.youtube.parseYouTubeVideoTitle
@@ -181,14 +179,7 @@ object YouTubeSearchClient {
         }
         val entries = items.take(limit).mapNotNull { item ->
             val videoId = extractYouTubeVideoId(item.url) ?: return@mapNotNull null
-            val uploader = item.uploaderName.orEmpty()
-            // Los canales "Artista - Topic" publican títulos ya limpios; los vídeos normales
-            // traen "Artista - Canción (Official Video)".
-            val identity = if (uploader.endsWith("- Topic", ignoreCase = true)) {
-                TrackIdentity(item.name.trim(), cleanArtistForLyrics(uploader))
-            } else {
-                parseYouTubeVideoTitle(item.name, uploader)
-            }
+            val identity = parseYouTubeVideoTitle(item.name, item.uploaderName.orEmpty())
             PlaylistEntry(
                 videoId = videoId,
                 title = identity.title,
