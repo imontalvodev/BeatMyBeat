@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Word-by-word lyrics.** When LRCLIB has word-level timing (Lyricsfile), the current line lights up word by word as it is sung.
+- **Add to several playlists at once.** The "Add to playlist" screen now uses checkboxes; pick any number of playlists (and optionally a new one) and add in one go.
 - **Mini player on every tab.** Download and Settings now show the mini player too; tapping it opens the full player.
 
 ### Changed

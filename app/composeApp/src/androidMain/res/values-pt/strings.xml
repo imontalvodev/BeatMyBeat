@@ -253,7 +253,7 @@
     <string name="player_playlist_removed_one">Música removida da playlist.</string>
     <string name="player_playlist_removed_many">Músicas removidas da playlist.</string>
     <string name="player_add_to_playlist_title">Adicionar à playlist</string>
-    <string name="player_playlist_target">Playlist de destino</string>
+    <string name="player_playlist_target">Escolha uma ou mais playlists</string>
     <string name="player_playlist_selected">Selecionada</string>
     <string name="player_playlist_song_count">%1$s (Faixas: %2$d)</string>
     <string name="player_new_playlist_optional">Nova playlist (opcional)</string>
@@ -272,8 +272,8 @@
     <string name="player_create_new_playlist">Criar nova playlist</string>
     <string name="player_playlist_song_count_only">Faixas: %1$d</string>
     <string name="player_duplicates_title">Duplicados detetados</string>
-    <string name="player_duplicates_message">%1$d música(s) já existe(m) na playlist. Duplicar todas?</string>
-    <string name="player_duplicates_added">Duplicados adicionados à playlist.</string>
+    <string name="player_duplicates_message">%1$d música(s) já estava(m) numa das playlists escolhidas. Duplicar?</string>
+    <string name="player_duplicates_added">Duplicados adicionados.</string>
     <string name="player_duplicate_action">Duplicar</string>
     <string name="player_skip_duplicates">Não duplicar</string>
     <string name="player_skip_duplicates_snack">Músicas duplicadas foram ignoradas.</string>
@@ -344,4 +344,12 @@
     <string name="download_error_convert">Não foi possível converter o áudio para %1$s.</string>
     <string name="download_error_save">Não foi possível salvar o arquivo na pasta escolhida.</string>
     <string name="download_error_unknown">Não foi possível concluir o download. Tente novamente.</string>
+    <plurals name="player_added_to_playlists">
+        <item quantity="one">Adicionado a %1$d playlist</item>
+        <item quantity="other">Adicionado a %1$d playlists</item>
+    </plurals>
+    <plurals name="player_add_to_playlists_button">
+        <item quantity="one">Adicionar a %1$d playlist</item>
+        <item quantity="other">Adicionar a %1$d playlists</item>
+    </plurals>
 </resources>

@@ -62,6 +62,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -593,15 +595,16 @@ fun PlayerScreen(
     var queueSheetOpen by remember { mutableStateOf(false) }
     var addToPlaylistDialogOpen by remember { mutableStateOf(false) }
     var addToPlaylistTracks by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
-    var addToPlaylistExistingId by remember { mutableStateOf<Long?>(null) }
+    // Varias playlists a la vez: antes había que repetir el flujo una vez por playlist.
+    var addToPlaylistSelectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var addToPlaylistNewName by remember { mutableStateOf("") }
     var addToPlaylistPickerExpanded by remember { mutableStateOf(false) }
     var addToPlaylistSearchQuery by remember { mutableStateOf("") }
     var creatingNewPlaylistInline by remember { mutableStateOf(false) }
 
+    /** Pistas que ya estaban, agrupadas por playlist destino (playlistId → trackIds). */
     data class DuplicateConfirmState(
-        val trackIds: List<Long>,
-        val playlistId: Long,
+        val tracksByPlaylist: Map<Long, List<Long>>,
     )
 
     var duplicateDialog by remember { mutableStateOf<DuplicateConfirmState?>(null) }
@@ -1862,7 +1865,7 @@ fun PlayerScreen(
                     if (selectedTracksOrdered.isEmpty()) return
                     addToPlaylistDialogOpen = true
                     addToPlaylistTracks = selectedTracksOrdered
-                    addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
+                    addToPlaylistSelectedIds = setOfNotNull(selectedPlaylistId ?: playlists.firstOrNull()?.id)
                     addToPlaylistNewName = ""
                     addToPlaylistPickerExpanded = false
                 }
@@ -2021,7 +2024,7 @@ fun PlayerScreen(
                             onAddToPlaylist = {
                                 addToPlaylistDialogOpen = true
                                 addToPlaylistTracks = listOf(track)
-                                addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
+                                addToPlaylistSelectedIds = setOfNotNull(selectedPlaylistId ?: playlists.firstOrNull()?.id)
                                 addToPlaylistNewName = ""
                             },
                             onDeleteFromDevice = { requestDeleteFromDevice(listOf(track)) },
@@ -2263,9 +2266,6 @@ fun PlayerScreen(
                     enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
                 ) {
                 val tracksToAdd = addToPlaylistTracks
-                val currentSelectedId = addToPlaylistExistingId
-                    ?: selectedPlaylistId
-                    ?: playlists.firstOrNull()?.id
                 val tracksById = remember(deviceTracks) { deviceTracks.associateBy { it.id } }
                 val filteredPlaylists = remember(playlists, addToPlaylistSearchQuery) {
                     if (addToPlaylistSearchQuery.isBlank()) {
@@ -2410,7 +2410,7 @@ fun PlayerScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 items(filteredPlaylists, key = { it.id }) { p ->
-                                    val selected = p.id == (addToPlaylistExistingId ?: currentSelectedId)
+                                    val selected = p.id in addToPlaylistSelectedIds
                                     val coverTracks = remember(p.songIds, tracksById) {
                                         p.songIds.take(4).mapNotNull { tracksById[it] }
                                     }
@@ -2418,8 +2418,11 @@ fun PlayerScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
-                                                addToPlaylistExistingId = p.id
-                                                creatingNewPlaylistInline = false
+                                                addToPlaylistSelectedIds = if (selected) {
+                                                    addToPlaylistSelectedIds - p.id
+                                                } else {
+                                                    addToPlaylistSelectedIds + p.id
+                                                }
                                             },
                                         shape = RoundedCornerShape(Radius.sm),
                                         colors = CardDefaults.cardColors(
@@ -2465,9 +2468,9 @@ fun PlayerScreen(
                                             }
                                             Icon(
                                                 imageVector = if (selected) {
-                                                    Icons.Filled.CheckCircle
+                                                    Icons.Filled.CheckBox
                                                 } else {
-                                                    Icons.Outlined.RadioButtonUnchecked
+                                                    Icons.Filled.CheckBoxOutlineBlank
                                                 },
                                                 contentDescription = if (selected) {
                                                     stringResource(R.string.player_playlist_selected)
@@ -2509,16 +2512,14 @@ fun PlayerScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
                                 enabled = addToPlaylistNewName.isNotBlank() ||
-                                    addToPlaylistExistingId != null ||
+                                    addToPlaylistSelectedIds.isNotEmpty() ||
                                     playlists.isEmpty(),
                                 onClick = {
                                 val newName = addToPlaylistNewName.trim()
-                                val chosenId =
-                                    addToPlaylistExistingId
-                                        ?: selectedPlaylistId
-                                        ?: playlists.firstOrNull()?.id
+                                // Solo ids que sigan existiendo (una playlist pudo borrarse mientras tanto).
+                                val chosenIds = playlists.map { it.id }.filter { it in addToPlaylistSelectedIds }
 
-                                val targetPlaylistId = if (newName.isNotBlank()) {
+                                val createdPlaylistId: Long? = if (newName.isNotBlank()) {
                                     val res = viewModel.createPlaylist(newName)
                                     when (res) {
                                         is PlayerViewModel.CreatePlaylistResult.Created -> {
@@ -2533,70 +2534,73 @@ fun PlayerScreen(
                                             res.id
                                         }
                                     }
-                                } else {
-                                    val existingId = chosenId
-                                    if (existingId == null) {
-                                        // UX: si no hay playlist todavía, crear una por defecto y continuar.
-                                        when (val created = viewModel.createPlaylist(
-                                            resources.getString(R.string.player_default_playlist_name),
-                                        )) {
-                                            is PlayerViewModel.CreatePlaylistResult.Created -> {
-                                                selectedPlaylistId = created.id
-                                                showToast(resources.getString(R.string.player_playlist_default_created))
-                                                created.id
-                                            }
-                                            is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
-                                                selectedPlaylistId = created.id
-                                                created.id
-                                            }
+                                } else if (chosenIds.isEmpty()) {
+                                    // UX: si no hay playlist todavía, crear una por defecto y continuar.
+                                    when (val created = viewModel.createPlaylist(
+                                        resources.getString(R.string.player_default_playlist_name),
+                                    )) {
+                                        is PlayerViewModel.CreatePlaylistResult.Created -> {
+                                            selectedPlaylistId = created.id
+                                            showToast(resources.getString(R.string.player_playlist_default_created))
+                                            created.id
                                         }
-                                    } else {
-                                        existingId
+                                        is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
+                                            selectedPlaylistId = created.id
+                                            created.id
+                                        }
                                     }
+                                } else {
+                                    null
                                 }
+                                val targetPlaylistIds = (chosenIds + listOfNotNull(createdPlaylistId)).distinct()
 
-                                val duplicateIds = mutableListOf<Long>()
+                                val duplicates = linkedMapOf<Long, MutableList<Long>>()
                                 var anyAdded = false
 
-                                tracksToAdd.forEach { track ->
-                                    val addRes = viewModel.addToPlaylist(
-                                        track = track,
-                                        playlistId = targetPlaylistId,
-                                        allowDuplicate = false,
-                                    )
-                                    when (addRes) {
-                                        is PlayerViewModel.AddToPlaylistResult.Added -> {
-                                            anyAdded = true
-                                        }
-
-                                        is PlayerViewModel.AddToPlaylistResult.AlreadyExists -> {
-                                            duplicateIds.add(track.id)
+                                targetPlaylistIds.forEach { playlistId ->
+                                    tracksToAdd.forEach { track ->
+                                        when (viewModel.addToPlaylist(track, playlistId, allowDuplicate = false)) {
+                                            is PlayerViewModel.AddToPlaylistResult.Added -> anyAdded = true
+                                            is PlayerViewModel.AddToPlaylistResult.AlreadyExists ->
+                                                duplicates.getOrPut(playlistId) { mutableListOf() }.add(track.id)
                                         }
                                     }
                                 }
 
-                                selectedPlaylistId = targetPlaylistId
+                                selectedPlaylistId = createdPlaylistId ?: targetPlaylistIds.lastOrNull() ?: selectedPlaylistId
                                 addToPlaylistDialogOpen = false
                                 addToPlaylistTracks = emptyList()
+                                addToPlaylistSelectedIds = emptySet()
 
-                                if (duplicateIds.isNotEmpty()) {
+                                if (duplicates.isNotEmpty()) {
                                     duplicateDialog = DuplicateConfirmState(
-                                        trackIds = duplicateIds.distinct(),
-                                        playlistId = targetPlaylistId,
+                                        tracksByPlaylist = duplicates.mapValues { it.value.distinct() },
                                     )
                                 } else if (anyAdded) {
                                     showToast(
-                                        if (tracksToAdd.size == 1) {
-                                            resources.getString(R.string.player_track_added_playlist)
-                                        } else {
-                                            resources.getString(R.string.player_tracks_added_playlist)
+                                        when {
+                                            targetPlaylistIds.size > 1 -> resources.getQuantityString(
+                                                R.plurals.player_added_to_playlists,
+                                                targetPlaylistIds.size,
+                                                targetPlaylistIds.size,
+                                            )
+                                            tracksToAdd.size == 1 -> resources.getString(R.string.player_track_added_playlist)
+                                            else -> resources.getString(R.string.player_tracks_added_playlist)
                                         },
                                     )
                                     clearTrackSelection()
                                 }
                                 },
                             ) {
-                                Text(stringResource(R.string.player_add_button))
+                                val targetCount = addToPlaylistSelectedIds.count { id -> playlists.any { it.id == id } } +
+                                    if (addToPlaylistNewName.isNotBlank()) 1 else 0
+                                Text(
+                                    if (targetCount > 1) {
+                                        pluralStringResource(R.plurals.player_add_to_playlists_button, targetCount, targetCount)
+                                    } else {
+                                        stringResource(R.string.player_add_button)
+                                    },
+                                )
                             }
                         }
                     }
@@ -2657,7 +2661,7 @@ fun PlayerScreen(
             // DIALOG: confirmación duplicado en playlist
             if (duplicateDialog != null) {
                 val d = duplicateDialog!!
-                val count = d.trackIds.distinct().size
+                val count = d.tracksByPlaylist.values.flatten().distinct().size
                 AlertDialog(
                     onDismissRequest = { duplicateDialog = null },
                     title = { Text(stringResource(R.string.player_duplicates_title)) },
@@ -2669,13 +2673,15 @@ fun PlayerScreen(
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                d.trackIds.distinct().forEach { tid ->
-                                    val track = deviceTracks.firstOrNull { it.id == tid } ?: return@forEach
-                                    viewModel.addToPlaylist(
-                                        track = track,
-                                        playlistId = d.playlistId,
-                                        allowDuplicate = true,
-                                    )
+                                d.tracksByPlaylist.forEach { (playlistId, trackIds) ->
+                                    trackIds.forEach { tid ->
+                                        val track = deviceTracks.firstOrNull { it.id == tid } ?: return@forEach
+                                        viewModel.addToPlaylist(
+                                            track = track,
+                                            playlistId = playlistId,
+                                            allowDuplicate = true,
+                                        )
+                                    }
                                 }
                                 showToast(resources.getString(R.string.player_duplicates_added))
                                 duplicateDialog = null

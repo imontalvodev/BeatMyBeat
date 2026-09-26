@@ -254,7 +254,7 @@
     <string name="player_playlist_removed_one">Pjesma uklonjena iz playliste.</string>
     <string name="player_playlist_removed_many">Pjesme uklonjene iz playliste.</string>
     <string name="player_add_to_playlist_title">Dodaj u playlistu</string>
-    <string name="player_playlist_target">Ciljana playlista</string>
+    <string name="player_playlist_target">Odaberi jednu ili više playlista</string>
     <string name="player_playlist_selected">Odabrano</string>
     <string name="player_playlist_song_count">%1$s (Pjesme: %2$d)</string>
     <string name="player_new_playlist_optional">Nova playlista (opcionalno)</string>
@@ -273,8 +273,8 @@
     <string name="player_create_new_playlist">Stvori novu playlistu</string>
     <string name="player_playlist_song_count_only">Pjesme: %1$d</string>
     <string name="player_duplicates_title">Otkriveni duplikati</string>
-    <string name="player_duplicates_message">%1$d pjesma već postoji u playlisti. Duplicirati sve?</string>
-    <string name="player_duplicates_added">Duplikati dodani u playlistu.</string>
+    <string name="player_duplicates_message">%1$d pjesma već je bila u nekoj od odabranih playlista. Duplicirati?</string>
+    <string name="player_duplicates_added">Duplikati dodani.</string>
     <string name="player_duplicate_action">Dupliciraj</string>
     <string name="player_skip_duplicates">Preskoči duplikate</string>
     <string name="player_skip_duplicates_snack">Duplicirane pjesme su preskočene.</string>
@@ -346,4 +346,14 @@
     <string name="download_error_convert">Zvuk nije moguće pretvoriti u %1$s.</string>
     <string name="download_error_save">Datoteku nije moguće spremiti u odabranu mapu.</string>
     <string name="download_error_unknown">Preuzimanje nije dovršeno. Pokušaj ponovno.</string>
+    <plurals name="player_added_to_playlists">
+        <item quantity="one">Dodano u %1$d playlistu</item>
+        <item quantity="few">Dodano u %1$d playliste</item>
+        <item quantity="other">Dodano u %1$d playlista</item>
+    </plurals>
+    <plurals name="player_add_to_playlists_button">
+        <item quantity="one">Dodaj u %1$d playlistu</item>
+        <item quantity="few">Dodaj u %1$d playliste</item>
+        <item quantity="other">Dodaj u %1$d playlista</item>
+    </plurals>
 </resources>
