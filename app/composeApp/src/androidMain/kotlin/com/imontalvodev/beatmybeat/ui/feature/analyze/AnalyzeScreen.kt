@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.feature.analyze
 
+import com.imontalvodev.beatmybeat.shared.download.DownloadFormat
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,9 +47,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.annotation.StringRes
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.imontalvodev.beatmybeat.R
@@ -58,7 +59,7 @@ import com.imontalvodev.beatmybeat.ui.network.SongSuggestion
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchClient
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSearchSource
 import com.imontalvodev.beatmybeat.ui.network.YouTubeSongMetadata
-import com.imontalvodev.beatmybeat.ui.network.cleanArtistForLyrics
+import com.imontalvodev.beatmybeat.shared.lyrics.cleanArtistForLyrics
 import com.imontalvodev.beatmybeat.service.SongDownloadService
 import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.Radius
@@ -67,8 +68,17 @@ import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.SuggestionListSkeleton
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
-import com.imontalvodev.beatmybeat.ui.theme.ActiveDownloadProgressSection
+import com.imontalvodev.beatmybeat.ui.theme.ScreenHeader
+import com.imontalvodev.beatmybeat.shared.youtube.InvalidReason
+import com.imontalvodev.beatmybeat.shared.youtube.TrackIdentity
+import com.imontalvodev.beatmybeat.shared.youtube.parseYouTubeVideoTitle
+import com.imontalvodev.beatmybeat.service.QueuedTrack
+import com.imontalvodev.beatmybeat.shared.youtube.ParsedYouTubeInput
+import com.imontalvodev.beatmybeat.shared.youtube.parseYouTubeInput
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.HorizontalDivider
 import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import com.imontalvodev.beatmybeat.download.LyricsLibraryStats
 import com.imontalvodev.beatmybeat.download.LyricsLibraryStatsCalculator
@@ -77,14 +87,13 @@ import com.imontalvodev.beatmybeat.service.LyricsBatchService
 import com.imontalvodev.beatmybeat.ui.feature.player.PlayerViewModel
 import com.imontalvodev.beatmybeat.ui.theme.ActiveLyricsBatchProgressSection
 import com.imontalvodev.beatmybeat.ui.network.fetchYouTubeSongMetadata
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 @Composable
 fun AnalyzeScreen(
     modifier: Modifier = Modifier,
@@ -96,26 +105,27 @@ fun AnalyzeScreen(
         )
     }
 
-    var mode by remember { mutableStateOf("url") }
-    var urlInput by remember { mutableStateOf("") }
-    var songTitle by remember { mutableStateOf("") }
-    var songArtist by remember { mutableStateOf("") }
-    var songAlbum by remember { mutableStateOf("") }
-    var searchingSuggestions by remember { mutableStateOf(false) }
-    var suggestionError by remember { mutableStateOf<String?>(null) }
-    var suggestions by remember { mutableStateOf<List<SongSuggestion>>(emptyList()) }
-    var selectedSuggestion by remember { mutableStateOf<SongSuggestion?>(null) }
-    var downloadingSuggestion by remember { mutableStateOf(false) }
-    var downloadError by remember { mutableStateOf<String?>(null) }
-    var songDownloadInfo by remember { mutableStateOf<String?>(null) }
-    var urlInputError by remember { mutableStateOf<String?>(null) }
-    var selectedFormat by remember { mutableStateOf(AudioDownloader.DownloadFormat.MP3) }
-
-    // URL preview state
-    var urlResolving by remember { mutableStateOf(false) }
-    var urlPreviewTitle by remember { mutableStateOf("") }
-    var urlPreviewTracks by remember { mutableStateOf<List<PreviewTrack>>(emptyList()) }
-    var urlPreviewError by remember { mutableStateOf<String?>(null) }
+    // En un ViewModel y no en remember: la navegación lo conserva al cambiar de pestaña, así
+    // que el enlace, los resultados y la playlist analizada siguen ahí al volver.
+    val form: AnalyzeFormState = viewModel()
+    var mode by form.mode
+    var urlInput by form.urlInput
+    var songTitle by form.songTitle
+    var songArtist by form.songArtist
+    var songAlbum by form.songAlbum
+    var searchingSuggestions by form.searchingSuggestions
+    var suggestionError by form.suggestionError
+    var suggestions by form.suggestions
+    var selectedSuggestion by form.selectedSuggestion
+    var downloadingSuggestion by form.downloadingSuggestion
+    var downloadError by form.downloadError
+    var songDownloadInfo by form.songDownloadInfo
+    var urlInputError by form.urlInputError
+    var selectedFormat by form.selectedFormat
+    var urlResolving by form.urlResolving
+    var urlPreviewTitle by form.urlPreviewTitle
+    var urlPreviewTracks by form.urlPreviewTracks
+    var urlPreviewError by form.urlPreviewError
 
     val activeDownload by DownloadProgressBus.state.collectAsState()
     val downloadInProgress = activeDownload != null
@@ -161,12 +171,13 @@ fun AnalyzeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 24.dp),
+                .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.xl),
             verticalArrangement = Arrangement.Top,
         ) {
-            AppMiniBrand()
-
-            Spacer(modifier = Modifier.height(16.dp))
+            ScreenHeader(
+                title = stringResource(R.string.nav_download),
+                subtitle = stringResource(R.string.analyze_subtitle),
+            )
 
             val tabUrl = stringResource(R.string.analyze_tab_url)
             val tabSong = stringResource(R.string.analyze_tab_song)
@@ -176,7 +187,13 @@ fun AnalyzeScreen(
                 "song" -> 1
                 else -> 2
             }
-            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
+            PrimaryTabRow(
+                selectedTabIndex = selectedTabIndex,
+                containerColor = Color.Transparent,
+                divider = {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                },
+            ) {
                 Tab(
                     selected = mode == "url",
                     onClick = { mode = "url" },
@@ -194,28 +211,21 @@ fun AnalyzeScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(Radius.xl),
+                shape = RoundedCornerShape(Radius.lg),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
                     contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 18.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 ),
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
+                        .padding(Spacing.lg),
                 ) {
-
-                    Spacer(modifier = Modifier.height(16.dp))
 
                     if (mode == "lyrics") {
                         when {
@@ -307,19 +317,20 @@ fun AnalyzeScreen(
                     }
 
                     if (mode != "lyrics") {
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(Spacing.lg))
                         Text(
                             text = stringResource(R.string.analyze_download_format),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                            style = AppText.sectionLabel,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Spacer(modifier = Modifier.height(Spacing.sm))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            AudioDownloader.DownloadFormat.entries.forEach { format ->
+                            DownloadFormat.entries.forEach { format ->
                                 ModeChip(
                                     text = format.label,
                                     selected = selectedFormat == format,
@@ -329,9 +340,7 @@ fun AnalyzeScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(Spacing.xl))
 
                     if (mode == "lyrics") {
                         PrimaryButton(
@@ -380,15 +389,16 @@ fun AnalyzeScreen(
                                             }
                                             if (results.isNotEmpty()) {
                                                 suggestions = results.map { r ->
-                                                    val (parsedTitle, parsedArtist) = when (r.source) {
+                                                    val identity = when (r.source) {
                                                         YouTubeSearchSource.YOUTUBE_MUSIC ->
-                                                            r.title to r.channel
+                                                            TrackIdentity(r.title, r.channel, r.album)
                                                         YouTubeSearchSource.YOUTUBE ->
-                                                            parseYouTubeTitle(r.title, r.channel)
+                                                            parseYouTubeVideoTitle(r.title, r.channel)
                                                     }
                                                     SongSuggestion(
-                                                        title = parsedTitle,
-                                                        artist = parsedArtist,
+                                                        title = identity.title,
+                                                        artist = identity.artist,
+                                                        album = identity.album,
                                                         videoId = r.videoId,
                                                         thumbnailUrl = r.thumbnailUrl,
                                                         durationText = r.durationText,
@@ -416,7 +426,13 @@ fun AnalyzeScreen(
                                 } else {
                                     when (val parsed = parseYouTubeInput(normalizedUrl)) {
                                         is ParsedYouTubeInput.Invalid -> {
-                                            urlInputError = resources.getString(parsed.reasonRes)
+                                            urlInputError = resources.getString(
+                                                when (parsed.reason) {
+                                                    InvalidReason.Format -> R.string.analyze_url_invalid_format
+                                                    InvalidReason.HostNotAllowed -> R.string.analyze_url_host_not_allowed
+                                                    InvalidReason.Unsupported -> R.string.analyze_url_invalid_generic
+                                                },
+                                            )
                                         }
                                         is ParsedYouTubeInput.PlaylistOrAlbum -> {
                                             scope.launch {
@@ -428,25 +444,20 @@ fun AnalyzeScreen(
                                                     val info = withContext(Dispatchers.IO) {
                                                         YouTubeSearchClient.fetchPlaylistInfo(parsed.listId, limit = 200)
                                                     }
-                                                    if (info.videoIds.isEmpty()) {
+                                                    if (info.entries.isEmpty()) {
                                                         urlPreviewError =
                                                             resources.getString(R.string.analyze_playlist_resolve_empty)
                                                     } else {
                                                         urlPreviewTitle = info.title.ifBlank { "Playlist" }
-                                                        val tracks = withContext(Dispatchers.IO) {
-                                                            info.videoIds.map { id ->
-                                                                async {
-                                                                    val meta = fetchYouTubeSongMetadata(id)
-                                                                    PreviewTrack(
-                                                                        videoId = id,
-                                                                        title = meta.title,
-                                                                        artist = meta.artist,
-                                                                        thumbnailUrl = meta.thumbnailUrl,
-                                                                    )
-                                                                }
-                                                            }.awaitAll()
+                                                        urlPreviewTracks = info.entries.map { e ->
+                                                            PreviewTrack(
+                                                                videoId = e.videoId,
+                                                                title = e.title,
+                                                                artist = e.artist,
+                                                                thumbnailUrl = e.thumbnailUrl,
+                                                                album = e.album,
+                                                            )
                                                         }
-                                                        urlPreviewTracks = tracks
                                                     }
                                                 } catch (_: Exception) {
                                                     urlPreviewError =
@@ -499,13 +510,7 @@ fun AnalyzeScreen(
                         )
                     }
 
-                    if (activeDownload != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        ActiveDownloadProgressSection(
-                            download = activeDownload!!,
-                            onCancel = { SongDownloadService.cancelDownload(context) },
-                        )
-                    } else if (songDownloadInfo != null) {
+                    if (activeDownload == null && songDownloadInfo != null) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = songDownloadInfo!!,
@@ -533,14 +538,13 @@ fun AnalyzeScreen(
                                     tracks = urlPreviewTracks,
                                     downloadEnabled = !downloadInProgress,
                                     onDownloadAll = {
-                                        val videoIds = urlPreviewTracks.map { it.videoId }
                                         if (urlPreviewTracks.size == 1) {
                                             val t = urlPreviewTracks[0]
                                             SongDownloadService.enqueueDownload(
                                                 context = context,
                                                 title = t.title,
                                                 artist = t.artist,
-                                                album = "",
+                                                album = t.album,
                                                 videoId = t.videoId,
                                                 thumbnailUrl = t.thumbnailUrl,
                                                 format = selectedFormat,
@@ -548,7 +552,9 @@ fun AnalyzeScreen(
                                         } else {
                                             SongDownloadService.enqueuePlaylistDownload(
                                                 context = context,
-                                                videoIds = videoIds,
+                                                tracks = urlPreviewTracks.map {
+                                                    QueuedTrack(it.videoId, it.title, it.artist, it.album, it.thumbnailUrl)
+                                                },
                                                 format = selectedFormat,
                                                 playlistName = urlPreviewTitle,
                                             )
@@ -560,7 +566,7 @@ fun AnalyzeScreen(
                                             context = context,
                                             title = track.title,
                                             artist = track.artist,
-                                            album = "",
+                                            album = track.album,
                                             videoId = track.videoId,
                                             thumbnailUrl = track.thumbnailUrl,
                                             format = selectedFormat,
@@ -605,7 +611,7 @@ fun AnalyzeScreen(
                                                 },
                                             shape = RoundedCornerShape(Radius.sm),
                                             colors = CardDefaults.cardColors(
-                                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                                containerColor = Color.Transparent,
                                                 contentColor = MaterialTheme.colorScheme.onSurface,
                                             ),
                                         ) {
@@ -678,14 +684,6 @@ fun AnalyzeScreen(
                             suggestion.artist,
                         ),
                     )
-                    activeDownload?.let { progress ->
-                        Spacer(modifier = Modifier.height(12.dp))
-                        ActiveDownloadProgressSection(
-                            download = progress,
-                            onCancel = { SongDownloadService.cancelDownload(context) },
-                            showBackgroundHint = false,
-                        )
-                    }
                     if (downloadError != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -708,7 +706,7 @@ fun AnalyzeScreen(
                                     context = context,
                                     title = suggestion.title,
                                     artist = suggestion.artist,
-                                    album = "",
+                                    album = suggestion.album.ifBlank { songAlbum.trim() },
                                     videoId = suggestion.videoId,
                                     thumbnailUrl = suggestion.thumbnailUrl,
                                     format = selectedFormat,
@@ -748,75 +746,13 @@ fun AnalyzeScreen(
     }
 }
 
-private data class PreviewTrack(
+internal data class PreviewTrack(
     val videoId: String,
     val title: String,
     val artist: String,
     val thumbnailUrl: String,
+    val album: String = "",
 )
-
-internal sealed interface ParsedYouTubeInput {
-    data class PlaylistOrAlbum(val url: String, val listId: String) : ParsedYouTubeInput
-    data class SingleSong(val videoId: String) : ParsedYouTubeInput
-    data class Invalid(@StringRes val reasonRes: Int) : ParsedYouTubeInput
-}
-
-internal fun parseYouTubeInput(raw: String): ParsedYouTubeInput {
-    val url = raw.toHttpUrlOrNull()
-        ?: return ParsedYouTubeInput.Invalid(R.string.analyze_url_invalid_format)
-
-    val host = url.host.lowercase().removePrefix("www.")
-    val allowedHosts = setOf("youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be")
-    if (host !in allowedHosts) {
-        return ParsedYouTubeInput.Invalid(R.string.analyze_url_host_not_allowed)
-    }
-
-    val listId = url.queryParameter("list")?.trim().orEmpty()
-    if (listId.isNotBlank()) {
-        val normalized = buildCanonicalPlaylistUrl(url, listId)
-        return ParsedYouTubeInput.PlaylistOrAlbum(normalized, listId)
-    }
-
-    val videoId = extractYouTubeVideoId(url)
-    if (videoId != null) {
-        return ParsedYouTubeInput.SingleSong(videoId)
-    }
-
-    return ParsedYouTubeInput.Invalid(R.string.analyze_url_invalid_generic)
-}
-
-private fun buildCanonicalPlaylistUrl(url: HttpUrl, listId: String): String {
-    val builder = HttpUrl.Builder()
-        .scheme("https")
-        .host("www.youtube.com")
-        .addPathSegment("playlist")
-        .addQueryParameter("list", listId)
-
-    // Para casos como youtu.be/<videoId>?list=... preservamos v para resolver la canción concreta.
-    val v = extractYouTubeVideoId(url)
-    if (!v.isNullOrBlank()) builder.addQueryParameter("v", v)
-    return builder.build().toString()
-}
-
-internal fun extractYouTubeVideoId(url: HttpUrl): String? {
-    val host = url.host.lowercase().removePrefix("www.")
-    if (host == "youtu.be") {
-        val shortId = url.pathSegments.firstOrNull().orEmpty()
-        return shortId.takeIf { it.length == 11 }
-    }
-
-    val path = url.encodedPath.lowercase()
-    val fromQuery = url.queryParameter("v")?.trim().orEmpty()
-    if (path == "/watch" && fromQuery.length == 11) {
-        return fromQuery
-    }
-
-    val segments = url.pathSegments
-    if (segments.size >= 2 && (segments[0] == "shorts" || segments[0] == "live")) {
-        return segments[1].takeIf { it.length == 11 }
-    }
-    return null
-}
 
 @Composable
 private fun UrlPreviewSection(
@@ -839,7 +775,7 @@ private fun UrlPreviewSection(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = stringResource(R.string.analyze_url_preview_playlist, tracks.size),
+                    text = pluralStringResource(R.plurals.analyze_url_preview_playlist, tracks.size, tracks.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
@@ -860,43 +796,41 @@ private fun UrlPreviewSection(
         Spacer(modifier = Modifier.height(4.dp))
 
         tracks.forEach { track ->
-            Card(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = downloadEnabled) { onDownloadSingle(track) },
-                shape = RoundedCornerShape(Radius.sm),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .clickable(enabled = downloadEnabled) { onDownloadSingle(track) }
+                    .padding(vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    SuggestionThumbnail(
-                        url = track.thumbnailUrl,
-                        contentDescription = track.title,
+                SuggestionThumbnail(
+                    url = track.thumbnailUrl,
+                    contentDescription = track.title,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        style = AppText.trackTitle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = track.title,
-                            style = AppText.trackTitle,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                        )
-                        Text(
-                            text = track.artist,
-                            style = AppText.trackArtist,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            maxLines = 1,
-                        )
-                    }
+                    Text(
+                        text = track.artist,
+                        style = AppText.trackArtist,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
+                Icon(
+                    imageVector = Icons.Outlined.Download,
+                    contentDescription = null,
+                    tint = if (downloadEnabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -954,26 +888,25 @@ private fun SuggestionThumbnail(url: String, contentDescription: String) {
  * Si no hay separador claro, usa el nombre del canal como artista y el título tal cual.
  * También elimina sufijos comunes como "(Official Audio)", "[Lyrics]", etc.
  */
-private fun parseYouTubeTitle(rawTitle: String, channel: String): Pair<String, String> {
-    val cleanSuffixRegex = Regex(
-        """\s*[\(\[](official\s*(audio|video|music\s*video|lyric\s*video)?|lyrics?|audio|hd|4k|explicit|ft\.?[^)\]]*|feat\.?[^)\]]*)[\)\]]\s*""",
-        RegexOption.IGNORE_CASE,
-    )
-    val cleaned = rawTitle.replace(cleanSuffixRegex, "").trim()
 
-    // Separadores comunes: " - ", " – ", " — "
-    val separators = listOf(" - ", " – ", " — ")
-    for (sep in separators) {
-        val idx = cleaned.indexOf(sep)
-        if (idx > 0) {
-            val artistRaw = cleaned.substring(0, idx).trim()
-            val title = cleaned.substring(idx + sep.length).trim()
-            if (artistRaw.isNotBlank() && title.isNotBlank()) {
-                return Pair(title, cleanArtistForLyrics(artistRaw))
-            }
-        }
-    }
-    // Sin separador: usar canal como artista y título limpio
-    return Pair(cleaned.ifBlank { rawTitle }, cleanArtistForLyrics(channel))
+/** Estado del formulario de Descargar que debe sobrevivir al cambio de pestaña. */
+internal class AnalyzeFormState : ViewModel() {
+    val mode = mutableStateOf("url")
+    val urlInput = mutableStateOf("")
+    val songTitle = mutableStateOf("")
+    val songArtist = mutableStateOf("")
+    val songAlbum = mutableStateOf("")
+    val searchingSuggestions = mutableStateOf(false)
+    val suggestionError = mutableStateOf<String?>(null)
+    val suggestions = mutableStateOf<List<SongSuggestion>>(emptyList())
+    val selectedSuggestion = mutableStateOf<SongSuggestion?>(null)
+    val downloadingSuggestion = mutableStateOf(false)
+    val downloadError = mutableStateOf<String?>(null)
+    val songDownloadInfo = mutableStateOf<String?>(null)
+    val urlInputError = mutableStateOf<String?>(null)
+    val selectedFormat = mutableStateOf(DownloadFormat.MP3)
+    val urlResolving = mutableStateOf(false)
+    val urlPreviewTitle = mutableStateOf("")
+    val urlPreviewTracks = mutableStateOf<List<PreviewTrack>>(emptyList())
+    val urlPreviewError = mutableStateOf<String?>(null)
 }
-

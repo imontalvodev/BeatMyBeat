@@ -1,5 +1,31 @@
 package com.imontalvodev.beatmybeat.ui.feature.player
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.LibraryAdd
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.app.Activity
@@ -141,8 +167,8 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
-import com.imontalvodev.beatmybeat.ui.network.LrcLine
-import com.imontalvodev.beatmybeat.ui.network.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.AppText
@@ -151,7 +177,6 @@ import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
@@ -330,6 +355,20 @@ internal fun TrackRow(
 }
 
 @Composable
+private fun MenuIcon(imageVector: ImageVector, destructive: Boolean = false) {
+    Icon(
+        imageVector = imageVector,
+        contentDescription = null,
+        tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun DestructiveMenuText(text: String) {
+    Text(text = text, color = MaterialTheme.colorScheme.error)
+}
+
+@Composable
 internal fun TrackSelectionOverflowMenu(
     selectedCount: Int,
     contentDescription: String,
@@ -348,22 +387,14 @@ internal fun TrackSelectionOverflowMenu(
             Icon(
                 imageVector = Icons.Filled.MoreVert,
                 contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                tint = MaterialTheme.colorScheme.onSurface,
             )
         }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(Radius.sm),
         ) {
-            if (multi) {
-                DropdownMenuItem(
-                    text = {
-                        Text(stringResource(R.string.player_bulk_actions_header, selectedCount))
-                    },
-                    onClick = { },
-                    enabled = false,
-                )
-            }
             DropdownMenuItem(
                 text = {
                     Text(
@@ -371,6 +402,7 @@ internal fun TrackSelectionOverflowMenu(
                         else stringResource(R.string.player_action_queue),
                     )
                 },
+                leadingIcon = { MenuIcon(Icons.AutoMirrored.Filled.PlaylistAdd) },
                 onClick = { expanded = false; onQueue() },
             )
             DropdownMenuItem(
@@ -380,6 +412,7 @@ internal fun TrackSelectionOverflowMenu(
                         else stringResource(R.string.player_action_play_next),
                     )
                 },
+                leadingIcon = { MenuIcon(Icons.AutoMirrored.Filled.PlaylistPlay) },
                 onClick = { expanded = false; onPlayNext() },
             )
             DropdownMenuItem(
@@ -389,6 +422,7 @@ internal fun TrackSelectionOverflowMenu(
                         else stringResource(R.string.player_action_favorite),
                     )
                 },
+                leadingIcon = { MenuIcon(Icons.Outlined.FavoriteBorder) },
                 onClick = { expanded = false; onToggleFavorite() },
             )
             DropdownMenuItem(
@@ -398,6 +432,7 @@ internal fun TrackSelectionOverflowMenu(
                         else stringResource(R.string.player_action_playlist),
                     )
                 },
+                leadingIcon = { MenuIcon(Icons.Outlined.LibraryAdd) },
                 onClick = { expanded = false; onAddToPlaylist() },
             )
             if (showRemoveFromPlaylist) {
@@ -408,16 +443,19 @@ internal fun TrackSelectionOverflowMenu(
                             else stringResource(R.string.player_action_remove_playlist),
                         )
                     },
+                    leadingIcon = { MenuIcon(Icons.Outlined.RemoveCircleOutline) },
                     onClick = { expanded = false; onRemoveFromPlaylist() },
                 )
             }
+            HorizontalDivider()
             DropdownMenuItem(
                 text = {
-                    Text(
+                    DestructiveMenuText(
                         if (multi) stringResource(R.string.player_bulk_action_delete)
                         else stringResource(R.string.player_action_delete),
                     )
                 },
+                leadingIcon = { MenuIcon(Icons.Outlined.Delete, destructive = true) },
                 onClick = { expanded = false; onDeleteFromDevice() },
             )
         }
@@ -438,48 +476,190 @@ internal fun TrackOverflowMenu(
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
-                Icon(
-                    imageVector = Icons.Filled.MoreVert,
-                    contentDescription = stringResource(R.string.player_cd_more_options),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = stringResource(R.string.player_cd_more_options),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(Radius.sm),
         ) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_action_queue)) },
-                onClick = { expanded = false; onQueue() },
-            )
-            DropdownMenuItem(
                 text = { Text(stringResource(R.string.player_action_play_next)) },
+                leadingIcon = { MenuIcon(Icons.AutoMirrored.Filled.PlaylistPlay) },
                 onClick = { expanded = false; onPlayNext() },
             )
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_action_queue)) },
+                leadingIcon = { MenuIcon(Icons.AutoMirrored.Filled.PlaylistAdd) },
+                onClick = { expanded = false; onQueue() },
+            )
+            DropdownMenuItem(
                 text = {
-                    Text(if (isFavorite) "Quitar de favoritos" else "Añadir a favoritos")
+                    Text(
+                        stringResource(
+                            if (isFavorite) R.string.player_action_favorite_remove
+                            else R.string.player_action_favorite_add,
+                        ),
+                    )
+                },
+                leadingIcon = {
+                    MenuIcon(if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder)
                 },
                 onClick = { expanded = false; onToggleFavorite() },
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.player_action_playlist)) },
+                leadingIcon = { MenuIcon(Icons.Outlined.LibraryAdd) },
                 onClick = { expanded = false; onAddToPlaylist() },
             )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_action_delete)) },
-                onClick = {
-                    expanded = false
-                    onDeleteFromDevice()
-                },
-            )
-
             if (showRemoveFromPlaylist) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.player_action_remove_playlist)) },
+                    leadingIcon = { MenuIcon(Icons.Outlined.RemoveCircleOutline) },
+                    onClick = { expanded = false; onRemoveFromPlaylist() },
+                )
+            }
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { DestructiveMenuText(stringResource(R.string.player_action_delete)) },
+                leadingIcon = { MenuIcon(Icons.Outlined.Delete, destructive = true) },
+                onClick = { expanded = false; onDeleteFromDevice() },
+            )
+        }
+    }
+}
+
+@Composable
+internal fun LibrarySearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusManager = LocalFocusManager.current
+    val scheme = MaterialTheme.colorScheme
+    TextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier.fillMaxWidth(),
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge,
+        placeholder = { Text(stringResource(R.string.player_search_placeholder)) },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.player_search_clear_cd),
+                    )
+                }
+            }
+        },
+        shape = RoundedCornerShape(Radius.pill),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = scheme.surfaceContainerHigh,
+            unfocusedContainerColor = scheme.surfaceContainerHigh,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            focusedLeadingIconColor = scheme.onSurface,
+            unfocusedLeadingIconColor = scheme.onSurfaceVariant,
+            focusedPlaceholderColor = scheme.onSurfaceVariant,
+            unfocusedPlaceholderColor = scheme.onSurfaceVariant,
+        ),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+    )
+}
+
+@Composable
+internal fun LibrarySectionChips(
+    selectedSection: PlayerSection,
+    onSelectSection: (PlayerSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val sections = listOf(
+        PlayerSection.Songs to R.string.player_section_songs,
+        PlayerSection.Favorites to R.string.player_section_favorites,
+        PlayerSection.Playlist to R.string.player_section_playlist,
+    )
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        sections.forEach { (section, labelRes) ->
+            FilterChip(
+                selected = section == selectedSection,
+                onClick = { onSelectSection(section) },
+                label = { Text(stringResource(labelRes)) },
+                shape = RoundedCornerShape(Radius.pill),
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = scheme.surfaceContainerHigh,
+                    labelColor = scheme.onSurface,
+                    selectedContainerColor = scheme.primary,
+                    selectedLabelColor = scheme.onPrimary,
+                ),
+                border = null,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun LibrarySortMenu(
+    selectedSort: SortOption,
+    onSelectSort: (SortOption) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = listOf(
+        SortOption.NAME_ASC to R.string.player_sort_name_asc,
+        SortOption.NAME_DESC to R.string.player_sort_name_desc,
+        SortOption.NEWEST_FIRST to R.string.player_sort_recent,
+        SortOption.OLDEST_FIRST to R.string.player_sort_oldest,
+    )
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Sort,
+                contentDescription = stringResource(R.string.player_sort_cd),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(Radius.sm),
+        ) {
+            options.forEach { (option, labelRes) ->
+                val selected = option == selectedSort
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = stringResource(labelRes),
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                        )
+                    },
+                    trailingIcon = if (selected) {
+                        {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    } else {
+                        null
+                    },
                     onClick = {
+                        onSelectSort(option)
                         expanded = false
-                        onRemoveFromPlaylist()
                     },
                 )
             }
@@ -488,190 +668,189 @@ internal fun TrackOverflowMenu(
 }
 
 @Composable
-internal fun LibraryFiltersMenu(
-    selectedSection: PlayerSection,
-    selectedSort: SortOption,
-    onSelectSection: (PlayerSection) -> Unit,
-    onSelectSort: (SortOption) -> Unit,
+internal fun PlayShuffleRow(
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val sectionLabel = when (selectedSection) {
-        PlayerSection.Songs -> stringResource(R.string.player_section_songs)
-        PlayerSection.Favorites -> stringResource(R.string.player_section_favorites)
-        PlayerSection.Playlist -> stringResource(R.string.player_section_playlist)
-    }
-    val sortLabel = when (selectedSort) {
-        SortOption.NAME_ASC -> stringResource(R.string.player_sort_name_asc)
-        SortOption.NAME_DESC -> stringResource(R.string.player_sort_name_desc)
-        SortOption.NEWEST_FIRST -> stringResource(R.string.player_sort_recent)
-        SortOption.OLDEST_FIRST -> stringResource(R.string.player_sort_oldest)
-    }
-    val summary = "$sectionLabel · $sortLabel"
-    val filtersMenuA11y = stringResource(R.string.player_filters_cd)
-    Box(modifier = Modifier.fillMaxWidth()) {
-        OutlinedButton(
-            onClick = { expanded = true },
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        Button(
+            onClick = onPlay,
             modifier = Modifier
-                .fillMaxWidth()
-                .semantics { contentDescription = filtersMenuA11y },
-            shape = RoundedCornerShape(Radius.md),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                .weight(1f)
+                .height(48.dp),
+            shape = RoundedCornerShape(Radius.pill),
         ) {
-            Text(
-                text = summary,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(modifier = Modifier.width(4.dp))
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(Spacing.sm))
+            Text(stringResource(R.string.player_play), style = MaterialTheme.typography.labelLarge)
+        }
+        FilledTonalButton(
+            onClick = onShuffle,
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
+            shape = RoundedCornerShape(Radius.pill),
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        ) {
+            Icon(Icons.Outlined.Shuffle, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(Spacing.sm))
+            Text(stringResource(R.string.player_shuffle_play), style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/** Barra contextual de la selección múltiple: sustituye a Reproducir/Aleatorio mientras dura. */
+@Composable
+internal fun SelectionActionBar(
+    selectedCount: Int,
+    canSelectAll: Boolean,
+    onSelectAll: () -> Unit,
+    onClose: () -> Unit,
+    actions: @Composable () -> Unit = {},
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onClose) {
             Icon(
-                imageVector = Icons.Filled.ArrowDropDown,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                imageVector = Icons.Filled.Close,
+                contentDescription = stringResource(R.string.common_cancel),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Text(
+            text = stringResource(R.string.player_selection_count, selectedCount),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onSelectAll, enabled = canSelectAll) {
+            Text(stringResource(R.string.player_select_all))
+        }
+        actions()
+    }
+}
+
+@Composable
+internal fun LibraryListEmptyHint(
+    section: PlayerSection,
+    query: String,
+    modifier: Modifier = Modifier,
+) {
+    val (icon, title, body) = when {
+        query.isNotBlank() -> Triple(
+            Icons.Filled.Search,
+            stringResource(R.string.player_search_no_results, query.trim()),
+            null,
+        )
+        section == PlayerSection.Favorites -> Triple(
+            Icons.Outlined.FavoriteBorder,
+            stringResource(R.string.player_favorites_empty),
+            stringResource(R.string.player_favorites_empty_body),
+        )
+        else -> Triple(
+            Icons.AutoMirrored.Filled.QueueMusic,
+            stringResource(R.string.player_playlist_empty),
+            stringResource(R.string.player_playlist_empty_body),
+        )
+    }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.xl, vertical = Spacing.xxl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(48.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        )
+        Spacer(modifier = Modifier.height(Spacing.md))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+        )
+        if (body != null) {
+            Spacer(modifier = Modifier.height(Spacing.xs))
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistOptionsMenu(
+    playlistId: Long,
+    onRequestRename: (Long) -> Unit,
+    onRequestDelete: (Long) -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { menuExpanded = true }) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = stringResource(R.string.player_playlist_options_cd),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.fillMaxWidth(0.92f),
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+            shape = RoundedCornerShape(Radius.sm),
         ) {
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_section_songs)) },
+                text = { Text(stringResource(R.string.player_edit_playlist_menu)) },
+                leadingIcon = { MenuIcon(Icons.Outlined.Edit) },
                 onClick = {
-                    onSelectSection(PlayerSection.Songs)
-                    expanded = false
-                },
-                leadingIcon = {
-                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                        if (selectedSection == PlayerSection.Songs) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
+                    menuExpanded = false
+                    onRequestRename(playlistId)
                 },
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_section_favorites)) },
+                text = { DestructiveMenuText(stringResource(R.string.player_delete_playlist_menu)) },
+                leadingIcon = { MenuIcon(Icons.Outlined.Delete, destructive = true) },
                 onClick = {
-                    onSelectSection(PlayerSection.Favorites)
-                    expanded = false
-                },
-                leadingIcon = {
-                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                        if (selectedSection == PlayerSection.Favorites) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_section_playlist)) },
-                onClick = {
-                    onSelectSection(PlayerSection.Playlist)
-                    expanded = false
-                },
-                leadingIcon = {
-                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                        if (selectedSection == PlayerSection.Playlist) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                },
-            )
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_sort_name_asc)) },
-                onClick = {
-                    onSelectSort(SortOption.NAME_ASC)
-                    expanded = false
-                },
-                leadingIcon = {
-                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                        if (selectedSort == SortOption.NAME_ASC) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_sort_name_desc)) },
-                onClick = {
-                    onSelectSort(SortOption.NAME_DESC)
-                    expanded = false
-                },
-                leadingIcon = {
-                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                        if (selectedSort == SortOption.NAME_DESC) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_sort_recent)) },
-                onClick = {
-                    onSelectSort(SortOption.NEWEST_FIRST)
-                    expanded = false
-                },
-                leadingIcon = {
-                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                        if (selectedSort == SortOption.NEWEST_FIRST) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.player_sort_oldest)) },
-                onClick = {
-                    onSelectSort(SortOption.OLDEST_FIRST)
-                    expanded = false
-                },
-                leadingIcon = {
-                    Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-                        if (selectedSort == SortOption.OLDEST_FIRST) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
+                    menuExpanded = false
+                    onRequestDelete(playlistId)
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun PlaylistCover(size: Dp) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(Radius.sm))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(size * 0.5f),
+        )
     }
 }
 
@@ -684,77 +863,39 @@ internal fun PlaylistDetailHeader(
     onRequestRename: (Long) -> Unit,
     onRequestDelete: (Long) -> Unit,
 ) {
-    Card(
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(Radius.md),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-        ),
-        border = androidx.compose.foundation.BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-        ),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.common_cancel),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = playlistName,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "$trackCount canciones",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                )
-            }
-            var menuExpanded by remember { mutableStateOf(false) }
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(
-                        imageVector = Icons.Filled.MoreVert,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                    )
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.player_edit_playlist_menu)) },
-                        onClick = {
-                            menuExpanded = false
-                            onRequestRename(playlistId)
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.player_delete_playlist_menu)) },
-                        onClick = {
-                            menuExpanded = false
-                            onRequestDelete(playlistId)
-                        },
-                    )
-                }
-            }
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(R.string.common_cancel),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
         }
+        Spacer(modifier = Modifier.width(Spacing.xs))
+        PlaylistCover(size = 56.dp)
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = playlistName,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = pluralStringResource(R.plurals.library_track_count, trackCount, trackCount),
+                style = AppText.trackArtist,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        PlaylistOptionsMenu(
+            playlistId = playlistId,
+            onRequestRename = onRequestRename,
+            onRequestDelete = onRequestDelete,
+        )
     }
 }
 
@@ -768,24 +909,35 @@ internal fun PlaylistPickerBar(
     onRequestRename: (Long) -> Unit,
 ) {
     if (playlists.isEmpty()) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(Radius.md),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.xl, vertical = Spacing.xxl),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
+            PlaylistCover(size = 72.dp)
+            Spacer(modifier = Modifier.height(Spacing.lg))
+            Text(
+                text = stringResource(R.string.player_playlists_empty),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(Spacing.xs))
+            Text(
+                text = stringResource(R.string.player_playlists_empty_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(Spacing.lg))
+            Button(
+                onClick = onCreateEmpty,
+                shape = RoundedCornerShape(Radius.pill),
             ) {
-                Text(
-                    text = "Aún no tienes playlists",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                PrimaryPillButton(
-                    text = "Crear una playlist",
-                    onClick = onCreateEmpty,
-                )
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(Spacing.sm))
+                Text(stringResource(R.string.player_playlists_create_first))
             }
         }
         return
@@ -802,165 +954,53 @@ internal fun PlaylistPickerBar(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = "Mis playlists",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
+                text = stringResource(R.string.player_playlists_header),
+                style = AppText.sectionLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             TextButton(onClick = onCreateEmpty) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(Spacing.xs))
                 Text(stringResource(R.string.player_create_playlist_button))
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
         playlists.forEach { p ->
             val selected = p.id == selectedPlaylistId
-            Card(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(p.id) },
-                shape = RoundedCornerShape(Radius.md),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (selected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    },
-                ),
-                border = androidx.compose.foundation.BorderStroke(
-                    width = 1.dp,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
-                    },
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 8.dp else 2.dp),
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                        else Color.Transparent,
+                    )
+                    .clickable { onSelect(p.id) }
+                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        Text(
-                            text = p.name,
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = "${p.songIds.size} canciones",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (selected) {
-                                Text(
-                                    text = "Activa",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                    }
-                    var menuExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(
-                            onClick = { menuExpanded = true },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.MoreVert,
-                                contentDescription = "Opciones de playlist",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.player_edit_playlist_menu)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onRequestRename(p.id)
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.player_delete_playlist_menu)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onRequestDelete(p.id)
-                                },
-                            )
-                        }
-                    }
+                PlaylistCover(size = 48.dp)
+                Spacer(modifier = Modifier.width(Spacing.md))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = p.name,
+                        style = AppText.trackTitle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = pluralStringResource(R.plurals.library_track_count, p.songIds.size, p.songIds.size),
+                        style = AppText.trackArtist,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+                PlaylistOptionsMenu(
+                    playlistId = p.id,
+                    onRequestRename = onRequestRename,
+                    onRequestDelete = onRequestDelete,
+                )
             }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-    }
-}
-
-@Composable
-internal fun ActionPillButton(
-    text: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    Card(
-        modifier = modifier
-            .height(36.dp)
-            .clickable(enabled = enabled) { onClick() },
-        shape = RoundedCornerShape(Radius.pill),
-        colors = CardDefaults.cardColors(
-            containerColor = if (enabled) MaterialTheme.colorScheme.surfaceContainerHigh
-            else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f),
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-    ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-    }
-}
-
-@Composable
-internal fun PrimaryPillButton(
-    text: String,
-    onClick: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(34.dp)
-            .clickable { onClick() },
-        shape = RoundedCornerShape(Radius.pill),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-    ) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
         }
     }
 }

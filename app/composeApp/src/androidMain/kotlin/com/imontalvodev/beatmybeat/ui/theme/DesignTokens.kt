@@ -99,6 +99,16 @@ object AppText {
         @Composable @ReadOnlyComposable
         get() = MaterialTheme.typography.bodyMedium
 
+    /** Título de una pantalla de nivel superior (Biblioteca, Descargar, Ajustes). */
+    val screenTitle: TextStyle
+        @Composable @ReadOnlyComposable
+        get() = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+
+    /** Etiqueta que agrupa filas dentro de una lista. */
+    val sectionLabel: TextStyle
+        @Composable @ReadOnlyComposable
+        get() = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+
     /** Cabecera de sección dentro de una pantalla. */
     val sectionHeader: TextStyle
         @Composable @ReadOnlyComposable

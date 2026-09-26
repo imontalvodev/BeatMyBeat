@@ -4,6 +4,45 @@ All notable changes to BeatMyBeat are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Word-by-word lyrics.** When LRCLIB has word-level timing (Lyricsfile), the current line lights up word by word as it is sung.
+- **Sleep timer.** Moon button in the full player: stop after 5–90 minutes (with a short fade-out) or at the end of the current song.
+- **Add to several playlists at once.** The "Add to playlist" screen now uses checkboxes; pick any number of playlists (and optionally a new one) and add in one go.
+- **Mini player on every tab.** Download and Settings now show the mini player too; tapping it opens the full player.
+
+### Changed
+- **UI redesign.** The app opens straight into the library (the start-up "Download / Go to player" choice screen is gone). Tabs are now Library · Download · Settings, and switch with a fade instead of a sideways slide.
+- **Library:** large title with song count, a filled search field, Songs / Favorites / Playlists chips (no more combined dropdown), sort behind an icon, and separate **Play** and **Shuffle** buttons. Empty favorites, empty playlists and searches with no results now explain what to do.
+- **Multi-select:** long-pressing a song opens a contextual bar with the count, "select all" and every bulk action, instead of hiding them behind the ⋮ of a selected row.
+- **Mini player:** floating card with play/pause and next; tap or swipe up to open the full player. The thin progress line is display-only, so a stray tap no longer seeks.
+- **Full player:** the bottom navigation hides while it is open; new favorite (heart) and queue buttons; lyrics actions moved to a ⋮ menu; "repeat one" has its own icon; slimmer seek bar; clear "Find lyrics" button when a song has no lyrics.
+- **Queue:** same row style as the library, tap a row to play it, smoother drag-to-reorder with haptics.
+- **Download & Settings:** screen titles instead of the repeated logo, settings grouped into sections, a language picker that shows the current language, sentence-case buttons.
+
+- **Downloads keep the original quality.** M4A and AAC are copied straight from YouTube's AAC stream and OGG from its Opus stream, with no re-encoding. MP3/FLAC/WAV are converted in a single pass from the best source, instead of going through an intermediate 192 kbps MP3.
+- **Clear download errors.** Age-restricted, region-blocked, private, Premium-only and rate-limited videos now say so instead of "try again".
+- **Synced lyrics first.** LRCLIB lookups now prefer time-synced lyrics over plain text, use the real song duration for downloads, remember instrumental tracks, and don't cache a temporary LRCLIB outage as "no lyrics".
+- **Cleaner tags.** Songs found on YouTube Music get the right artist and album (the artist used to include "• Album • 2:06"), and video titles like "Artist - Song (Official Video)" are split properly.
+- Paste YouTube links without `https://`; "Mix" links download the song instead of failing as a playlist.
+
+### Fixed
+- Several strings that were hard-coded in Spanish (favorites menu item, playlist labels) are now translated in every supported language.
+- The theme customizer is fully translated (color names, preview and default profile names were hard-coded).
+- Songs from channels that title videos "Song - Artist" no longer get title and artist swapped.
+- "1 songs found" now reads "1 song found"; playlist song counts and the duplicates warning use proper plurals too.
+- **Truncated downloads.** A network hiccup mid-download used to save a cut-off song as if it were complete; chunks are now retried and incomplete files are discarded.
+- Cancelling a download now stops it immediately.
+- Playlist links pick up every track (not just the first ~100) and no longer include unrelated recommended videos.
+- Streams delivered as DASH/HLS manifests or dubbed audio tracks are no longer chosen for download.
+
+### Internal
+- Shared, platform-independent logic (LRCLIB and lyrics.ovh clients on Ktor, lyrics matching, LRC parsing, YouTube link/metadata parsing, stream selection, ffmpeg arguments, ranged downloads) moved to Kotlin Multiplatform `commonMain` with `commonTest` coverage.
+- NewPipe Extractor 0.26.5.
+- CI on GitHub Actions: unit tests and a debug APK on every pull request.
+- The Gradle daemon pins JDK 21 and downloads it (foojay) when missing, so builds work even when the system Java is newer.
+
 ## [1.2] — 2026-07-28
 
 ### Added

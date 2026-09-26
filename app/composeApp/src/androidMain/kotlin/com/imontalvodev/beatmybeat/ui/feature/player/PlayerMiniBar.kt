@@ -71,6 +71,9 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -141,8 +144,8 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
-import com.imontalvodev.beatmybeat.ui.network.LrcLine
-import com.imontalvodev.beatmybeat.ui.network.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.Motion
@@ -152,7 +155,6 @@ import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
@@ -169,21 +171,16 @@ import kotlin.random.Random
 @Composable
 internal fun MiniPlayerBar(
     modifier: Modifier,
-    track: DeviceTrack?,
+    title: String?,
+    artist: String?,
     isPlaying: Boolean,
     position: Float,
     artwork: Bitmap?,
-    queueSize: Int,
-    sliderAccessibilityLabel: String,
+    progressAccessibilityLabel: String,
     onTogglePlay: () -> Unit,
-    onPrev: () -> Unit,
     onNext: () -> Unit,
-    onSeekPreview: (Float) -> Unit,
-    onSeekCommit: (Float) -> Unit,
     onOpenExpanded: () -> Unit,
-    onOpenQueue: () -> Unit,
 ) {
-    val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val playScale by animateFloatAsState(
         targetValue = if (isPlaying) 0.92f else 1f,
         animationSpec = spring(
@@ -192,190 +189,126 @@ internal fun MiniPlayerBar(
         ),
         label = "mini_play_scale",
     )
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(
-            topStart = Radius.md,
-            topEnd = Radius.md,
-            bottomStart = 0.dp,
-            bottomEnd = 0.dp,
-        ),
-        // Antes Color.Black.copy(0.55f): con un perfil de fondo claro quedaba una barra oscura
-        // con texto oscuro encima. surfaceContainerHigh ya deriva del perfil del usuario.
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    val animatedProgress by animateFloatAsState(
+        targetValue = position.coerceIn(0f, 1f),
+        animationSpec = tween(Motion.QUICK),
+        label = "mini_progress",
+    )
+    val expandCd = stringResource(R.string.player_cd_expand)
+    val currentOnOpenExpanded by rememberUpdatedState(onOpenExpanded)
+    // Tarjeta flotante con las cuatro esquinas redondeadas: se lee como un objeto que se puede
+    // abrir (tocar o deslizar hacia arriba), no como parte de la barra de navegación.
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                var totalDrag = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { totalDrag = 0f },
+                    onDragEnd = { if (totalDrag < -40f) currentOnOpenExpanded() },
+                ) { change, dragAmount ->
+                    change.consume()
+                    totalDrag += dragAmount
+                }
+            },
+        shape = RoundedCornerShape(Radius.md),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shadowElevation = 8.dp,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            var localDrag by remember { mutableStateOf<Float?>(null) }
-            val sliderValue = localDrag ?: position
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    .clickable(onClickLabel = expandCd, onClick = onOpenExpanded)
+                    .padding(start = Spacing.sm, end = Spacing.xs, top = Spacing.sm, bottom = Spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
+                Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .clickable(onClick = onOpenExpanded),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(Radius.sm))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(Radius.sm))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        val miniCtx = LocalContext.current
-                        Crossfade(
-                            targetState = artwork,
-                            animationSpec = tween(Motion.STANDARD),
-                            label = "mini_artwork_cf",
-                        ) { bmp ->
-                            if (bmp != null) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(miniCtx)
-                                        .data(bmp)
-                                        .crossfade(180)
-                                        .build(),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            } else {
-                                AppLogo(
-                                    size = 44.dp,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
+                    val miniCtx = LocalContext.current
+                    Crossfade(
+                        targetState = artwork,
+                        animationSpec = tween(Motion.STANDARD),
+                        label = "mini_artwork_cf",
+                    ) { bmp ->
+                        if (bmp != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(miniCtx)
+                                    .data(bmp)
+                                    .crossfade(180)
+                                    .build(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            AppLogo(
+                                size = 44.dp,
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
                     }
-                    Spacer(modifier = Modifier.size(Spacing.md))
-                    // Antes título y artista iban concatenados con "·" en una sola línea de
-                    // labelLarge. Separados hay jerarquía real y el título deja de competir
-                    // con el artista por el mismo ancho.
-                    Column(modifier = Modifier.weight(1f)) {
+                }
+                Spacer(modifier = Modifier.size(Spacing.md))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = (title ?: stringResource(R.string.player_no_song))
+                            .toTitleCaseSimple(),
+                        style = AppText.trackTitle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val miniArtist = (artist ?: "").toDisplayArtist()
+                    if (miniArtist.isNotBlank()) {
                         Text(
-                            text = (track?.title ?: stringResource(R.string.player_no_song))
-                                .toTitleCaseSimple(),
-                            style = AppText.trackTitle,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            text = miniArtist,
+                            style = AppText.trackArtist,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        val miniArtist = (track?.artist ?: "").toDisplayArtist()
-                        if (miniArtist.isNotBlank()) {
-                            Text(
-                                text = miniArtist,
-                                style = AppText.trackArtist,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
                     }
-                }
-
-                Box {
-                    IconButton(
-                        onClick = onOpenQueue,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = stringResource(R.string.player_cd_queue),
-                            modifier = Modifier.size(22.dp),
-                            tint = if (queueSize > 0) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                    }
-                    if (queueSize > 0) {
-                        val badgeFontSize = when {
-                            queueSize >= 1000 -> 5f
-                            queueSize >= 100 -> 6f
-                            else -> 7f
-                        }
-                        Box(
-                            modifier = Modifier
-                                .height(14.dp)
-                                .defaultMinSize(minWidth = 14.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(Radius.pill))
-                                .align(Alignment.TopEnd)
-                                .padding(horizontal = Spacing.xs, vertical = 1.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = queueSize.toString(),
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = androidx.compose.ui.unit.TextUnit(
-                                        badgeFontSize,
-                                        androidx.compose.ui.unit.TextUnitType.Sp,
-                                    ),
-                                ),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-                IconButton(
-                    onClick = onPrev,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.SkipPrevious,
-                        contentDescription = stringResource(R.string.player_prev_cd),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
                 }
                 IconButton(
                     onClick = onTogglePlay,
-                    modifier = Modifier.size(44.dp).scale(playScale),
+                    modifier = Modifier.scale(playScale),
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = stringResource(R.string.player_cd_play_pause),
-                        modifier = Modifier.size(28.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(30.dp),
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                IconButton(
-                    onClick = onNext,
-                    modifier = Modifier.size(40.dp),
-                ) {
+                IconButton(onClick = onNext) {
                     Icon(
                         imageVector = Icons.Filled.SkipNext,
                         contentDescription = stringResource(R.string.player_next_cd),
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(26.dp),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
-
-            // Progreso al borde inferior. Sigue siendo un Slider (se puede buscar desde aquí,
-            // como antes), pero sin ocupar 28dp ni arrastrar la fila de tiempos: en una barra
-            // mini el tiempo exacto ya lo da el reproductor expandido.
-            Slider(
-                value = sliderValue,
+            // Solo indicador: buscar en una barra de 2dp provocaba saltos accidentales al tocar la
+            // tarjeta. La búsqueda precisa vive en el reproductor expandido.
+            LinearProgressIndicator(
+                progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(12.dp)
-                    .semantics {
-                        contentDescription = sliderAccessibilityLabel
-                    },
-                onValueChange = { v ->
-                    localDrag = v
-                    onSeekPreview(v)
-                },
-                onValueChangeFinished = {
-                    val target = localDrag ?: sliderValue
-                    onSeekCommit(target)
-                    localDrag = null
-                },
+                    .padding(horizontal = Spacing.md)
+                    .height(2.dp)
+                    .semantics { contentDescription = progressAccessibilityLabel },
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                drawStopIndicator = {},
+                gapSize = 0.dp,
             )
+            Spacer(modifier = Modifier.height(Spacing.xs))
         }
     }
 }
-

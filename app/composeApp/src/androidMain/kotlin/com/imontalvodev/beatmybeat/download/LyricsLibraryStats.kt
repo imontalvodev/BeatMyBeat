@@ -22,7 +22,7 @@ object LyricsLibraryStatsCalculator {
             val meta = resolveTrackMetadata(track)
             if (!isEligible(meta.title, meta.artist)) continue
             eligible++
-            if (LyricsCache.getEntry(context, meta.title, meta.artist)?.hasAnyLyrics() == true) {
+            if (LyricsCache.getEntry(context, meta.title, meta.artist)?.isResolved() == true) {
                 cached++
             }
         }

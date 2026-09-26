@@ -1,6 +1,11 @@
 package com.imontalvodev.beatmybeat.ui.network
 
 import android.content.Context
+import com.imontalvodev.beatmybeat.shared.lyrics.ERROR_MISSING_FIELDS
+import com.imontalvodev.beatmybeat.shared.lyrics.ERROR_NOT_FOUND
+import com.imontalvodev.beatmybeat.shared.lyrics.LyricsResponse
+import com.imontalvodev.beatmybeat.shared.lyrics.buildLyricsArtistCandidates
+import com.imontalvodev.beatmybeat.shared.lyrics.isLyricsNetworkFailure
 
 /**
  * Orquesta la obtención de letras: caché local → LRCLIB → lyrics.ovh.
@@ -19,7 +24,7 @@ object LyricsFetcher {
         val artistCandidates: List<String> = emptyList(),
     )
 
-    fun fetch(
+    suspend fun fetch(
         context: Context,
         request: Request,
         skipCache: Boolean = false,
@@ -30,51 +35,55 @@ object LyricsFetcher {
             .distinct()
         val artists = buildLyricsArtistCandidates(request.artist, request.artistCandidates)
 
-        if (artists.isEmpty() || titles.isEmpty()) {
-            return notFound("MissingFields")
-        }
+        if (artists.isEmpty() || titles.isEmpty()) return LyricsResponse.failure(ERROR_MISSING_FIELDS)
 
         if (!skipCache) {
             for (title in titles) {
                 for (artist in artists) {
-                    LyricsCache.getEntry(context, title, artist)?.let { cached ->
-                        // Una entrada guardada sin haber podido consultar LRCLIB (texto plano de
-                        // lyrics.ovh tras un timeout) no debe bloquear el intento de conseguir
-                        // letra sincronizada: se ignora aquí y se vuelve a preguntar.
-                        if (cached.hasAnyLyrics() && (cached.lrclibChecked || !cached.syncedLrc.isNullOrBlank())) {
-                            return cached.toResponse()
-                        }
+                    val cached = LyricsCache.getEntry(context, title, artist) ?: continue
+                    if (cached.instrumental) return cached.toResponse()
+                    // Una entrada guardada sin haber podido consultar LRCLIB (texto plano de
+                    // lyrics.ovh tras un timeout) no debe bloquear el intento de conseguir
+                    // letra sincronizada: se ignora aquí y se vuelve a preguntar.
+                    if (cached.hasAnyLyrics() && (cached.lrclibChecked || !cached.syncedLrc.isNullOrBlank())) {
+                        return cached.toResponse()
                     }
                 }
             }
         }
 
-        val durationSec = (request.durationMs / 1000L).toInt().coerceAtLeast(0)
-        val album = request.album.trim()
-
-        val lrc = LrcLibApi.fetchLyrics(
+        val lrc = LyricsClients.lrcLib.fetchLyrics(
             trackName = titles.first(),
             artistName = artists.first(),
-            albumName = album,
-            durationSeconds = durationSec,
+            albumName = request.album,
+            durationSeconds = (request.durationMs / 1000L).toInt(),
             titleCandidates = titles.drop(1),
             artistCandidates = artists.drop(1),
         )
+        if (lrc.isInstrumental) {
+            LyricsCache.putEntry(
+                context,
+                titles.first(),
+                artists.first(),
+                LyricsCacheEntry(plain = "", instrumental = true, lrclibId = lrc.lrclibId, lrclibChecked = true),
+            )
+            return lrc
+        }
         if (lrc.success && lrc.lyrics.isNotBlank()) {
-            LyricsCache.putFromResponse(context, titles.first(), artists.first(), lrc, lrclibChecked = true)
+            // Con error puesto la búsqueda se cortó y esto es solo la reserva en texto plano:
+            // se guarda sin "consultado" para volver a por la sincronizada más adelante.
+            LyricsCache.putFromResponse(context, titles.first(), artists.first(), lrc, lrclibChecked = lrc.error == null)
             return lrc
         }
 
         // Si LRCLIB no contestó (timeout/DNS/conexión), NO se cae a lyrics.ovh: devuelve texto
         // plano sin sincronizar, y al cachearlo dejaría la pista sin karaoke posible. Ante un
         // fallo pasajero es mejor no tener letra ahora que tener la mala para siempre.
-        if (isLyricsNetworkFailure(lrc.error)) {
-            return notFound(lrc.error ?: ERROR_UNREACHABLE)
-        }
+        if (isLyricsNetworkFailure(lrc.error)) return lrc
 
         for (title in titles.take(2)) {
             for (artist in artists.take(2)) {
-                val ovh = LyricsOvhApi.fetch(title = title, artist = artist)
+                val ovh = LyricsClients.lyricsOvh.fetch(title = title, artist = artist)
                 if (ovh.success && ovh.lyrics.isNotBlank()) {
                     // LRCLIB sí respondió (dijo que no la tiene), así que esta entrada plana es
                     // definitiva y no hay que volver a preguntarle.
@@ -84,17 +93,6 @@ object LyricsFetcher {
             }
         }
 
-        return notFound("NotFound")
+        return LyricsResponse.failure(ERROR_NOT_FOUND)
     }
-
-    private fun notFound(error: String) = LyricsResponse(
-        success = false,
-        lyrics = "",
-        syncedLrc = null,
-        lrclibId = null,
-        source = null,
-        sourceUrl = null,
-        error = error,
-        message = null,
-    )
 }

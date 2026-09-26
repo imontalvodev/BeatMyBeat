@@ -1,6 +1,30 @@
 package com.imontalvodev.beatmybeat.ui.feature.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import android.content.Context
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Gavel
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material3.Surface
+import com.imontalvodev.beatmybeat.ui.theme.Radius
+import com.imontalvodev.beatmybeat.ui.theme.ScreenHeader
+import com.imontalvodev.beatmybeat.ui.theme.SectionLabel
+import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,7 +88,6 @@ import androidx.compose.ui.unit.dp
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
 import android.widget.Toast
 import androidx.compose.runtime.LaunchedEffect
@@ -100,71 +123,64 @@ fun ProfileScreen(
         )
     }
 
-    BoxWithConstraints(
+    val currentLanguageName = remember(languageOptions) {
+        val tag = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales()
+            .toLanguageTags()
+            .substringBefore('-')
+            .ifBlank { java.util.Locale.getDefault().language }
+        languageOptions.firstOrNull { it.first == tag }?.second
+    }
+
+    Column(
         modifier = modifier
             .fillMaxSize()
-            .background(bgBrush),
+            .background(bgBrush)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = Spacing.lg),
     ) {
-        val layout = profileLayoutFor(maxHeight, maxWidth)
-        val scrollState = rememberScrollState()
+        ScreenHeader(title = stringResource(R.string.nav_profile))
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(
-                    horizontal = layout.horizontalPadding,
-                    vertical = layout.verticalPadding,
-                ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Top,
-        ) {
-            AppMiniBrand(
-                modifier = Modifier.align(Alignment.Start),
-                logoSize = layout.miniBrandLogoSize,
-            )
-
-            Spacer(modifier = Modifier.height(layout.brandToLogoSpacing))
-
-            AppLogo(
-                size = layout.profileLogoSize,
-                innerPaddingFraction = 0.06f,
-            )
-
-            Spacer(modifier = Modifier.height(layout.headerToListSpacing))
-
-            ProfileOption(
-                label = stringResource(R.string.profile_change_language),
-                icon = Icons.Filled.Language,
-                onClick = { showLanguageDialog = true },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        SectionLabel(stringResource(R.string.settings_section_library), Modifier.padding(top = Spacing.sm))
+        SettingsGroup {
             ProfileOption(
                 label = stringResource(R.string.profile_song_location),
                 subtitle = storageLocationLabel,
-                icon = Icons.Filled.Folder,
+                icon = Icons.Outlined.Folder,
                 onClick = onPickStorageLocation,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            SettingsDivider()
             ProfileOption(
                 label = stringResource(R.string.profile_open_song_folder),
                 subtitle = stringResource(R.string.profile_open_file_explorer),
-                icon = Icons.Filled.FolderOpen,
+                icon = Icons.Outlined.FolderOpen,
                 onClick = onOpenStorageFolder,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        }
+
+        SectionLabel(stringResource(R.string.settings_section_appearance))
+        SettingsGroup {
             ProfileOption(
                 label = stringResource(R.string.profile_customize_background),
-                icon = Icons.Filled.Palette,
+                icon = Icons.Outlined.Palette,
                 onClick = onCustomizeBackground,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            SettingsDivider()
             ProfileOption(
                 label = stringResource(R.string.profile_customize_text),
-                icon = Icons.Filled.TextFields,
+                icon = Icons.Outlined.TextFields,
                 onClick = onCustomizeText,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        }
+
+        SectionLabel(stringResource(R.string.settings_section_general))
+        SettingsGroup {
+            ProfileOption(
+                label = stringResource(R.string.profile_change_language),
+                subtitle = currentLanguageName,
+                icon = Icons.Outlined.Language,
+                onClick = { showLanguageDialog = true },
+            )
+            SettingsDivider()
             ProfileOption(
                 label = stringResource(R.string.profile_check_updates),
                 subtitle = if (checkingUpdates) {
@@ -172,7 +188,7 @@ fun ProfileScreen(
                 } else {
                     stringResource(R.string.profile_check_updates_hint)
                 },
-                icon = Icons.Filled.SystemUpdate,
+                icon = Icons.Outlined.SystemUpdate,
                 onClick = {
                     if (checkingUpdates) return@ProfileOption
                     checkingUpdates = true
@@ -195,52 +211,57 @@ fun ProfileScreen(
                     }
                 },
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-            ProfileOption(
-                label = stringResource(R.string.profile_about),
-                subtitle = stringResource(R.string.profile_about_version, BuildConfig.VERSION_NAME),
-                icon = Icons.Filled.Info,
-                onClick = { },
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+        }
+
+        SectionLabel(stringResource(R.string.settings_section_about))
+        SettingsGroup {
             ProfileOption(
                 label = stringResource(R.string.profile_source_code),
-                icon = Icons.Filled.Code,
-                onClick = {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/imontalvodev/BeatMyBeat")),
-                    )
-                },
+                icon = Icons.Outlined.Code,
+                external = true,
+                onClick = { context.openUrl("https://github.com/imontalvodev/BeatMyBeat") },
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            SettingsDivider()
             ProfileOption(
                 label = stringResource(R.string.profile_privacy_policy),
-                icon = Icons.Filled.PrivacyTip,
-                onClick = {
-                    context.startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://github.com/imontalvodev/BeatMyBeat/blob/main/PRIVACY.md"),
-                        ),
-                    )
-                },
+                icon = Icons.Outlined.PrivacyTip,
+                external = true,
+                onClick = { context.openUrl("https://github.com/imontalvodev/BeatMyBeat/blob/main/PRIVACY.md") },
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            SettingsDivider()
             ProfileOption(
                 label = stringResource(R.string.profile_license),
                 subtitle = stringResource(R.string.profile_responsible_use),
-                icon = Icons.Filled.Gavel,
-                onClick = {
-                    context.startActivity(
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://github.com/imontalvodev/BeatMyBeat/blob/main/LICENSE"),
-                        ),
-                    )
-                },
+                icon = Icons.Outlined.Gavel,
+                external = true,
+                onClick = { context.openUrl("https://github.com/imontalvodev/BeatMyBeat/blob/main/LICENSE") },
             )
+        }
 
-            Spacer(modifier = Modifier.height(layout.bottomScrollPadding))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = Spacing.xxl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            AppLogo(size = 64.dp)
+            Spacer(modifier = Modifier.height(Spacing.sm))
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(R.string.settings_app_tagline),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(Spacing.xs))
+            Text(
+                text = stringResource(R.string.profile_about_version, BuildConfig.VERSION_NAME),
+                style = AppText.meta,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
         }
     }
 
@@ -256,16 +277,27 @@ fun ProfileScreen(
             onDismissRequest = { showLanguageDialog = false },
             title = { Text(stringResource(R.string.profile_select_language)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column {
                     languageOptions.forEach { (tag, name) ->
-                        TextButton(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = {
-                                onChangeLanguage(tag)
-                                showLanguageDialog = false
-                            },
+                        val selected = name == currentLanguageName
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(Radius.sm))
+                                .selectable(
+                                    selected = selected,
+                                    role = Role.RadioButton,
+                                    onClick = {
+                                        showLanguageDialog = false
+                                        if (!selected) onChangeLanguage(tag)
+                                    },
+                                )
+                                .padding(vertical = Spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(name, modifier = Modifier.fillMaxWidth())
+                            RadioButton(selected = selected, onClick = null)
+                            Spacer(modifier = Modifier.size(Spacing.md))
+                            Text(name, style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 }
@@ -279,49 +311,26 @@ fun ProfileScreen(
     }
 }
 
-private data class ProfileLayout(
-    val horizontalPadding: Dp,
-    val verticalPadding: Dp,
-    val miniBrandLogoSize: Dp,
-    val profileLogoSize: Dp,
-    val brandToLogoSpacing: Dp,
-    val headerToListSpacing: Dp,
-    val bottomScrollPadding: Dp,
-)
+private fun Context.openUrl(url: String) {
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+}
 
-private fun profileLayoutFor(maxHeight: Dp, maxWidth: Dp): ProfileLayout {
-    val compactHeight = maxHeight < 640.dp
-    val veryCompactHeight = maxHeight < 520.dp
-    val narrowWidth = maxWidth < 360.dp
+@Composable
+private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Radius.lg),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(content = content)
+    }
+}
 
-    return ProfileLayout(
-        horizontalPadding = when {
-            narrowWidth -> 16.dp
-            compactHeight -> 24.dp
-            else -> 32.dp
-        },
-        verticalPadding = when {
-            veryCompactHeight -> 12.dp
-            compactHeight -> 20.dp
-            else -> 48.dp
-        },
-        miniBrandLogoSize = when {
-            veryCompactHeight -> 40.dp
-            compactHeight -> 44.dp
-            else -> 52.dp
-        },
-        profileLogoSize = when {
-            veryCompactHeight -> 88.dp
-            compactHeight -> 112.dp
-            else -> 156.dp
-        },
-        brandToLogoSpacing = if (veryCompactHeight) 8.dp else if (compactHeight) 12.dp else 20.dp,
-        headerToListSpacing = when {
-            veryCompactHeight -> 24.dp
-            compactHeight -> 36.dp
-            else -> 60.dp
-        },
-        bottomScrollPadding = 16.dp,
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 56.dp),
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
     )
 }
 
@@ -330,20 +339,21 @@ private fun ProfileOption(
     label: String,
     subtitle: String? = null,
     icon: ImageVector,
+    external: Boolean = false,
     onClick: () -> Unit,
 ) {
     ListItem(
         headlineContent = {
             Text(
                 text = label,
-                style = AppText.trackTitle,
+                style = MaterialTheme.typography.bodyLarge,
             )
         },
         supportingContent = subtitle?.let { sub ->
             {
                 Text(
                     text = sub,
-                    style = AppText.trackArtist,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -357,9 +367,10 @@ private fun ProfileOption(
         },
         trailingContent = {
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                imageVector = if (external) Icons.AutoMirrored.Outlined.OpenInNew
+                else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
