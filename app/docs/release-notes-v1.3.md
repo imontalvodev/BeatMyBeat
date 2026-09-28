@@ -132,7 +132,9 @@ En GitHub, pega la sección **English** o **Español** (desde el título de secc
 - [ ] APK firmado **con el mismo keystore que 1.2** — comprobar que coinciden:
       `apksigner verify --print-certs <apk> | grep -i SHA-256`
 - [ ] Actualización probada **sobre una 1.2 instalada**, no sobre una instalación limpia
-- [ ] Probar una descarga en un emulador con **Android 7–9 (API 24–28)** y comprobar que aparece en la biblioteca
+- [ ] Probar en un **móvil real con el release firmado** (no el debug: el debug no pasa por R8 y es otra app, `.debug`). Reproducir, descargar, letras, playlists y cerrar/reabrir la app
+- [ ] Probar una descarga en **Android 7–9 (API 24–28)**, en móvil o emulador, y comprobar que aparece en la biblioteca y en `Music/BeatMyBeat/`
+- [ ] En MIUI/HyperOS (Xiaomi, Redmi, POCO): instalar por `adb` requiere "Instalar vía USB" en Opciones de desarrollador. Si la música se corta con la pantalla apagada, poner el ahorro de batería de la app en "Sin restricciones" antes de darlo por bug
 - [ ] Instalación limpia en Android 13+: sale el diálogo de acceso a la música y la biblioteca se llena
 - [ ] El APK pesa ~53 MB y solo contiene `lib/arm64-v8a` y `lib/armeabi-v7a`
 - [ ] SHA-256 sustituido en ambas secciones

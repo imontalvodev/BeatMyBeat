@@ -112,6 +112,8 @@ Detalle de módulos y convenciones: [`app/README.md`](app/README.md).
 | IDE | Android Studio reciente, o JDK 21 con Android SDK (Gradle descarga el JDK 21 del daemon si falta) |
 | API mínima | Definida en [`app/composeApp/build.gradle.kts`](app/composeApp/build.gradle.kts) |
 | Firma release | Keystore local (no incluido en el repositorio) |
+| Dispositivos | Android 7.0+ con procesador ARM (`armeabi-v7a`, `arm64-v8a`): cualquier móvil actual, Fairphone o LineageOS incluidos. Los equipos x86 (Android en PC, algunos Chromebooks) necesitan traducción ARM |
+| APK | ~53 MB; casi todo es FFmpeg nativo para las dos ABIs ARM |
 
 ```bash
 git clone https://github.com/imontalvodev/BeatMyBeat.git
