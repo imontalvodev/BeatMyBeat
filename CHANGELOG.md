@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Synced lyrics first.** LRCLIB lookups now prefer time-synced lyrics over plain text, use the real song duration for downloads, remember instrumental tracks, and don't cache a temporary LRCLIB outage as "no lyrics".
 - **Cleaner tags.** Songs found on YouTube Music get the right artist and album (the artist used to include "• Album • 2:06"), and video titles like "Artist - Song (Official Video)" are split properly.
 - Paste YouTube links without `https://`; "Mix" links download the song instead of failing as a playlist.
+- **Half the download size.** The APK only ships the ARM libraries used by phones (about 53 MB instead of 110 MB). x86 devices (emulators, Android on PCs) need ARM translation to install it.
 - **Lower memory use.** Cached album art is released when the app goes to the background, so Android is less likely to close it.
 
 ### Fixed
