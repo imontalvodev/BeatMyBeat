@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3] — 2026-09-28
+
 ### Added
 - **Word-by-word lyrics.** When LRCLIB has word-level timing (Lyricsfile), the current line lights up word by word as it is sung.
 - **Sleep timer.** Moon button in the full player: stop after 5–90 minutes (with a short fade-out) or at the end of the current song.
@@ -26,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Synced lyrics first.** LRCLIB lookups now prefer time-synced lyrics over plain text, use the real song duration for downloads, remember instrumental tracks, and don't cache a temporary LRCLIB outage as "no lyrics".
 - **Cleaner tags.** Songs found on YouTube Music get the right artist and album (the artist used to include "• Album • 2:06"), and video titles like "Artist - Song (Official Video)" are split properly.
 - Paste YouTube links without `https://`; "Mix" links download the song instead of failing as a playlist.
+- **Lower memory use.** Cached album art is released when the app goes to the background, so Android is less likely to close it.
 
 ### Fixed
 - Several strings that were hard-coded in Spanish (favorites menu item, playlist labels) are now translated in every supported language.
@@ -36,6 +39,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cancelling a download now stops it immediately.
 - Playlist links pick up every track (not just the first ~100) and no longer include unrelated recommended videos.
 - Streams delivered as DASH/HLS manifests or dubbed audio tracks are no longer chosen for download.
+- **Downloads on Android 7–9.** Saving to the default `Music/BeatMyBeat/` folder failed on Android 7, 8 and 9; songs are now written there and indexed so they show up in the library.
+- **Library permission on first launch.** On Android 13+ the notification and music-access requests were fired at the same time, Android dropped one, and the app treated music access as denied without ever asking. Both are now requested together.
+- **Playback position is kept.** If Android closed the app in the background, the song went back to the start; the position is now saved when you leave the app and survives repeated restarts.
+- **Album art.** Embedded covers larger than 256 KB appeared corrupted, and the full player could show a blurry cover when the list thumbnail had been loaded first.
+- **Create playlist** did nothing the second time (the default name already existed). It now creates "My playlist 2", "My playlist 3"… and asks you to name it.
+- **Artist and title capitalization.** Names were rewritten word by word ("AC/DC" → "Ac/dc", "Pharrell Williams y Nile Rodgers" → "… Y …"). Only all-caps or all-lowercase text is normalized now.
+- **In-app updates** opened the GitHub release page instead of downloading the APK. The update is now downloaded directly from the latest release.
 
 ### Internal
 - Shared, platform-independent logic (LRCLIB and lyrics.ovh clients on Ktor, lyrics matching, LRC parsing, YouTube link/metadata parsing, stream selection, ffmpeg arguments, ranged downloads) moved to Kotlin Multiplatform `commonMain` with `commonTest` coverage.
