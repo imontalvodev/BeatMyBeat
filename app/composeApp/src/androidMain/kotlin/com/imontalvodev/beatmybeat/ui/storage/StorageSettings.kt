@@ -2,7 +2,10 @@ package com.imontalvodev.beatmybeat.ui.storage
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
@@ -125,6 +128,8 @@ object StorageSettings {
         val customTree = getCustomTreeUri(context)
         return if (customTree != null) {
             saveToCustomTree(context, customTree, input, displayName, mimeType)
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            saveToLegacyPublicFolder(context, input, displayName, mimeType)
         } else {
             saveToDefaultPublicFolder(
                 context = context,
@@ -163,6 +168,45 @@ object StorageSettings {
             // del usuario, igual que hace saveToDefaultPublicFolder en su rama de MediaStore.
             if (!completed) doc.delete()
         }
+    }
+
+    /**
+     * Android 7-9: MediaStore no acepta RELATIVE_PATH ni IS_PENDING (API 29) y el volumen
+     * "external_primary" no existe, así que se escribe el fichero directamente (requiere
+     * WRITE_EXTERNAL_STORAGE) y se indexa con el escáner de medios.
+     */
+    @Suppress("DEPRECATION")
+    private fun saveToLegacyPublicFolder(
+        context: Context,
+        input: InputStream,
+        displayName: String,
+        mimeType: String,
+    ): String? {
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
+            DEFAULT_RELATIVE_PATH.removePrefix("Music/").trimEnd('/'),
+        )
+        if (!dir.isDirectory && !dir.mkdirs()) return null
+        val target = File(dir, displayName)
+        val partial = File(dir, "$displayName.part")
+        try {
+            partial.outputStream().use { out -> input.copyTo(out) }
+            if (target.exists() && !target.delete()) return null
+            if (!partial.renameTo(target)) return null
+        } catch (e: java.io.IOException) {
+            return null
+        } catch (e: SecurityException) {
+            return null
+        } finally {
+            if (partial.exists()) partial.delete()
+        }
+        MediaScannerConnection.scanFile(
+            context.applicationContext,
+            arrayOf(target.absolutePath),
+            arrayOf(mimeType),
+            null,
+        )
+        return displayName
     }
 
     private fun saveToDefaultPublicFolder(

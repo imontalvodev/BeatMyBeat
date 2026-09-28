@@ -44,7 +44,7 @@ object ReleaseUpdateClient {
                     Logger.w(LOG_TAG, "GitHub releases HTTP ${response.code}")
                     return null
                 }
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string().orEmpty()
                 if (body.isBlank()) return null
                 parseRelease(JSONObject(body))
             }

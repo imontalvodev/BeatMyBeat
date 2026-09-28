@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.TextFields
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import com.imontalvodev.beatmybeat.BuildConfig
 import com.imontalvodev.beatmybeat.LocalSnackbarHostState
 import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdateDialog
@@ -103,6 +104,7 @@ fun ProfileScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbarHostState = LocalSnackbarHostState.current
     val scope = rememberCoroutineScope()
     var pendingUpdate by remember { mutableStateOf<GitHubReleaseInfo?>(null) }
@@ -199,13 +201,13 @@ fun ProfileScreen(
                         checkingUpdates = false
                         when {
                             release == null -> snackbarHostState.showSnackbar(
-                                context.getString(R.string.update_check_failed),
+                                resources.getString(R.string.update_check_failed),
                             )
                             VersionCompare.isNewer(release.version, BuildConfig.VERSION_NAME) -> {
                                 pendingUpdate = release
                             }
                             else -> snackbarHostState.showSnackbar(
-                                context.getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME),
+                                resources.getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME),
                             )
                         }
                     }

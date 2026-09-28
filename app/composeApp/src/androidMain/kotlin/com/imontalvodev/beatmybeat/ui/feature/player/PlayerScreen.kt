@@ -222,8 +222,13 @@ fun PlayerScreen(
         ).show()
     }
     val audioPermission = remember {
-        if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
-        else Manifest.permission.READ_EXTERNAL_STORAGE
+        when {
+            Build.VERSION.SDK_INT >= 33 -> Manifest.permission.READ_MEDIA_AUDIO
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> Manifest.permission.READ_EXTERNAL_STORAGE
+            // API 24-28: las descargas se escriben como fichero en Music/BeatMyBeat/. WRITE incluye
+            // READ (mismo grupo), así que un solo diálogo cubre biblioteca y descargas.
+            else -> Manifest.permission.WRITE_EXTERNAL_STORAGE
+        }
     }
     var hasAudioPermission by remember {
         mutableStateOf(

@@ -12,7 +12,6 @@ kotlin {
     androidTarget {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
-            optIn.add("androidx.media3.common.util.UnstableApi")
         }
     }
 
@@ -31,7 +30,7 @@ kotlin {
             implementation(libs.androidx.media3.common)
             implementation(libs.androidx.navigation.compose)
             implementation(libs.androidx.documentfile)
-            implementation(compose.materialIconsExtended)
+            implementation(libs.compose.material.icons.extended)
             implementation(libs.okhttp)
             implementation(libs.coil.compose)
             implementation(libs.androidx.palette.ktx)
@@ -78,7 +77,7 @@ android {
         applicationId = "com.imontalvodev.beatmybeat"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 7
+        versionCode = 8
         versionName = "1.2"
     }
     buildFeatures {
@@ -121,12 +120,31 @@ android {
             // Por defecto se dejan la del emulador (x86_64) y la de un móvil real (arm64-v8a).
             // Para bajar aún más, apuntando solo al emulador:
             //   ./gradlew installDebug -PdebugAbi=x86_64
+            //
+            // Ojo: un móvil de 32 bits (armeabi-v7a) o un emulador x86 no pueden instalar este
+            // APK (INSTALL_FAILED_NO_MATCHING_ABIS); para ellos: -PdebugAbi=armeabi-v7a, o
+            // -PdebugAbi=all para no filtrar nada.
             ndk {
-                val requested = (project.findProperty("debugAbi") as String?)
+                val supportedAbis = setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                // providers.gradleProperty (no project.findProperty): es la API compatible con
+                // el configuration cache, que está activado en gradle.properties.
+                val raw = providers.gradleProperty("debugAbi").orNull?.trim()
+                val requested = raw
                     ?.split(",")
                     ?.map { it.trim() }
                     ?.filter { it.isNotEmpty() }
-                abiFilters += requested ?: listOf("x86_64", "arm64-v8a")
+                    ?.takeIf { it.isNotEmpty() } // -PdebugAbi= vacío -> valor por defecto
+                when {
+                    raw.equals("all", ignoreCase = true) -> Unit
+                    requested == null -> abiFilters += listOf("x86_64", "arm64-v8a")
+                    else -> {
+                        val unknown = requested - supportedAbis
+                        require(unknown.isEmpty()) {
+                            "debugAbi desconocida: $unknown. Valores válidos: $supportedAbis o all"
+                        }
+                        abiFilters += requested
+                    }
+                }
             }
         }
         getByName("release") {

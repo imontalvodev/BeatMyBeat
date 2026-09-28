@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.service
 
+import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -149,6 +150,7 @@ class LyricsBatchService : Service() {
         return !isUnknown(meta.title) && !isUnknown(meta.artist)
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     private fun reportProgress(
         done: Int,
         total: Int,

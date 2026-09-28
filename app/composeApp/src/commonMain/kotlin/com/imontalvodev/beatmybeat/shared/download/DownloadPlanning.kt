@@ -97,7 +97,7 @@ fun buildFfmpegArguments(
 ): List<String> = buildList {
     val withCover = coverPath != null && supportsEmbeddedCover(target)
     addAll(listOf("-y", "-hide_banner", "-i", inputPath))
-    if (withCover) addAll(listOf("-i", coverPath!!))
+    if (withCover) addAll(listOf("-i", coverPath))
     addAll(listOf("-map", "0:a:0"))
     if (withCover) {
         addAll(

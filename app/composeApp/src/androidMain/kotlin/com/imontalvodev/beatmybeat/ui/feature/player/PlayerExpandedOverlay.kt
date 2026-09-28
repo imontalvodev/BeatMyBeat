@@ -703,7 +703,7 @@ internal fun ExpandedPlayerOverlay(
                             }
                         }
                         else -> {
-                            val bodyText = (lyricsState as LyricsUiState.Ready).lyrics
+                            val bodyText = lyricsState.lyrics
                             Text(
                                 text = bodyText,
                                 modifier = Modifier

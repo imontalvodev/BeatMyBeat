@@ -138,10 +138,10 @@ object YouTubeSearchClient {
 
         return client.newCall(request).execute().use { res ->
             if (!res.isSuccessful) {
-                val errorBody = res.body?.string()?.take(200) ?: ""
+                val errorBody = res.body.string().take(200)
                 throw Exception("Search HTTP ${res.code}: $errorBody")
             }
-            res.body?.string()?.takeIf { it.isNotBlank() }
+            res.body.string().takeIf { it.isNotBlank() }
         }
     }
 
