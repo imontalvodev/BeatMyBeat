@@ -78,7 +78,7 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 8
-        versionName = "1.2"
+        versionName = "1.3"
     }
     buildFeatures {
         buildConfig = true
@@ -131,7 +131,9 @@ android {
                 val raw = providers.gradleProperty("debugAbi").orNull?.trim()
                 val requested = raw
                     ?.split(",")
+                    //noinspection WrongGradleMethod
                     ?.map { it.trim() }
+                    //noinspection WrongGradleMethod
                     ?.filter { it.isNotEmpty() }
                     ?.takeIf { it.isNotEmpty() } // -PdebugAbi= vacío -> valor por defecto
                 when {
