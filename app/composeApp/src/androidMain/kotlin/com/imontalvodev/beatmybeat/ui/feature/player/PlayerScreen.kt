@@ -702,7 +702,7 @@ fun PlayerScreen(
         }
         currentArtwork = null
 
-        val cached = ArtworkCache.getUri(track.uri)
+        val cached = ArtworkCache.get(track.uri, PLAYER_ARTWORK_MAX_PX)
         if (cached != null && !cached.isRecycled) {
             currentArtwork = cached
             return@LaunchedEffect
@@ -719,7 +719,7 @@ fun PlayerScreen(
 
         if (currentTrack?.uri != track.uri) return@LaunchedEffect
         currentArtwork = loaded
-        if (loaded != null) ArtworkCache.putUri(track.uri, loaded)
+        if (loaded != null) ArtworkCache.put(track.uri, PLAYER_ARTWORK_MAX_PX, loaded)
     }
 
     // Letras: solo caché local (offline-first). Se rellenan al descargar.

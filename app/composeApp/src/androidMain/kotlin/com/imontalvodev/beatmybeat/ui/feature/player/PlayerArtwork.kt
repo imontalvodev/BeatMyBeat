@@ -169,7 +169,7 @@ internal fun ArtworkThumbnail(
     isPlaceholderOnly: Boolean = false,
 ) {
     val context = LocalContext.current
-    var imageData by remember(track.uri) { mutableStateOf<Any?>(ArtworkCache.getUri(track.uri)) }
+    var imageData by remember(track.uri) { mutableStateOf<Any?>(ArtworkCache.get(track.uri, LIST_ARTWORK_MAX_PX)) }
 
     LaunchedEffect(track.uri) {
         if (imageData != null) return@LaunchedEffect
@@ -184,7 +184,7 @@ internal fun ArtworkThumbnail(
             BitmapDecoding.decodeSampled(bytes, LIST_ARTWORK_MAX_PX)
         }
         if (decoded != null) {
-            ArtworkCache.putUri(track.uri, decoded)
+            ArtworkCache.put(track.uri, LIST_ARTWORK_MAX_PX, decoded)
             imageData = decoded
         } else {
             imageData = R.drawable.logo

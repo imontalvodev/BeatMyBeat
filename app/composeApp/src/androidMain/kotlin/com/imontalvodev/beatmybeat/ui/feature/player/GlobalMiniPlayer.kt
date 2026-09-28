@@ -68,7 +68,7 @@ fun GlobalMiniPlayer(
             artwork = null
             return@LaunchedEffect
         }
-        artwork = ArtworkCache.getUri(mediaId)?.takeUnless { it.isRecycled }
+        artwork = ArtworkCache.get(mediaId, PLAYER_ARTWORK_MAX_PX)?.takeUnless { it.isRecycled }
         if (artwork != null) return@LaunchedEffect
         val loaded = withContext(Dispatchers.IO) {
             PlaybackArtworkHelper.resolveArtworkBytes(context, mediaId)
@@ -76,7 +76,7 @@ fun GlobalMiniPlayer(
                 ?.let { BitmapDecoding.decodeSampled(it, PLAYER_ARTWORK_MAX_PX) }
         }
         artwork = loaded
-        if (loaded != null) ArtworkCache.putUri(mediaId, loaded)
+        if (loaded != null) ArtworkCache.put(mediaId, PLAYER_ARTWORK_MAX_PX, loaded)
     }
 
     val durationMs = state.durationMs.coerceAtLeast(0L)

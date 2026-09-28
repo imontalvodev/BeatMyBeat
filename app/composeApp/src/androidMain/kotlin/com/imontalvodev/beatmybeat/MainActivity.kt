@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat
 
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -75,6 +76,7 @@ import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdatePrompt
 import com.imontalvodev.beatmybeat.ui.feature.update.UpdateDownloadStatusPrompt
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerScreen
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerSection
+import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatTheme
 import com.imontalvodev.beatmybeat.ui.theme.ThemeProfilesStore
@@ -351,6 +353,12 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         ApkUpdateInstaller.tryCompletePendingInstall(this)
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // UI oculta: las carátulas se recargan al volver; mejor soltarlas que morir por LMK.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) ArtworkCache.clear()
     }
 }
 
