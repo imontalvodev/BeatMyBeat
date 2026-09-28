@@ -115,7 +115,8 @@ android {
             // ese tamaño llega a no caber en el emulador
             // ("Requested internal only, but not enough space").
             //
-            // Release y F-Droid NO se tocan: ahí las cuatro ABIs son necesarias de verdad.
+            // Release (y F-Droid, que compila el mismo build type) lleva solo las dos ABIs ARM;
+            // ver el bloque release.
             //
             // Por defecto se dejan la del emulador (x86_64) y la de un móvil real (arm64-v8a).
             // Para bajar aún más, apuntando solo al emulador:
@@ -150,6 +151,13 @@ android {
             }
         }
         getByName("release") {
+            // Solo ARM: los móviles reales (Fairphone, LineageOS, etc.) son armeabi-v7a o
+            // arm64-v8a. x86/x86_64 (emuladores, Android-x86, algún Chromebook) sumaban ~56 MB
+            // de FFmpeg nativo a un APK de ~110 MB; esos equipos suelen traducir ARM
+            // (houdini/libndk_translation) y siguen pudiendo instalarlo.
+            ndk {
+                abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

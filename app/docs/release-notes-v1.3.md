@@ -25,6 +25,7 @@ Notas para el [GitHub Release](https://github.com/imontalvodev/BeatMyBeat/releas
 - **Clear download errors.** Age-restricted, region-blocked, private, Premium-only and rate-limited videos now say so.
 - **Synced lyrics first**, cleaner artist/album tags for YouTube Music songs, and links pasted without `https://` or from a "Mix" now work.
 - **Lower memory use.** Cached album art is released when the app goes to the background, so Android is less likely to close it.
+- **Half the download size** (about 53 MB instead of 110 MB): the APK only includes the ARM libraries phones use. Every phone works as before (including Fairphone and LineageOS devices); x86 devices such as Android on a PC need ARM translation to install it.
 
 ### Fixed
 
@@ -80,6 +81,7 @@ Updating from 1.2 keeps all your data (library, playlists, favorites, lyrics) �
 - **Errores de descarga claros.** Los vídeos con restricción de edad, bloqueados por región, privados, solo Premium o con límite de peticiones lo indican.
 - **Letra sincronizada primero**, etiquetas de artista/álbum más limpias en canciones de YouTube Music, y funcionan los enlaces pegados sin `https://` o de un "Mix".
 - **Menos consumo de memoria.** Las carátulas en caché se liberan al pasar la app a segundo plano, así Android la cierra con menos frecuencia.
+- **La descarga pesa la mitad** (unos 53 MB en vez de 110 MB): el APK solo incluye las librerías ARM que usan los móviles. Todos los móviles funcionan igual (también Fairphone y dispositivos con LineageOS); los equipos x86, como Android en un PC, necesitan traducción ARM para instalarlo.
 
 ### Corregido
 
@@ -132,4 +134,5 @@ En GitHub, pega la sección **English** o **Español** (desde el título de secc
 - [ ] Actualización probada **sobre una 1.2 instalada**, no sobre una instalación limpia
 - [ ] Probar una descarga en un emulador con **Android 7–9 (API 24–28)** y comprobar que aparece en la biblioteca
 - [ ] Instalación limpia en Android 13+: sale el diálogo de acceso a la música y la biblioteca se llena
+- [ ] El APK pesa ~53 MB y solo contiene `lib/arm64-v8a` y `lib/armeabi-v7a`
 - [ ] SHA-256 sustituido en ambas secciones
