@@ -1,11 +1,8 @@
 package com.imontalvodev.beatmybeat
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.os.Build
 import android.provider.DocumentsContract
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -66,7 +63,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import com.imontalvodev.beatmybeat.playback.PlaybackServiceBinding
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
@@ -91,11 +87,6 @@ class MainActivity : AppCompatActivity() {
         AppCompatDelegate.setApplicationLocales(locales)
     }
 
-    private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            // No hacemos nada: si deniega, simplemente no se verán notificaciones.
-        }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -104,13 +95,6 @@ class MainActivity : AppCompatActivity() {
         // respetar el flag en cuanto la app pasa a segundo plano, sin necesidad de limpiarlo
         // manualmente en onPause.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        // Android 13+ requiere permiso runtime para notificaciones.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val permission = Manifest.permission.POST_NOTIFICATIONS
-            val granted = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-            if (!granted) notificationPermissionLauncher.launch(permission)
-        }
 
         ApkUpdateInstaller.tryCompletePendingInstall(this)
 

@@ -235,9 +235,21 @@ fun PlayerScreen(
             ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
         )
     }
+    // Audio y notificaciones van en una sola petición: Android descarta la segunda si se
+    // lanzan dos a la vez ("Can request only one set of permissions at a time").
+    val startupPermissions = remember {
+        buildList {
+            add(audioPermission)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+        }.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { granted ->
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { results ->
+            val granted = results[audioPermission]
+                ?: (ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED)
             hasAudioPermission = granted
             if (granted) {
                 viewModel.syncLibrary(auto = true)
@@ -621,8 +633,8 @@ fun PlayerScreen(
     LaunchedEffect(Unit) {
         val granted = ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
         hasAudioPermission = granted
-        if (!granted) {
-            permissionLauncher.launch(audioPermission)
+        if (startupPermissions.isNotEmpty()) {
+            permissionLauncher.launch(startupPermissions)
         } else {
             viewModel.syncLibrary(auto = true)
         }
@@ -660,7 +672,7 @@ fun PlayerScreen(
                             textAlign = TextAlign.Center,
                         )
                         Spacer(modifier = Modifier.height(20.dp))
-                        TextButton(onClick = { permissionLauncher.launch(audioPermission) }) {
+                        TextButton(onClick = { permissionLauncher.launch(arrayOf(audioPermission)) }) {
                             Text(stringResource(R.string.player_audio_permission_grant))
                         }
                     }
