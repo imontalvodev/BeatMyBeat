@@ -1161,11 +1161,11 @@ fun PlayerScreen(
         persistPlaybackSnapshot()
     }
 
-    val persistOnPause by rememberUpdatedState {
-        {
-            if (queueSnapshotHydrated) {
-                persistPlaybackSnapshot(PlaybackService.state.value.positionMs)
-            }
+    // Ojo: una sola lambda. `rememberUpdatedState { { … } }` guardaba una lambda que devolvía
+    // otra y `persistOnPause()` nunca llegaba a ejecutar el guardado.
+    val persistOnPause by rememberUpdatedState<() -> Unit> {
+        if (queueSnapshotHydrated) {
+            persistPlaybackSnapshot(PlaybackService.state.value.positionMs)
         }
     }
 
@@ -1293,7 +1293,12 @@ fun PlayerScreen(
     }
     LaunchedEffect(playbackPersistenceKey, queueSnapshotHydrated) {
         if (!queueSnapshotHydrated) return@LaunchedEffect
-        persistPlaybackSnapshot()
+        // Posición real, no la de la composición: justo tras hidratar aún vale 0 y machacaba
+        // la guardada, así que un segundo cierre del proceso perdía dónde iba la pista.
+        val live = PlaybackService.state.value
+        val positionMs = pendingRestore?.positionMs
+            ?: if (live.currentMediaId == currentTrack?.uri) live.positionMs else 0L
+        persistPlaybackSnapshot(positionMs)
     }
 
     fun onToggleShuffle() {
@@ -1827,13 +1832,22 @@ fun PlayerScreen(
                                 playlistDetailOpen = true
                             },
                             onCreateEmpty = {
-                                val res = viewModel.createPlaylist(
-                                    resources.getString(R.string.player_default_playlist_name),
-                                )
-                                selectedPlaylistId = when (res) {
+                                // Nombre libre ("Mi playlist", "Mi playlist 2"…): con el nombre fijo,
+                                // la segunda pulsación chocaba con la existente y no hacía nada.
+                                val base = resources.getString(R.string.player_default_playlist_name)
+                                val taken = playlists.map { it.name.lowercase() }.toSet()
+                                val name = generateSequence(1) { it + 1 }
+                                    .map { n -> if (n == 1) base else "$base $n" }
+                                    .first { it.lowercase() !in taken }
+                                val res = viewModel.createPlaylist(name)
+                                val id = when (res) {
                                     is PlayerViewModel.CreatePlaylistResult.Created -> res.id
                                     is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
                                 }
+                                selectedPlaylistId = id
+                                // Pedir nombre justo después de crearla.
+                                playlistRenameDialogId = id
+                                playlistRenameNewName = name
                             },
                             onRequestDelete = { id ->
                                 playlistDeleteDialogId = id

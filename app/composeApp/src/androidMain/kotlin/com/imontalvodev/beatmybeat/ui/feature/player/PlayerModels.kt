@@ -281,18 +281,36 @@ internal fun resolveTrackMeta(track: com.imontalvodev.beatmybeat.ui.data.DeviceT
 internal fun String.toDisplayArtist(): String =
     com.imontalvodev.beatmybeat.shared.lyrics.formatArtistForDisplay(this).toTitleCaseSimple()
 
+/**
+ * Solo normaliza textos mal formateados (TODO MAYÚSCULAS o todo minúsculas). Si ya hay mezcla
+ * se respeta tal cual: "AC/DC", "MGMT", "The xx" o "Pharrell Williams y Nile Rodgers" no deben
+ * reescribirse. Los conectores (y, feat., the…) quedan en minúscula salvo al inicio.
+ */
 internal fun String.toTitleCaseSimple(): String {
     val trimmed = trim()
     if (trimmed.isEmpty()) return trimmed
+    val letters = trimmed.filter { it.isLetter() }
+    val isMixedCase = letters.any { it.isUpperCase() } && letters.any { it.isLowerCase() }
+    if (isMixedCase) return trimmed
+    // Una sola palabra en mayúsculas suele ser sigla o nombre artístico (MGMT, ABBA, AC/DC).
+    if (letters.none { it.isLowerCase() } && trimmed.none { it.isWhitespace() }) return trimmed
     return trimmed
         .split(Regex("\\s+"))
-        .joinToString(" ") { word ->
+        .mapIndexed { index, word ->
             val lower = word.lowercase()
-            lower.replaceFirstChar { ch ->
-                if (ch.isLowerCase()) ch.titlecase() else ch.toString()
+            if (index > 0 && lower in TITLE_CASE_MINOR_WORDS) {
+                lower
+            } else {
+                lower.replaceFirstChar { ch -> if (ch.isLowerCase()) ch.titlecase() else ch.toString() }
             }
         }
+        .joinToString(" ")
 }
+
+private val TITLE_CASE_MINOR_WORDS = setOf(
+    "y", "e", "o", "u", "de", "del", "la", "el", "los", "las", "en", "con",
+    "and", "or", "of", "the", "a", "an", "in", "on", "to", "vs", "vs.", "feat.", "ft.", "feat", "ft", "x",
+)
 
 internal fun formatMs(ms: Int): String {
     if (ms <= 0) return "0:00"
