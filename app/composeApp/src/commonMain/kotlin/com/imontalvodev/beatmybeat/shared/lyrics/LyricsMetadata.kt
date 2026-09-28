@@ -1,4 +1,6 @@
-package com.imontalvodev.beatmybeat.ui.network
+package com.imontalvodev.beatmybeat.shared.lyrics
+
+import com.imontalvodev.beatmybeat.shared.text.repairLatin1Mojibake
 
 data class LyricsResponse(
     val success: Boolean,
@@ -10,7 +12,23 @@ data class LyricsResponse(
     val sourceUrl: String?,
     val error: String?,
     val message: String?,
-)
+) {
+    /** LRCLIB marca la pista como instrumental: no hay letra y no tiene sentido volver a buscarla. */
+    val isInstrumental: Boolean get() = error == ERROR_INSTRUMENTAL
+
+    companion object {
+        fun failure(error: String, message: String? = null) = LyricsResponse(
+            success = false,
+            lyrics = "",
+            syncedLrc = null,
+            lrclibId = null,
+            source = null,
+            sourceUrl = null,
+            error = error,
+            message = message,
+        )
+    }
+}
 
 /**
  * Corrige texto UTF-8 mal interpretado como Latin-1 (p. ej. `Â€¢` → `•`).
@@ -31,9 +49,7 @@ fun normalizeDisplayMetadata(raw: String): String {
         .replace("â€", "\"")
 
     if (text.contains('Ã') || text.contains('Â')) {
-        text = runCatching {
-            String(text.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
-        }.getOrDefault(text)
+        text = repairLatin1Mojibake(text)
     }
     return text
 }
@@ -103,3 +119,6 @@ internal fun isLyricsNetworkFailure(error: String?): Boolean =
 
 internal const val ERROR_UNREACHABLE = "Unreachable"
 internal const val ERROR_TIMEOUT = "Timeout"
+internal const val ERROR_NOT_FOUND = "NotFound"
+internal const val ERROR_MISSING_FIELDS = "MissingFields"
+internal const val ERROR_INSTRUMENTAL = "Instrumental"

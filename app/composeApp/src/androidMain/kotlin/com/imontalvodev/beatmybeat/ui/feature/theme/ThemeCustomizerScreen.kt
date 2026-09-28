@@ -1,5 +1,10 @@
 package com.imontalvodev.beatmybeat.ui.feature.theme
 
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.Icons
 import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
@@ -50,7 +55,6 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
@@ -73,6 +77,7 @@ fun ThemeCustomizerScreen(
     onApplyProfile: (String) -> Unit,
     onDeleteProfile: (String) -> Unit,
     onSaveProfile: (BeatMyBeatThemeProfile) -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val palette = currentBeatMyBeatThemeProfile()
     val activeProfile = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.firstOrNull()
@@ -80,7 +85,9 @@ fun ThemeCustomizerScreen(
         colors = listOf(palette.backgroundTop, palette.backgroundBottom),
     )
 
-    var name by remember { mutableStateOf("Mi tema") }
+    val defaultName = stringResource(R.string.theme_default_name)
+    val customName = stringResource(R.string.theme_custom_name)
+    var name by remember { mutableStateOf(defaultName) }
     var backgroundTop by remember { mutableStateOf(Color(0xFF000000)) }
     var backgroundBottom by remember { mutableStateOf(Color(0xFF181818)) }
     var primary by remember { mutableStateOf(Color(0xFF07979C)) }
@@ -122,30 +129,26 @@ fun ThemeCustomizerScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            AppMiniBrand()
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip(
-                    text = stringResource(R.string.theme_tab_background),
-                    selected = section == ThemeCustomizerSection.Background,
-                    onClick = {},
-                )
-                ModeChip(
-                    text = stringResource(R.string.theme_tab_text),
-                    selected = section == ThemeCustomizerSection.Text,
-                    onClick = {},
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.common_cancel),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Text(
+                    text = if (section == ThemeCustomizerSection.Background) {
+                        stringResource(R.string.theme_customize_background)
+                    } else {
+                        stringResource(R.string.theme_customize_text)
+                    },
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-
-            Text(
-                text = if (section == ThemeCustomizerSection.Background) {
-                    stringResource(R.string.theme_customize_background)
-                } else {
-                    stringResource(R.string.theme_customize_text)
-                },
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
 
             Card(
                 shape = RoundedCornerShape(Radius.md),
@@ -192,21 +195,21 @@ fun ThemeCustomizerScreen(
                 TextButton(onClick = { activeProfile?.let { loadProfile(it, keepId = !it.id.startsWith("builtin-")) } }) {
                     Text(stringResource(R.string.theme_load_active))
                 }
-                TextButton(onClick = { editingProfileId = null; name = "Mi tema" }) {
+                TextButton(onClick = { editingProfileId = null; name = defaultName }) {
                     Text(stringResource(R.string.theme_new_profile))
                 }
             }
 
             if (section == ThemeCustomizerSection.Background) {
-                ColorField("Background top", backgroundTop) { backgroundTop = it }
-                ColorField("Background bottom", backgroundBottom) { backgroundBottom = it }
-                ColorField("Primary", primary) { primary = it }
-                ColorField("Primary variant", primaryVariant) { primaryVariant = it }
-                ColorField("Secondary", secondary) { secondary = it }
-                ColorField("Surface", surface) { surface = it }
+                ColorField(stringResource(R.string.theme_color_background_top), backgroundTop) { backgroundTop = it }
+                ColorField(stringResource(R.string.theme_color_background_bottom), backgroundBottom) { backgroundBottom = it }
+                ColorField(stringResource(R.string.theme_color_primary), primary) { primary = it }
+                ColorField(stringResource(R.string.theme_color_primary_variant), primaryVariant) { primaryVariant = it }
+                ColorField(stringResource(R.string.theme_color_secondary), secondary) { secondary = it }
+                ColorField(stringResource(R.string.theme_color_surface), surface) { surface = it }
             } else {
-                ColorField("On surface", onSurface) { onSurface = it }
-                ColorField("On surface muted", onSurfaceMuted) { onSurfaceMuted = it }
+                ColorField(stringResource(R.string.theme_color_on_surface), onSurface) { onSurface = it }
+                ColorField(stringResource(R.string.theme_color_on_surface_muted), onSurfaceMuted) { onSurfaceMuted = it }
             }
 
             PreviewBlock(
@@ -232,7 +235,7 @@ fun ThemeCustomizerScreen(
                     val profile = when (section) {
                         ThemeCustomizerSection.Background -> BeatMyBeatThemeProfile(
                             id = editingProfileId ?: UUID.randomUUID().toString(),
-                            name = name.ifBlank { "Tema custom" },
+                            name = name.ifBlank { customName },
                             backgroundTop = backgroundTop,
                             backgroundBottom = backgroundBottom,
                             primary = primary,
@@ -244,7 +247,7 @@ fun ThemeCustomizerScreen(
                         )
                         ThemeCustomizerSection.Text -> BeatMyBeatThemeProfile(
                             id = editingProfileId ?: UUID.randomUUID().toString(),
-                            name = name.ifBlank { "Tema custom" },
+                            name = name.ifBlank { customName },
                             backgroundTop = mergeBase.backgroundTop,
                             backgroundBottom = mergeBase.backgroundBottom,
                             primary = mergeBase.primary,
@@ -449,17 +452,17 @@ private fun PreviewBlock(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = if (section == ThemeCustomizerSection.Background) "Vista previa de fondo" else "Vista previa de texto",
+                text = if (section == ThemeCustomizerSection.Background) stringResource(R.string.theme_preview_background) else stringResource(R.string.theme_preview_text),
                 color = onSurface,
                 style = AppText.sectionHeader,
             )
             Text(
-                text = "Texto principal de ejemplo",
+                text = stringResource(R.string.theme_preview_primary_sample),
                 color = onSurface,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = "Texto secundario de ejemplo",
+                text = stringResource(R.string.theme_preview_secondary_sample),
                 color = onSurfaceMuted,
                 style = MaterialTheme.typography.bodySmall,
             )

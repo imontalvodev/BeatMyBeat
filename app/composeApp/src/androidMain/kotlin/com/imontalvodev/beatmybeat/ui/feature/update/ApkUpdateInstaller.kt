@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.provider.Settings
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.core.Logger
@@ -203,6 +204,7 @@ object ApkUpdateInstaller {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun canInstallPackages(context: Context): Boolean =
         runCatching { context.packageManager.canRequestPackageInstalls() }
             .getOrDefault(false)

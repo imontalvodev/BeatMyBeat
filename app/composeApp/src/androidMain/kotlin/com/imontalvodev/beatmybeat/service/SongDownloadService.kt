@@ -1,5 +1,7 @@
 package com.imontalvodev.beatmybeat.service
 
+import android.annotation.SuppressLint
+import com.imontalvodev.beatmybeat.shared.download.DownloadFormat
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -24,6 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Descargas en segundo plano (canción o playlist). Sobrevive a cambios de pantalla
@@ -59,7 +62,7 @@ class SongDownloadService : Service() {
         val album = intent.getStringExtra(EXTRA_ALBUM).orEmpty()
         val videoId = intent.getStringExtra(EXTRA_VIDEO_ID).orEmpty()
         val thumbnailUrl = intent.getStringExtra(EXTRA_THUMBNAIL_URL).orEmpty()
-        val format = AudioDownloader.DownloadFormat.fromId(intent.getStringExtra(EXTRA_FORMAT))
+        val format = DownloadFormat.fromId(intent.getStringExtra(EXTRA_FORMAT))
 
         startDownloadForeground(title.ifBlank { getString(R.string.download_song_title) })
 
@@ -70,7 +73,7 @@ class SongDownloadService : Service() {
                 phase = getString(R.string.download_processing),
                 fileFraction = null,
             )
-            val result = runCatching {
+            val result = try {
                 AudioDownloader.downloadAutoToAppMusic(
                     context = this@SongDownloadService,
                     title = title,
@@ -84,7 +87,11 @@ class SongDownloadService : Service() {
                         reportSingleProgress(title, artist, update.phase, update.fileFraction)
                     },
                 )
-            }.getOrNull()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
             finishDownload(
                 startId = startId,
                 toastMessage = when {
@@ -94,21 +101,22 @@ class SongDownloadService : Service() {
                         format.label,
                         result.fileName ?: title,
                     )
-                    else -> getString(R.string.download_song_failed)
+                    else -> result.error?.let { AudioDownloader.errorMessage(this@SongDownloadService, it, format) }
+                        ?: getString(R.string.download_song_failed)
                 },
             )
         }
     }
 
     private fun handlePlaylistDownload(intent: Intent, startId: Int) {
-        val videoIds = parseVideoIds(intent.getStringExtra(EXTRA_VIDEO_IDS_JSON))
-        if (videoIds.isEmpty()) {
+        val tracks = parseQueuedTracks(intent.getStringExtra(EXTRA_TRACKS_JSON))
+        if (tracks.isEmpty()) {
             stopSelf(startId)
             return
         }
-        val format = AudioDownloader.DownloadFormat.fromId(intent.getStringExtra(EXTRA_FORMAT))
+        val format = DownloadFormat.fromId(intent.getStringExtra(EXTRA_FORMAT))
         val playlistName = intent.getStringExtra(EXTRA_PLAYLIST_NAME).orEmpty().trim()
-        val total = videoIds.size
+        val total = tracks.size
 
         startDownloadForeground(getString(R.string.download_progress_playlist_headline))
 
@@ -126,9 +134,10 @@ class SongDownloadService : Service() {
             )
             updatePlaylistNotification(0, total, "")
 
-            for (videoId in videoIds) {
+            for (track in tracks) {
                 if (downloadJob?.isActive != true) break
-                val metadata = fetchYouTubeSongMetadata(videoId)
+                val videoId = track.videoId
+                val metadata = if (track.title.isNotBlank()) track else track.withMetadataFrom(fetchYouTubeSongMetadata(videoId))
                 DownloadProgressBus.setBatch(
                     done = downloaded,
                     total = total,
@@ -143,7 +152,7 @@ class SongDownloadService : Service() {
                     context = this@SongDownloadService,
                     title = metadata.title,
                     artist = metadata.artist,
-                    album = "",
+                    album = metadata.album,
                     format = format,
                     videoId = videoId,
                     thumbnailUrl = metadata.thumbnailUrl,
@@ -191,9 +200,14 @@ class SongDownloadService : Service() {
 
     private fun createAutoPlaylist(name: String, fileNames: List<String>) {
         val resolver = contentResolver
-        val collection = android.provider.MediaStore.Audio.Media.getContentUri(
-            android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY,
-        )
+        val collection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            android.provider.MediaStore.Audio.Media.getContentUri(
+                android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY,
+            )
+        } else {
+            // "external_primary" no existe antes de Android 10.
+            android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        }
         val trackIds = mutableListOf<Long>()
         for (fileName in fileNames) {
             val cursor = resolver.query(
@@ -285,6 +299,7 @@ class SongDownloadService : Service() {
         stopSelf(startId)
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     private fun reportSingleProgress(title: String, artist: String, phase: String, fraction: Float?) {
         DownloadProgressBus.setSingle(title, artist, phase, fraction)
         if (!shouldPostProgressNotification()) return
@@ -309,6 +324,7 @@ class SongDownloadService : Service() {
         return true
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     private fun updatePlaylistNotification(processed: Int, total: Int, currentTitle: String) {
         if (!shouldPostProgressNotification()) return
         if (!BeatMyBeatNotification.canPostNotifications(this)) return
@@ -368,7 +384,7 @@ class SongDownloadService : Service() {
         private const val EXTRA_VIDEO_ID = "extra_video_id"
         private const val EXTRA_THUMBNAIL_URL = "extra_thumbnail_url"
         private const val EXTRA_FORMAT = "extra_format"
-        private const val EXTRA_VIDEO_IDS_JSON = "extra_video_ids_json"
+        private const val EXTRA_TRACKS_JSON = "extra_tracks_json"
         private const val EXTRA_PLAYLIST_NAME = "extra_playlist_name"
 
         fun enqueueDownload(
@@ -378,7 +394,7 @@ class SongDownloadService : Service() {
             album: String = "",
             videoId: String = "",
             thumbnailUrl: String = "",
-            format: AudioDownloader.DownloadFormat = AudioDownloader.DownloadFormat.MP3,
+            format: DownloadFormat = DownloadFormat.MP3,
         ) {
             val intent = Intent(context, SongDownloadService::class.java).apply {
                 action = ACTION_DOWNLOAD_SINGLE
@@ -394,17 +410,25 @@ class SongDownloadService : Service() {
 
         fun enqueuePlaylistDownload(
             context: Context,
-            videoIds: List<String>,
-            format: AudioDownloader.DownloadFormat = AudioDownloader.DownloadFormat.MP3,
+            tracks: List<QueuedTrack>,
+            format: DownloadFormat = DownloadFormat.MP3,
             playlistName: String = "",
         ) {
-            if (videoIds.isEmpty()) return
             val arr = JSONArray()
-            videoIds.forEach { id -> if (id.isNotBlank()) arr.put(id) }
+            tracks.filter { it.videoId.isNotBlank() }.forEach { t ->
+                arr.put(
+                    JSONObject()
+                        .put("videoId", t.videoId)
+                        .put("title", t.title)
+                        .put("artist", t.artist)
+                        .put("album", t.album)
+                        .put("thumbnailUrl", t.thumbnailUrl),
+                )
+            }
             if (arr.length() == 0) return
             val intent = Intent(context, SongDownloadService::class.java).apply {
                 action = ACTION_DOWNLOAD_PLAYLIST
-                putExtra(EXTRA_VIDEO_IDS_JSON, arr.toString())
+                putExtra(EXTRA_TRACKS_JSON, arr.toString())
                 putExtra(EXTRA_FORMAT, format.id)
                 if (playlistName.isNotBlank()) putExtra(EXTRA_PLAYLIST_NAME, playlistName)
             }
@@ -419,17 +443,42 @@ class SongDownloadService : Service() {
             context.startService(intent)
         }
 
-        private fun parseVideoIds(json: String?): List<String> {
+        private fun parseQueuedTracks(json: String?): List<QueuedTrack> {
             if (json.isNullOrBlank()) return emptyList()
             return runCatching {
                 val arr = JSONArray(json)
                 buildList {
                     for (i in 0 until arr.length()) {
-                        val id = arr.optString(i).trim()
-                        if (id.isNotBlank()) add(id)
+                        val o = arr.optJSONObject(i) ?: continue
+                        val id = o.optString("videoId").trim()
+                        if (id.isBlank()) continue
+                        add(
+                            QueuedTrack(
+                                videoId = id,
+                                title = o.optString("title"),
+                                artist = o.optString("artist"),
+                                album = o.optString("album"),
+                                thumbnailUrl = o.optString("thumbnailUrl"),
+                            ),
+                        )
                     }
                 }
             }.getOrDefault(emptyList())
         }
     }
+}
+
+/** Pista de una playlist ya resuelta en la UI: evita volver a pedir metadatos por cada canción. */
+data class QueuedTrack(
+    val videoId: String,
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val thumbnailUrl: String = "",
+) {
+    fun withMetadataFrom(meta: com.imontalvodev.beatmybeat.ui.network.YouTubeSongMetadata) = copy(
+        title = meta.title,
+        artist = artist.ifBlank { meta.artist },
+        thumbnailUrl = thumbnailUrl.ifBlank { meta.thumbnailUrl },
+    )
 }

@@ -28,8 +28,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.imontalvodev.beatmybeat.ui.theme.Motion
-import com.imontalvodev.beatmybeat.ui.network.LrcLine
-import com.imontalvodev.beatmybeat.ui.network.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 
 /**
  * Letras sincronizadas con la posición de reproducción (LRC en local).

@@ -66,4 +66,20 @@ class ReleaseUpdateClientTest {
         )
         assertNull(url)
     }
+
+    @Test
+    fun findApkDownloadUrl_versionedName_matchesOnlyThatVersion() {
+        val items = assets(asset("BeatMyBeat-1.2.apk", "https://example.com/BeatMyBeat-1.2.apk"))
+        assertEquals("https://example.com/BeatMyBeat-1.2.apk", ReleaseUpdateClient.findApkDownloadUrl(items, "1.2"))
+        assertNull(ReleaseUpdateClient.findApkDownloadUrl(items, "1.3"))
+        assertNull(ReleaseUpdateClient.findApkDownloadUrl(items))
+    }
+
+    @Test
+    fun latestApkDownloadUrl_pointsToLatestReleaseAsset() {
+        assertEquals(
+            "https://github.com/imontalvodev/BeatMyBeat/releases/latest/download/BeatMyBeat-1.2.apk",
+            ReleaseUpdateClient.latestApkDownloadUrl("1.2"),
+        )
+    }
 }

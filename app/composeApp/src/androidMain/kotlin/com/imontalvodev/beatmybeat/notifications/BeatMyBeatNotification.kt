@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.notifications
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -66,6 +67,7 @@ object BeatMyBeatNotification {
         return PendingIntent.getActivity(context, 0, intent, flags)
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     fun showDownloadInProgress(
         context: Context,
         title: String,
@@ -99,6 +101,7 @@ object BeatMyBeatNotification {
         .setProgress(0, 0, true) // indeterminate
         .build()
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     fun showDownloadCompleted(
         context: Context,
         title: String,
@@ -123,6 +126,7 @@ object BeatMyBeatNotification {
         runCatching { nm.notify(notificationId, notification) }
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     fun showDownloadFailed(
         context: Context,
         title: String,
@@ -137,6 +141,7 @@ object BeatMyBeatNotification {
             .setSmallIcon(R.drawable.ic_stat_logo)
             .setContentTitle(title)
             .setContentText(subtitle)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(subtitle))
             .setContentIntent(baseContentIntent(context))
             .setOngoing(false)
             .setAutoCancel(true)
@@ -147,6 +152,11 @@ object BeatMyBeatNotification {
         runCatching { nm.notify(notificationId, notification) }
     }
 
+    fun cancelDownloadNotification(context: Context, notificationId: Int = DOWNLOAD_NOTIFICATION_ID) {
+        runCatching { NotificationManagerCompat.from(context).cancel(notificationId) }
+    }
+
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     fun showUpdateReadyToInstall(
         context: Context,
         title: String,
@@ -169,6 +179,7 @@ object BeatMyBeatNotification {
         runCatching { NotificationManagerCompat.from(context).notify(notificationId, notification) }
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     fun showPlaybackOngoing(
         context: Context,
         title: String,

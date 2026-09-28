@@ -140,8 +140,8 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
-import com.imontalvodev.beatmybeat.ui.network.LrcLine
-import com.imontalvodev.beatmybeat.ui.network.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.Motion
@@ -149,7 +149,6 @@ import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
@@ -170,7 +169,7 @@ internal fun ArtworkThumbnail(
     isPlaceholderOnly: Boolean = false,
 ) {
     val context = LocalContext.current
-    var imageData by remember(track.uri) { mutableStateOf<Any?>(ArtworkCache.getUri(track.uri)) }
+    var imageData by remember(track.uri) { mutableStateOf<Any?>(ArtworkCache.get(track.uri, LIST_ARTWORK_MAX_PX)) }
 
     LaunchedEffect(track.uri) {
         if (imageData != null) return@LaunchedEffect
@@ -185,7 +184,7 @@ internal fun ArtworkThumbnail(
             BitmapDecoding.decodeSampled(bytes, LIST_ARTWORK_MAX_PX)
         }
         if (decoded != null) {
-            ArtworkCache.putUri(track.uri, decoded)
+            ArtworkCache.put(track.uri, LIST_ARTWORK_MAX_PX, decoded)
             imageData = decoded
         } else {
             imageData = R.drawable.logo

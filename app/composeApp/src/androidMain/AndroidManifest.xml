@@ -13,6 +13,11 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- Android 7-9 (API 24-28): sin RELATIVE_PATH/IS_PENDING en MediaStore, las descargas a
+         Music/BeatMyBeat/ se escriben como fichero y necesitan este permiso. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:enableOnBackInvokedCallback="true"

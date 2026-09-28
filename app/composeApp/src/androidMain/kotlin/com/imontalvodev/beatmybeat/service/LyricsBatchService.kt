@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.service
 
+import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -19,7 +20,7 @@ import com.imontalvodev.beatmybeat.ui.feature.player.resolveTrackMetadata
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetchCoordinator
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
-import com.imontalvodev.beatmybeat.ui.network.buildLyricsArtistCandidates
+import com.imontalvodev.beatmybeat.shared.lyrics.buildLyricsArtistCandidates
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +75,7 @@ class LyricsBatchService : Service() {
                 val title = meta.title.trim()
                 val artist = meta.artist.trim()
 
-                if (LyricsCache.getEntry(this@LyricsBatchService, title, artist)?.hasAnyLyrics() == true) {
+                if (LyricsCache.getEntry(this@LyricsBatchService, title, artist)?.isResolved() == true) {
                     skipped++
                     done++
                     reportProgress(
@@ -114,7 +115,7 @@ class LyricsBatchService : Service() {
                     ),
                 )
 
-                if (res.success && res.lyrics.isNotBlank()) {
+                if ((res.success && res.lyrics.isNotBlank()) || res.isInstrumental) {
                     found++
                 } else {
                     notFound++
@@ -149,6 +150,7 @@ class LyricsBatchService : Service() {
         return !isUnknown(meta.title) && !isUnknown(meta.artist)
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     private fun reportProgress(
         done: Int,
         total: Int,

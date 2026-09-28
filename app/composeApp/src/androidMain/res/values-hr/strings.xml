@@ -1,22 +1,21 @@
 <resources>
     <string name="app_name">BeatMyBeat</string>
     <string name="nav_download">Preuzmi</string>
-    <string name="nav_player">Reproduktor</string>
-    <string name="nav_profile">Profil</string>
+    <string name="nav_player">Knjižnica</string>
+    <string name="nav_profile">Postavke</string>
     <string name="profile_folder_open_failed">Nije moguće otvoriti mapu na ovom uređaju.</string>
     <string name="common_cancel">Odustani</string>
     <string name="common_apply">Primijeni</string>
     <string name="common_delete">Obriši</string>
-    <string name="player_play_all_tracks">REPRODUCIRAJ SVE PJESME</string>
     <string name="player_header_songs">POPIS PJESAMA</string>
     <string name="player_header_favorites">FAVORITI</string>
     <string name="player_header_playlist_fallback">PLAYLIST</string>
     <string name="player_downloader_button">Downloader</string>
-    <string name="player_search_placeholder">Pretraga</string>
+    <string name="player_search_placeholder">Pretraži knjižnicu</string>
     <string name="player_search_clear_cd">Očisti pretragu</string>
     <string name="player_section_songs">Pjesme</string>
     <string name="player_section_favorites">Favoriti</string>
-    <string name="player_section_playlist">Playlist</string>
+    <string name="player_section_playlist">Playliste</string>
     <string name="player_sort_name_asc">Naziv A-Z</string>
     <string name="player_sort_name_desc">Naziv Z-A</string>
     <string name="player_sort_recent">Nedavne</string>
@@ -40,8 +39,8 @@
     <string name="analyze_lyrics_summary">%1$d pjesama · %2$d s tekstom · %3$d na čekanju</string>
     <string name="analyze_lyrics_scanning">Analiza biblioteke…</string>
     <string name="analyze_lyrics_no_tracks">Nema pjesama u biblioteci playera.</string>
-    <string name="analyze_lyrics_cta">PREUZMI SVE TEKSTOVE</string>
-    <string name="analyze_lyrics_fetching">PREUZIMANJE TEKSTOVA…</string>
+    <string name="analyze_lyrics_cta">Preuzmi sve tekstove</string>
+    <string name="analyze_lyrics_fetching">Preuzimanje tekstova…</string>
     <string name="lyrics_batch_title">Preuzimanje tekstova</string>
     <string name="lyrics_batch_notification_title">Preuzimanje tekstova</string>
     <string name="lyrics_batch_preparing">Priprema serije…</string>
@@ -61,9 +60,9 @@
     <string name="analyze_artist_placeholder">Izvođač (preporučeno)</string>
     <string name="analyze_album_placeholder">Album (opcionalno)</string>
     <string name="analyze_download_format">Format preuzimanja</string>
-    <string name="analyze_cta_song">ANALIZIRAJ PJESMU</string>
-    <string name="analyze_cta_downloading">PREUZIMANJE…</string>
-    <string name="analyze_cta_url">ANALIZIRAJ URL</string>
+    <string name="analyze_cta_song">Traži pjesmu</string>
+    <string name="analyze_cta_downloading">Preuzimanje…</string>
+    <string name="analyze_cta_url">Analiziraj poveznicu</string>
     <string name="theme_tab_background">Pozadina</string>
     <string name="theme_tab_text">Tekst</string>
     <string name="theme_customize_background">Prilagodi pozadinu i naglaske</string>
@@ -86,6 +85,20 @@
     <string name="theme_brightness">Svjetlina</string>
     <string name="theme_current_color">Trenutna boja:</string>
     <string name="theme_accent">Naglasak</string>
+    <string name="theme_color_background_top">Pozadina gore</string>
+    <string name="theme_color_background_bottom">Pozadina dolje</string>
+    <string name="theme_color_primary">Primarna</string>
+    <string name="theme_color_primary_variant">Primarna (varijanta)</string>
+    <string name="theme_color_secondary">Sekundarna</string>
+    <string name="theme_color_surface">Površina</string>
+    <string name="theme_color_on_surface">Tekst</string>
+    <string name="theme_color_on_surface_muted">Sekundarni tekst</string>
+    <string name="theme_default_name">Moja tema</string>
+    <string name="theme_custom_name">Prilagođena tema</string>
+    <string name="theme_preview_background">Pregled pozadine</string>
+    <string name="theme_preview_text">Pregled teksta</string>
+    <string name="theme_preview_primary_sample">Primjer glavnog teksta</string>
+    <string name="theme_preview_secondary_sample">Primjer sporednog teksta</string>
     <string name="profile_avatar_cd">Avatar</string>
     <string name="profile_change_language">Promijeni jezik</string>
     <string name="profile_song_location">Lokacija pjesama</string>
@@ -118,9 +131,6 @@
     <string name="profile_check_updates_running">Provjera…</string>
     <string name="update_up_to_date">Već imaš najnoviju verziju (%1$s).</string>
     <string name="update_check_failed">Provjera ažuriranja nije uspjela. Provjeri vezu.</string>
-    <string name="splash_tagline">Tvoja glazba, tvoj ritam</string>
-    <string name="splash_download_music">Preuzmi glazbu</string>
-    <string name="splash_go_to_player">Idi na reproduktor</string>
     <string name="player_selection_count">%1$d odabrano</string>
     <string name="player_select_all">Sve</string>
     <string name="player_selection_actions_cd">Radnje nad odabirom</string>
@@ -179,9 +189,13 @@
     <string name="download_cancelled">Preuzimanje otkazano.</string>
     <string name="analyze_url_resolving">Razrješavanje sadržaja…</string>
     <string name="analyze_url_preview_single">Pjesma pronađena</string>
-    <string name="analyze_url_preview_playlist">%1$d pjesama pronađeno</string>
-    <string name="analyze_url_download_all">PREUZMI SVE (%1$d)</string>
-    <string name="analyze_url_download_single">PREUZMI</string>
+    <plurals name="analyze_url_preview_playlist">
+        <item quantity="one">%1$d pjesma pronađena</item>
+        <item quantity="few">%1$d pjesme pronađene</item>
+        <item quantity="other">%1$d pjesama pronađeno</item>
+    </plurals>
+    <string name="analyze_url_download_all">Preuzmi sve (%1$d)</string>
+    <string name="analyze_url_download_single">Preuzmi</string>
     <string name="analyze_no_results">Nema rezultata za tu pretragu.</string>
     <string name="analyze_connection_error">Greška veze. Provjeri internet i pokušaj ponovno.</string>
     <string name="analyze_playlist_url_required">Unesi YouTube ili YouTube Music URL.</string>
@@ -240,7 +254,7 @@
     <string name="player_playlist_removed_one">Pjesma uklonjena iz playliste.</string>
     <string name="player_playlist_removed_many">Pjesme uklonjene iz playliste.</string>
     <string name="player_add_to_playlist_title">Dodaj u playlistu</string>
-    <string name="player_playlist_target">Ciljana playlista</string>
+    <string name="player_playlist_target">Odaberi jednu ili više playlista</string>
     <string name="player_playlist_selected">Odabrano</string>
     <string name="player_playlist_song_count">%1$s (Pjesme: %2$d)</string>
     <string name="player_new_playlist_optional">Nova playlista (opcionalno)</string>
@@ -257,10 +271,13 @@
     <string name="player_playlist_search_empty">Nema rezultata</string>
     <string name="player_reorder_cd">Promijeni redoslijed pjesme</string>
     <string name="player_create_new_playlist">Stvori novu playlistu</string>
-    <string name="player_playlist_song_count_only">Pjesme: %1$d</string>
     <string name="player_duplicates_title">Otkriveni duplikati</string>
-    <string name="player_duplicates_message">%1$d pjesma već postoji u playlisti. Duplicirati sve?</string>
-    <string name="player_duplicates_added">Duplikati dodani u playlistu.</string>
+    <plurals name="player_duplicates_message">
+        <item quantity="one">%1$d pjesma već je bila u nekoj od odabranih playlista. Duplicirati?</item>
+        <item quantity="few">%1$d pjesme već su bile u nekoj od odabranih playlista. Duplicirati?</item>
+        <item quantity="other">%1$d pjesama već je bilo u nekoj od odabranih playlista. Duplicirati?</item>
+    </plurals>
+    <string name="player_duplicates_added">Duplikati dodani.</string>
     <string name="player_duplicate_action">Dupliciraj</string>
     <string name="player_skip_duplicates">Preskoči duplikate</string>
     <string name="player_skip_duplicates_snack">Duplicirane pjesme su preskočene.</string>
@@ -275,4 +292,81 @@
     <string name="player_edit_playlist_menu">Uredi naziv</string>
     <string name="player_delete_playlist_menu">Obriši playlistu</string>
     <string name="player_default_playlist_name">Moja playlista</string>
+
+    <string name="analyze_subtitle">Zalijepi YouTube poveznicu ili potraži pjesmu</string>
+    <string name="player_play">Reproduciraj</string>
+    <string name="player_shuffle_play">Nasumično</string>
+    <string name="player_sort_cd">Poredaj</string>
+    <string name="player_action_favorite_add">Dodaj u favorite</string>
+    <string name="player_action_favorite_remove">Ukloni iz favorita</string>
+    <string name="player_playlists_empty">Još nemaš nijednu playlistu</string>
+    <string name="player_playlists_empty_body">Grupiraj omiljene pjesme i slušaj ih kad god želiš.</string>
+    <string name="player_playlists_create_first">Stvori playlistu</string>
+    <string name="player_playlists_header">Moje playliste</string>
+    <string name="player_playlist_options_cd">Opcije playliste</string>
+    <string name="player_favorites_empty">Još nema favorita</string>
+    <string name="player_favorites_empty_body">Dodirni srce u reproduktoru da spremiš pjesmu ovdje.</string>
+    <string name="player_search_no_results">Nema rezultata za „%1$s”</string>
+    <string name="player_lyrics_find">Pronađi tekst</string>
+    <string name="player_lyrics_none_hint">Nema spremljenog teksta za ovu pjesmu</string>
+    <string name="player_cd_repeat_one">Ponovi jednu</string>
+    <string name="player_playing_from_library">Svira</string>
+    <string name="settings_section_library">Knjižnica</string>
+    <string name="settings_section_appearance">Izgled</string>
+    <string name="settings_section_general">Općenito</string>
+    <string name="settings_section_about">O aplikaciji</string>
+    <string name="settings_app_tagline">Tvoja glazba, tvoj ritam</string>
+    <plurals name="library_track_count">
+        <item quantity="one">%1$d pjesma</item>
+        <item quantity="few">%1$d pjesme</item>
+        <item quantity="other">%1$d pjesama</item>
+    </plurals>
+
+    <string name="player_playlist_empty">Ova playlista je prazna</string>
+    <string name="player_playlist_empty_body">Dodaj pjesme preko izbornika ⋮ bilo koje pjesme.</string>
+
+    <string name="player_lyrics_instrumental">Instrumentalna pjesma</string>
+
+    <string name="download_phase_searching">Traženje videa…</string>
+    <string name="download_phase_resolving">Dohvaćanje audio poveznice…</string>
+    <string name="download_phase_downloading">Preuzimanje zvuka… %1$d%%</string>
+    <string name="download_phase_converting">Pretvaranje u %1$s…</string>
+    <string name="download_phase_saving">Spremanje u knjižnicu…</string>
+    <string name="download_phase_lyrics">Traženje teksta…</string>
+    <string name="download_notification_downloading">Preuzimanje: %1$s</string>
+    <string name="download_failed_title">Preuzimanje nije uspjelo</string>
+    <string name="download_completed_title">Preuzimanje dovršeno</string>
+    <string name="download_error_video_not_found">Video nije pronađen na YouTubeu.</string>
+    <string name="download_error_age_restricted">Ovaj video ima dobno ograničenje i ne može se preuzeti.</string>
+    <string name="download_error_geo_blocked">Ovaj video nije dostupan u tvojoj zemlji.</string>
+    <string name="download_error_private">Ovaj video je privatan.</string>
+    <string name="download_error_premium">Ovaj sadržaj zahtijeva YouTube Premium.</string>
+    <string name="download_error_bot_check">YouTube ograničava zahtjeve. Pričekaj nekoliko minuta i pokušaj ponovno.</string>
+    <string name="download_error_unavailable">Ovaj video nije dostupan.</string>
+    <string name="download_error_no_audio">Za ovaj video nije pronađen zvuk za preuzimanje.</string>
+    <string name="download_error_network">YouTube nije dostupan. Provjeri vezu.</string>
+    <string name="download_error_incomplete">Preuzimanje je prekinuto prije kraja. Pokušaj ponovno.</string>
+    <string name="download_error_convert">Zvuk nije moguće pretvoriti u %1$s.</string>
+    <string name="download_error_save">Datoteku nije moguće spremiti u odabranu mapu.</string>
+    <string name="download_error_unknown">Preuzimanje nije dovršeno. Pokušaj ponovno.</string>
+    <plurals name="player_added_to_playlists">
+        <item quantity="one">Dodano u %1$d playlistu</item>
+        <item quantity="few">Dodano u %1$d playliste</item>
+        <item quantity="other">Dodano u %1$d playlista</item>
+    </plurals>
+    <plurals name="player_add_to_playlists_button">
+        <item quantity="one">Dodaj u %1$d playlistu</item>
+        <item quantity="few">Dodaj u %1$d playliste</item>
+        <item quantity="other">Dodaj u %1$d playlista</item>
+    </plurals>
+    <string name="sleep_timer_title">Mjerač vremena za spavanje</string>
+    <string name="sleep_timer_end_of_track">Na kraju pjesme</string>
+    <string name="sleep_timer_turn_off">Isključi</string>
+    <string name="sleep_timer_status_end_of_track">Zaustavlja se na kraju ove pjesme</string>
+    <string name="sleep_timer_status_remaining">Zaustavlja se za %1$s</string>
+    <plurals name="sleep_timer_minutes">
+        <item quantity="one">%1$d minuta</item>
+        <item quantity="few">%1$d minute</item>
+        <item quantity="other">%1$d minuta</item>
+    </plurals>
 </resources>

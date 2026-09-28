@@ -1,4 +1,4 @@
-package com.imontalvodev.beatmybeat.ui.network
+package com.imontalvodev.beatmybeat.shared.lyrics
 
 /**
  * Parser mínimo de LRC para uso futuro (scroll/karaoke sincronizado con ExoPlayer).

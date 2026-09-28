@@ -18,6 +18,10 @@ object ReleaseUpdateClient {
     const val LATEST_RELEASE_PAGE_URL =
         "https://github.com/imontalvodev/BeatMyBeat/releases/latest"
 
+    /** GitHub redirige `latest/download/<asset>` al fichero del último release publicado. */
+    private const val LATEST_DOWNLOAD_BASE_URL =
+        "https://github.com/imontalvodev/BeatMyBeat/releases/latest/download/"
+
     private const val LATEST_RELEASE_URL =
         "https://api.github.com/repos/imontalvodev/BeatMyBeat/releases/latest"
     private const val LOG_TAG = "ReleaseUpdateClient"
@@ -44,7 +48,7 @@ object ReleaseUpdateClient {
                     Logger.w(LOG_TAG, "GitHub releases HTTP ${response.code}")
                     return null
                 }
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string().orEmpty()
                 if (body.isBlank()) return null
                 parseRelease(JSONObject(body))
             }
@@ -71,24 +75,30 @@ object ReleaseUpdateClient {
             title = title,
             releaseNotesExcerpt = notes,
             releasePageUrl = releasePageUrl,
-            apkDownloadUrl = findApkDownloadUrl(json.optJSONArray("assets")),
+            apkDownloadUrl = findApkDownloadUrl(json.optJSONArray("assets"), version)
+                ?: latestApkDownloadUrl(version),
         )
     }
 
+    /** Descarga directa del APK del último release, con el nombre que se sube a mano. */
+    internal fun latestApkDownloadUrl(version: String): String =
+        LATEST_DOWNLOAD_BASE_URL + "BeatMyBeat-$version.apk"
+
     /**
-     * Solo acepta el asset con el nombre exacto esperado. Sin fallback al primer `.apk` que
-     * encuentre: un asset inesperado en el release (cuenta comprometida, CI con artefacto raro)
-     * no debe poder colarse como actualización.
+     * Solo acepta los nombres exactos esperados (`BeatMyBeat.apk` o `BeatMyBeat-<versión>.apk`).
+     * Sin fallback al primer `.apk` que encuentre: un asset inesperado en el release (cuenta
+     * comprometida, CI con artefacto raro) no debe poder colarse como actualización.
      */
-    internal fun findApkDownloadUrl(assets: JSONArray?): String? {
+    internal fun findApkDownloadUrl(assets: JSONArray?, version: String? = null): String? {
         if (assets == null || assets.length() == 0) return null
+        val accepted = listOfNotNull("BeatMyBeat.apk", version?.let { "BeatMyBeat-$it.apk" })
 
         for (index in 0 until assets.length()) {
             val asset = assets.optJSONObject(index) ?: continue
             val name = asset.optString("name").trim()
             val downloadUrl = asset.optString("browser_download_url").trim()
             if (downloadUrl.isBlank()) continue
-            if (name.equals("BeatMyBeat.apk", ignoreCase = true)) {
+            if (accepted.any { name.equals(it, ignoreCase = true) }) {
                 return downloadUrl
             }
         }

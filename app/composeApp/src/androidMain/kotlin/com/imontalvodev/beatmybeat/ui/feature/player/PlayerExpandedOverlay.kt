@@ -84,6 +84,16 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.outlined.Loop
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.Card
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import com.imontalvodev.beatmybeat.ui.theme.AppSeekBar
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -156,8 +166,8 @@ import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
-import com.imontalvodev.beatmybeat.ui.network.LrcLine
-import com.imontalvodev.beatmybeat.ui.network.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.Motion
@@ -167,7 +177,6 @@ import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
@@ -307,6 +316,9 @@ internal fun ExpandedPlayerOverlay(
     onKaraokePitchChange: (Float) -> Unit,
     onKaraokeSpeedChange: (Float) -> Unit,
     onResetKaraokeTuning: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
 ) {
     val durationMs = track?.durationMs?.toInt()?.takeIf { it > 0 } ?: 0
     val expandedPlayScale by animateFloatAsState(
@@ -411,49 +423,81 @@ internal fun ExpandedPlayerOverlay(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AnimatedVisibility(visible = hasSyncedLyrics) {
-                    IconButton(onClick = { onKaraokeModeChange(!karaokeMode) }) {
-                        Icon(
-                            imageVector = if (karaokeActive) Icons.Filled.Mic else Icons.Filled.MicOff,
-                            contentDescription = stringResource(
-                                if (karaokeActive) R.string.player_karaoke_exit_cd
-                                else R.string.player_karaoke_enter_cd,
-                            ),
-                            tint = if (karaokeActive) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                // Las acciones de letra viven aquí y no bajo el título: ocupaban una fila entera
-                // en mitad de la pantalla y dejaban a la letra con sitio para una sola frase.
-                if (canRefreshLyrics && !karaokeActive) {
-                    IconButton(onClick = onRefreshLyrics) {
-                        Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = stringResource(R.string.player_lyrics_refresh_cd),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                        )
-                    }
-                }
-                if (canDeleteLyrics && !karaokeActive) {
-                    IconButton(onClick = onDeleteLyrics) {
-                        Icon(
-                            imageVector = Icons.Filled.DeleteOutline,
-                            contentDescription = stringResource(R.string.player_lyrics_delete_cd),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                        )
-                    }
-                }
                 IconButton(onClick = onClose) {
                     Icon(
                         imageVector = Icons.Filled.KeyboardArrowDown,
                         contentDescription = stringResource(R.string.player_cd_close),
                         tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(30.dp),
                     )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = stringResource(R.string.player_playing_from_library),
+                        style = AppText.sectionLabel,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                    )
+                    SleepTimerStatus()
+                }
+                SleepTimerButton()
+                IconButton(onClick = onOpenQueue) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = stringResource(R.string.player_cd_queue),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                // Acciones de letra en un menú: son de uso ocasional y antes eran iconos sueltos
+                // (recargar, papelera) sin contexto junto al botón de cerrar.
+                var lyricsMenuOpen by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { lyricsMenuOpen = true },
+                        enabled = (canRefreshLyrics || canDeleteLyrics) && !karaokeActive,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = stringResource(R.string.player_cd_more_options),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = lyricsMenuOpen,
+                        onDismissRequest = { lyricsMenuOpen = false },
+                        shape = RoundedCornerShape(Radius.sm),
+                    ) {
+                        if (canRefreshLyrics) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.player_lyrics_refresh_cd)) },
+                                leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                                onClick = { lyricsMenuOpen = false; onRefreshLyrics() },
+                            )
+                        }
+                        if (canDeleteLyrics) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = stringResource(R.string.player_lyrics_delete_cd),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = { lyricsMenuOpen = false; onDeleteLyrics() },
+                            )
+                        }
+                    }
                 }
             }
 
@@ -506,21 +550,58 @@ internal fun ExpandedPlayerOverlay(
 
                 Spacer(modifier = Modifier.height(Spacing.lg))
 
-                Text(
-                    text = (track?.title ?: "").toTitleCaseSimple(),
-                    style = if (karaokeActive) AppText.playerTitleCompact else AppText.playerTitle,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(Spacing.xs))
-                Text(
-                    text = (track?.artist ?: "").toDisplayArtist(),
-                    style = AppText.playerArtist,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = (track?.title ?: "").toTitleCaseSimple(),
+                            style = if (karaokeActive) AppText.playerTitleCompact else AppText.playerTitle,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.xs))
+                        Text(
+                            text = (track?.artist ?: "").toDisplayArtist(),
+                            style = AppText.playerArtist,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    AnimatedVisibility(visible = hasSyncedLyrics) {
+                        IconButton(onClick = { onKaraokeModeChange(!karaokeMode) }) {
+                            Icon(
+                                imageVector = if (karaokeActive) Icons.Filled.Mic else Icons.Filled.MicOff,
+                                contentDescription = stringResource(
+                                    if (karaokeActive) R.string.player_karaoke_exit_cd
+                                    else R.string.player_karaoke_enter_cd,
+                                ),
+                                tint = if (karaokeActive) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
+                    val favoriteScale by animateFloatAsState(
+                        targetValue = if (isFavorite) 1.1f else 1f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        label = "favorite_scale",
+                    )
+                    IconButton(onClick = onToggleFavorite) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = stringResource(
+                                if (isFavorite) R.string.player_action_favorite_remove
+                                else R.string.player_action_favorite_add,
+                            ),
+                            tint = if (isFavorite) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                            modifier = Modifier.scale(favoriteScale),
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(Spacing.md))
 
@@ -534,13 +615,7 @@ internal fun ExpandedPlayerOverlay(
                         // Suelo: por debajo de esto no caben ni la frase actual ni la siguiente,
                         // que es justo lo que se quiere ver al arrancar la canción.
                         .heightIn(min = 108.dp)
-                        .clip(RoundedCornerShape(Radius.lg))
-                        .clickable(
-                            enabled = canRefreshLyrics &&
-                                lyricsState is LyricsUiState.Empty &&
-                                !hasSyncedLyrics,
-                            onClick = onRefreshLyrics,
-                        ),
+                        .clip(RoundedCornerShape(Radius.lg)),
                 ) {
                     when {
                         hasSyncedLyrics -> {
@@ -574,13 +649,61 @@ internal fun ExpandedPlayerOverlay(
                                 )
                             }
                         }
-                        else -> {
-                            val bodyText = when (lyricsState) {
-                                LyricsUiState.Idle -> stringResource(R.string.player_lyrics_tap_load)
-                                LyricsUiState.Loading -> stringResource(R.string.player_lyrics_loading)
-                                is LyricsUiState.Ready -> lyricsState.lyrics
-                                is LyricsUiState.Empty -> lyricsState.message
+                        lyricsState is LyricsUiState.Loading -> {
+                            Row(
+                                modifier = Modifier.align(Alignment.Center),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.sm))
+                                Text(
+                                    text = stringResource(R.string.player_lyrics_loading),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                )
                             }
+                        }
+                        lyricsState !is LyricsUiState.Ready -> {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(horizontal = Spacing.lg),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    text = (lyricsState as? LyricsUiState.Empty)?.message
+                                        ?: stringResource(R.string.player_lyrics_none_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                    textAlign = TextAlign.Center,
+                                )
+                                if (canRefreshLyrics) {
+                                    Spacer(modifier = Modifier.height(Spacing.md))
+                                    FilledTonalButton(
+                                        onClick = onRefreshLyrics,
+                                        shape = RoundedCornerShape(Radius.pill),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                                            contentColor = MaterialTheme.colorScheme.onSurface,
+                                        ),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Lyrics,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Spacer(modifier = Modifier.width(Spacing.sm))
+                                        Text(stringResource(R.string.player_lyrics_find))
+                                    }
+                                }
+                            }
+                        }
+                        else -> {
+                            val bodyText = lyricsState.lyrics
                             Text(
                                 text = bodyText,
                                 modifier = Modifier
@@ -613,7 +736,7 @@ internal fun ExpandedPlayerOverlay(
                         formatMs(((localDrag ?: position).coerceIn(0f, 1f) * durationMs).toInt()),
                         formatMs(durationMs),
                     )
-                    Slider(
+                    AppSeekBar(
                         value = sliderValue,
                         modifier = Modifier.semantics {
                             contentDescription = expandedSliderA11y
@@ -654,7 +777,7 @@ internal fun ExpandedPlayerOverlay(
                     ) {
                         IconButton(onClick = onToggleShuffle) {
                             Icon(
-                                imageVector = Icons.Outlined.Shuffle,
+                                imageVector = Icons.Filled.Shuffle,
                                 contentDescription = stringResource(R.string.player_cd_shuffle),
                                 tint = if (shuffleOn) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -709,8 +832,12 @@ internal fun ExpandedPlayerOverlay(
                         }
                         IconButton(onClick = onToggleRepeat) {
                             Icon(
-                                imageVector = Icons.Outlined.Loop,
-                                contentDescription = stringResource(R.string.player_cd_repeat),
+                                imageVector = if (repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne
+                                else Icons.Filled.Repeat,
+                                contentDescription = stringResource(
+                                    if (repeatMode == RepeatMode.ONE) R.string.player_cd_repeat_one
+                                    else R.string.player_cd_repeat,
+                                ),
                                 tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             )

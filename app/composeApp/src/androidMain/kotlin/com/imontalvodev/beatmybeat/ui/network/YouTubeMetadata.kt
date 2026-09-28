@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import com.imontalvodev.beatmybeat.shared.youtube.parseYouTubeVideoTitle
 import okhttp3.Request
 import org.json.JSONObject
 
@@ -25,9 +26,11 @@ fun fetchYouTubeSongMetadata(videoId: String): YouTubeSongMetadata {
             val body = res.body.string()
             val json = JSONObject(body)
             val rawArtist = json.optString("author_name", fallback.artist).ifBlank { fallback.artist }
+            val rawTitle = json.optString("title", fallback.title).ifBlank { fallback.title }
+            val identity = parseYouTubeVideoTitle(rawTitle, rawArtist)
             YouTubeSongMetadata(
-                title = json.optString("title", fallback.title).ifBlank { fallback.title },
-                artist = cleanArtistForLyrics(rawArtist),
+                title = identity.title,
+                artist = identity.artist,
                 thumbnailUrl = json.optString("thumbnail_url", fallback.thumbnailUrl).ifBlank { fallback.thumbnailUrl },
             )
         }

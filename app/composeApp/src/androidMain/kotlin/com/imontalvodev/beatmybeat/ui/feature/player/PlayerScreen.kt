@@ -62,6 +62,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -156,20 +158,22 @@ import coil.compose.AsyncImage
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.ui.data.DeviceTrack
-import com.imontalvodev.beatmybeat.ui.network.isLyricsNetworkFailure
+import com.imontalvodev.beatmybeat.shared.lyrics.isLyricsNetworkFailure
 import com.imontalvodev.beatmybeat.ui.network.LyricsCache
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetchCoordinator
 import com.imontalvodev.beatmybeat.ui.network.LyricsFetcher
-import com.imontalvodev.beatmybeat.ui.network.LrcLine
-import com.imontalvodev.beatmybeat.ui.network.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.Motion
+import com.imontalvodev.beatmybeat.ui.theme.ScreenHeader
+import com.imontalvodev.beatmybeat.ui.theme.Spacing
+import androidx.compose.ui.res.pluralStringResource
 import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
-import com.imontalvodev.beatmybeat.ui.theme.AppMiniBrand
 import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackArtworkHelper
 import com.imontalvodev.beatmybeat.service.PlaybackService
@@ -185,7 +189,7 @@ import org.json.JSONObject
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-private fun Context.sendPlaybackForegroundAction(action: String) {
+internal fun Context.sendPlaybackForegroundAction(action: String) {
     val intent = Intent(this, PlaybackService::class.java).setAction(action)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         ContextCompat.startForegroundService(this, intent)
@@ -199,6 +203,7 @@ private fun Context.sendPlaybackForegroundAction(action: String) {
 fun PlayerScreen(
     modifier: Modifier = Modifier,
     onNavigateToDownloader: () -> Unit = {},
+    onImmersiveChange: (Boolean) -> Unit = {},
 ) {
     val palette = currentBeatMyBeatThemeProfile()
     val viewModel: PlayerViewModel = viewModel()
@@ -217,17 +222,34 @@ fun PlayerScreen(
         ).show()
     }
     val audioPermission = remember {
-        if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
-        else Manifest.permission.READ_EXTERNAL_STORAGE
+        when {
+            Build.VERSION.SDK_INT >= 33 -> Manifest.permission.READ_MEDIA_AUDIO
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> Manifest.permission.READ_EXTERNAL_STORAGE
+            // API 24-28: las descargas se escriben como fichero en Music/BeatMyBeat/. WRITE incluye
+            // READ (mismo grupo), así que un solo diálogo cubre biblioteca y descargas.
+            else -> Manifest.permission.WRITE_EXTERNAL_STORAGE
+        }
     }
     var hasAudioPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
         )
     }
+    // Audio y notificaciones van en una sola petición: Android descarta la segunda si se
+    // lanzan dos a la vez ("Can request only one set of permissions at a time").
+    val startupPermissions = remember {
+        buildList {
+            add(audioPermission)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+        }.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { granted ->
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { results ->
+            val granted = results[audioPermission]
+                ?: (ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED)
             hasAudioPermission = granted
             if (granted) {
                 viewModel.syncLibrary(auto = true)
@@ -332,6 +354,14 @@ fun PlayerScreen(
         )
     }
     var isExpanded by remember { mutableStateOf(false) }
+    // Mini reproductor de otras pestañas: pide abrir el reproductor al llegar a Biblioteca.
+    val expandRequested by PlayerExpandRequest.pending.collectAsState()
+    LaunchedEffect(expandRequested, currentTrack) {
+        if (expandRequested && currentTrack != null) {
+            isExpanded = true
+            PlayerExpandRequest.consume()
+        }
+    }
     var lyricsState by remember { mutableStateOf<LyricsUiState>(LyricsUiState.Idle) }
     // Mantener scroll independiente por pestaña para no perder posición al alternar.
     val songsListState = rememberLazyListState()
@@ -443,6 +473,10 @@ fun PlayerScreen(
     BackHandler(enabled = isExpanded) {
         isExpanded = false
     }
+
+    val currentOnImmersiveChange by rememberUpdatedState(onImmersiveChange)
+    LaunchedEffect(isExpanded) { currentOnImmersiveChange(isExpanded) }
+    DisposableEffect(Unit) { onDispose { currentOnImmersiveChange(false) } }
 
     // Mantener el repeat del servicio (reproducción real) en sincronía con la UI.
     LaunchedEffect(boundService, repeatMode) {
@@ -578,15 +612,16 @@ fun PlayerScreen(
     var queueSheetOpen by remember { mutableStateOf(false) }
     var addToPlaylistDialogOpen by remember { mutableStateOf(false) }
     var addToPlaylistTracks by remember { mutableStateOf<List<DeviceTrack>>(emptyList()) }
-    var addToPlaylistExistingId by remember { mutableStateOf<Long?>(null) }
+    // Varias playlists a la vez: antes había que repetir el flujo una vez por playlist.
+    var addToPlaylistSelectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var addToPlaylistNewName by remember { mutableStateOf("") }
     var addToPlaylistPickerExpanded by remember { mutableStateOf(false) }
     var addToPlaylistSearchQuery by remember { mutableStateOf("") }
     var creatingNewPlaylistInline by remember { mutableStateOf(false) }
 
+    /** Pistas que ya estaban, agrupadas por playlist destino (playlistId → trackIds). */
     data class DuplicateConfirmState(
-        val trackIds: List<Long>,
-        val playlistId: Long,
+        val tracksByPlaylist: Map<Long, List<Long>>,
     )
 
     var duplicateDialog by remember { mutableStateOf<DuplicateConfirmState?>(null) }
@@ -598,8 +633,8 @@ fun PlayerScreen(
     LaunchedEffect(Unit) {
         val granted = ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
         hasAudioPermission = granted
-        if (!granted) {
-            permissionLauncher.launch(audioPermission)
+        if (startupPermissions.isNotEmpty()) {
+            permissionLauncher.launch(startupPermissions)
         } else {
             viewModel.syncLibrary(auto = true)
         }
@@ -637,7 +672,7 @@ fun PlayerScreen(
                             textAlign = TextAlign.Center,
                         )
                         Spacer(modifier = Modifier.height(20.dp))
-                        TextButton(onClick = { permissionLauncher.launch(audioPermission) }) {
+                        TextButton(onClick = { permissionLauncher.launch(arrayOf(audioPermission)) }) {
                             Text(stringResource(R.string.player_audio_permission_grant))
                         }
                     }
@@ -667,7 +702,7 @@ fun PlayerScreen(
         }
         currentArtwork = null
 
-        val cached = ArtworkCache.getUri(track.uri)
+        val cached = ArtworkCache.get(track.uri, PLAYER_ARTWORK_MAX_PX)
         if (cached != null && !cached.isRecycled) {
             currentArtwork = cached
             return@LaunchedEffect
@@ -684,7 +719,7 @@ fun PlayerScreen(
 
         if (currentTrack?.uri != track.uri) return@LaunchedEffect
         currentArtwork = loaded
-        if (loaded != null) ArtworkCache.putUri(track.uri, loaded)
+        if (loaded != null) ArtworkCache.put(track.uri, PLAYER_ARTWORK_MAX_PX, loaded)
     }
 
     // Letras: solo caché local (offline-first). Se rellenan al descargar.
@@ -718,6 +753,10 @@ fun PlayerScreen(
         val cachedEntry = withContext(Dispatchers.IO) {
             LyricsCache.getEntry(context, title, artist)
         }
+        if (cachedEntry?.instrumental == true) {
+            lyricsState = LyricsUiState.Empty(resources.getString(R.string.player_lyrics_instrumental))
+            return@LaunchedEffect
+        }
         if (cachedEntry != null && cachedEntry.hasAnyLyrics()) {
             lyricsState = LyricsUiState.Ready(
                 lyrics = cachedEntry.displayPlain(),
@@ -729,7 +768,7 @@ fun PlayerScreen(
             LyricsUiState.Loading
         } else {
             LyricsUiState.Empty(
-                resources.getString(R.string.player_lyrics_tap_download),
+                resources.getString(R.string.player_lyrics_none_hint),
             )
         }
     }
@@ -777,7 +816,7 @@ fun PlayerScreen(
             sanitizeTitle(uriTitle),
             track.title.trim(),
         ).distinct().filter { it.isNotBlank() }
-        val artists = com.imontalvodev.beatmybeat.ui.network.buildLyricsArtistCandidates(
+        val artists = com.imontalvodev.beatmybeat.shared.lyrics.buildLyricsArtistCandidates(
             meta.artist,
             listOf(track.artist.trim(), metaPair.second.trim()),
         )
@@ -854,10 +893,10 @@ fun PlayerScreen(
                     } else {
                         // Un fallo de red no es lo mismo que "esta canción no tiene letra":
                         // en el primer caso reintentar sirve de algo, en el segundo no.
-                        val message = if (isLyricsNetworkFailure(res.error)) {
-                            R.string.player_lyrics_network_error
-                        } else {
-                            R.string.player_lyrics_unavailable
+                        val message = when {
+                            res.isInstrumental -> R.string.player_lyrics_instrumental
+                            isLyricsNetworkFailure(res.error) -> R.string.player_lyrics_network_error
+                            else -> R.string.player_lyrics_unavailable
                         }
                         lyricsState = LyricsUiState.Empty(resources.getString(message))
                     }
@@ -873,7 +912,7 @@ fun PlayerScreen(
         uiScope.launch {
             withContext(Dispatchers.IO) { clearLyricsCacheForTrack(track) }
             lyricsState = LyricsUiState.Empty(
-                resources.getString(R.string.player_lyrics_tap_download),
+                resources.getString(R.string.player_lyrics_none_hint),
             )
             showToast(resources.getString(R.string.player_lyrics_deleted))
         }
@@ -885,7 +924,6 @@ fun PlayerScreen(
     val cannotPlayFileText = stringResource(R.string.player_error_cannot_play_file)
     val songDeletedText = stringResource(R.string.player_song_deleted)
     val deleteCancelledText = stringResource(R.string.player_delete_cancelled)
-    val selectionModeEnabledText = stringResource(R.string.player_selection_mode_enabled)
     val queueAddedText = stringResource(R.string.player_added_to_queue_end)
     val playNextAddedText = stringResource(R.string.player_play_next_added)
 
@@ -1123,11 +1161,11 @@ fun PlayerScreen(
         persistPlaybackSnapshot()
     }
 
-    val persistOnPause by rememberUpdatedState {
-        {
-            if (queueSnapshotHydrated) {
-                persistPlaybackSnapshot(PlaybackService.state.value.positionMs)
-            }
+    // Ojo: una sola lambda. `rememberUpdatedState { { … } }` guardaba una lambda que devolvía
+    // otra y `persistOnPause()` nunca llegaba a ejecutar el guardado.
+    val persistOnPause by rememberUpdatedState<() -> Unit> {
+        if (queueSnapshotHydrated) {
+            persistPlaybackSnapshot(PlaybackService.state.value.positionMs)
         }
     }
 
@@ -1255,7 +1293,12 @@ fun PlayerScreen(
     }
     LaunchedEffect(playbackPersistenceKey, queueSnapshotHydrated) {
         if (!queueSnapshotHydrated) return@LaunchedEffect
-        persistPlaybackSnapshot()
+        // Posición real, no la de la composición: justo tras hidratar aún vale 0 y machacaba
+        // la guardada, así que un segundo cierre del proceso perdía dónde iba la pista.
+        val live = PlaybackService.state.value
+        val positionMs = pendingRestore?.positionMs
+            ?: if (live.currentMediaId == currentTrack?.uri) live.positionMs else 0L
+        persistPlaybackSnapshot(positionMs)
     }
 
     fun onToggleShuffle() {
@@ -1469,6 +1512,32 @@ fun PlayerScreen(
         if (repeatMode == RepeatMode.LIST) {
             queueRepeatSnapshot = listOf(pool[startIndex]) + queue.toList()
             queueRepeatIndex = 0
+        }
+    }
+
+    fun startCollectionNow(shuffled: Boolean) {
+        val pool = playbackPoolTracks
+        if (pool.isEmpty()) return
+        startPlaybackFromCollection(if (shuffled) pool.random() else pool.first())
+    }
+
+    // "Reproducir" y "Aleatorio" fijan el modo aleatorio antes de arrancar. El cambio llega por el
+    // StateFlow del ViewModel, así que el arranque espera a que shuffleOn refleje el modo pedido.
+    var pendingCollectionShuffle by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(pendingCollectionShuffle, shuffleOn) {
+        val wanted = pendingCollectionShuffle ?: return@LaunchedEffect
+        if (shuffleOn != wanted) return@LaunchedEffect
+        pendingCollectionShuffle = null
+        startCollectionNow(wanted)
+    }
+
+    fun playCollection(shuffled: Boolean) {
+        if (playbackPoolTracks.isEmpty()) return
+        if (shuffleOn == shuffled) {
+            startCollectionNow(shuffled)
+        } else {
+            pendingCollectionShuffle = shuffled
+            onToggleShuffle()
         }
     }
 
@@ -1706,60 +1775,36 @@ fun PlayerScreen(
                 modifier = Modifier
                     .weight(1f, fill = true)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(horizontal = Spacing.lg),
             ) {
-                AppMiniBrand()
-                Spacer(modifier = Modifier.height(4.dp))
-
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        textAlign = TextAlign.Center,
-                        platformStyle = androidx.compose.ui.text.PlatformTextStyle(
-                            includeFontPadding = false,
-                        ),
+                ScreenHeader(
+                    title = stringResource(R.string.nav_player),
+                    subtitle = pluralStringResource(
+                        R.plurals.library_track_count,
+                        deviceTracks.size,
+                        deviceTracks.size,
                     ),
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.player_search_placeholder),
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodyMedium,
+                    actions = {
+                        LibrarySortMenu(
+                            selectedSort = sortOption,
+                            onSelectSort = { sortOption = it },
                         )
                     },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(
-                                onClick = { query = "" },
-                                modifier = Modifier.size(36.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.player_search_clear_cd),
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                )
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(18.dp),
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                LibrarySearchField(
+                    query = query,
+                    onQueryChange = { query = it },
+                )
 
-                LibraryFiltersMenu(
+                Spacer(modifier = Modifier.height(Spacing.md))
+
+                LibrarySectionChips(
                     selectedSection = selectedSection,
-                    selectedSort = sortOption,
                     onSelectSection = { selectedSection = it },
-                    onSelectSort = { sortOption = it },
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(Spacing.md))
 
                 if (selectedSection == PlayerSection.Playlist) {
                     if (playlistDetailOpen && selectedPlaylistId != null) {
@@ -1787,13 +1832,22 @@ fun PlayerScreen(
                                 playlistDetailOpen = true
                             },
                             onCreateEmpty = {
-                                val res = viewModel.createPlaylist(
-                                    resources.getString(R.string.player_default_playlist_name),
-                                )
-                                selectedPlaylistId = when (res) {
+                                // Nombre libre ("Mi playlist", "Mi playlist 2"…): con el nombre fijo,
+                                // la segunda pulsación chocaba con la existente y no hacía nada.
+                                val base = resources.getString(R.string.player_default_playlist_name)
+                                val taken = playlists.map { it.name.lowercase() }.toSet()
+                                val name = generateSequence(1) { it + 1 }
+                                    .map { n -> if (n == 1) base else "$base $n" }
+                                    .first { it.lowercase() !in taken }
+                                val res = viewModel.createPlaylist(name)
+                                val id = when (res) {
                                     is PlayerViewModel.CreatePlaylistResult.Created -> res.id
                                     is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> res.id
                                 }
+                                selectedPlaylistId = id
+                                // Pedir nombre justo después de crearla.
+                                playlistRenameDialogId = id
+                                playlistRenameNewName = name
                             },
                             onRequestDelete = { id ->
                                 playlistDeleteDialogId = id
@@ -1805,62 +1859,110 @@ fun PlayerScreen(
                             },
                         )
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(Spacing.sm))
                 }
-
-                Spacer(modifier = Modifier.height(6.dp))
 
                 val showTracksArea = selectedSection != PlayerSection.Playlist || playlistDetailOpen
 
                 val selectedTracksOrdered = visibleTracks.filter { selectedTrackUris.contains(it.uri) }
-                if (selectionMode && showTracksArea) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(
-                                R.string.player_selection_count,
-                                selectedTracksOrdered.size,
-                            ),
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextButton(
-                                onClick = {
-                                    selectedTrackUris = visibleTracks.map { it.uri }.toSet()
-                                },
-                                enabled = visibleTracks.isNotEmpty() &&
-                                    selectedTracksOrdered.size < visibleTracks.size,
-                            ) {
-                                Text(stringResource(R.string.player_select_all))
-                            }
-                            TextButton(onClick = { clearTrackSelection() }) {
-                                Text(stringResource(R.string.common_cancel))
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
+
+                fun bulkQueue() {
+                    if (selectedTracksOrdered.isEmpty()) return
+                    appendTracksToQueue(selectedTracksOrdered)
+                    showToast(
+                        if (selectedTracksOrdered.size == 1) queueAddedText
+                        else resources.getString(R.string.player_bulk_queue_added, selectedTracksOrdered.size),
+                    )
+                    clearTrackSelection()
                 }
 
-                if (showTracksArea) {
-                    PrimaryPillButton(
-                        text = stringResource(R.string.player_play_all_tracks),
-                        onClick = {
-                            if (visibleTracks.isEmpty()) return@PrimaryPillButton
-                            val startTrack = if (shuffleOn) {
-                                visibleTracks.shuffled(Random(System.currentTimeMillis())).first()
-                            } else {
-                                visibleTracks.first()
-                            }
-                            startPlaybackFromCollection(startTrack)
-                        },
+                fun bulkPlayNext() {
+                    if (selectedTracksOrdered.isEmpty()) return
+                    insertTracksPlayNext(selectedTracksOrdered)
+                    showToast(
+                        if (selectedTracksOrdered.size == 1) playNextAddedText
+                        else resources.getString(R.string.player_bulk_play_next_added, selectedTracksOrdered.size),
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    clearTrackSelection()
+                }
+
+                fun bulkToggleFavorite() {
+                    if (selectedTracksOrdered.isEmpty()) return
+                    selectedTracksOrdered.forEach { viewModel.toggleFavorite(it) }
+                    clearTrackSelection()
+                }
+
+                fun bulkAddToPlaylist() {
+                    if (selectedTracksOrdered.isEmpty()) return
+                    addToPlaylistDialogOpen = true
+                    addToPlaylistTracks = selectedTracksOrdered
+                    addToPlaylistSelectedIds = setOfNotNull(selectedPlaylistId ?: playlists.firstOrNull()?.id)
+                    addToPlaylistNewName = ""
+                    addToPlaylistPickerExpanded = false
+                }
+
+                fun bulkDeleteFromDevice() {
+                    if (selectedTracksOrdered.isEmpty()) return
+                    requestDeleteFromDevice(selectedTracksOrdered)
+                }
+
+                fun bulkRemoveFromPlaylist() {
+                    val pid = selectedPlaylistId ?: return
+                    if (selectedTracksOrdered.isEmpty()) return
+                    selectedTracksOrdered.forEach { tr ->
+                        viewModel.removeSongFromPlaylist(
+                            trackId = tr.id,
+                            playlistId = pid,
+                            removeAllOccurrences = true,
+                        )
+                    }
+                    showToast(
+                        resources.getString(
+                            if (selectedTracksOrdered.size == 1) R.string.player_playlist_removed_one
+                            else R.string.player_playlist_removed_many,
+                        ),
+                    )
+                    clearTrackSelection()
+                }
+
+                val bulkRemoveAvailable = selectedSection == PlayerSection.Playlist && selectedPlaylistId != null
+                if (showTracksArea) {
+                    AnimatedContent(
+                        targetState = selectionMode,
+                        transitionSpec = {
+                            fadeIn(tween(Motion.STANDARD)) togetherWith fadeOut(tween(Motion.QUICK))
+                        },
+                        label = "library_action_row",
+                    ) { selecting ->
+                        if (selecting) {
+                            SelectionActionBar(
+                                selectedCount = selectedTracksOrdered.size,
+                                canSelectAll = visibleTracks.isNotEmpty() &&
+                                    selectedTracksOrdered.size < visibleTracks.size,
+                                onSelectAll = { selectedTrackUris = visibleTracks.map { it.uri }.toSet() },
+                                onClose = { clearTrackSelection() },
+                                actions = {
+                                    TrackSelectionOverflowMenu(
+                                        selectedCount = selectedTracksOrdered.size,
+                                        contentDescription = stringResource(R.string.player_selection_actions_cd),
+                                        onQueue = ::bulkQueue,
+                                        onPlayNext = ::bulkPlayNext,
+                                        onToggleFavorite = ::bulkToggleFavorite,
+                                        onAddToPlaylist = ::bulkAddToPlaylist,
+                                        onDeleteFromDevice = ::bulkDeleteFromDevice,
+                                        showRemoveFromPlaylist = bulkRemoveAvailable,
+                                        onRemoveFromPlaylist = ::bulkRemoveFromPlaylist,
+                                    )
+                                },
+                            )
+                        } else if (visibleTracks.isNotEmpty()) {
+                            PlayShuffleRow(
+                                onPlay = { playCollection(shuffled = false) },
+                                onShuffle = { playCollection(shuffled = true) },
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.sm))
                 }
 
                 if (showTracksArea) {
@@ -1906,12 +2008,19 @@ fun PlayerScreen(
                             buildAlphabetIndex(tracksInSection.map { it.title })
                         }
                     }
+                    if (tracksInSection.isEmpty()) {
+                        LibraryListEmptyHint(
+                            section = section,
+                            query = query,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else
                     Row(modifier = Modifier.weight(1f)) {
                     LazyColumn(
                         state = activeListState,
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        contentPadding = PaddingValues(bottom = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        contentPadding = PaddingValues(bottom = Spacing.sm),
                     ) {
                         items(
                             items = tracksInSection,
@@ -1930,11 +2039,8 @@ fun PlayerScreen(
                             isSelected = selectedTrackUris.contains(track.uri),
                             selectionMode = selectionMode,
                             showOverflowMenu = !selectionMode,
-                            showSelectedActionsMenu = selectionMode && selectedTrackUris.contains(track.uri),
-                            onEnterSelectionMode = {
-                                enterSelectionMode(track.uri)
-                                showToast(selectionModeEnabledText)
-                            },
+                            showSelectedActionsMenu = false,
+                            onEnterSelectionMode = { enterSelectionMode(track.uri) },
                             onToggleSelection = { toggleTrackSelection(track.uri) },
                             onPlayTrack = { startPlaybackFromCollection(track) },
                             onQueue = {
@@ -1949,78 +2055,18 @@ fun PlayerScreen(
                             onAddToPlaylist = {
                                 addToPlaylistDialogOpen = true
                                 addToPlaylistTracks = listOf(track)
-                                addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
+                                addToPlaylistSelectedIds = setOfNotNull(selectedPlaylistId ?: playlists.firstOrNull()?.id)
                                 addToPlaylistNewName = ""
                             },
                             onDeleteFromDevice = { requestDeleteFromDevice(listOf(track)) },
-                            onBulkQueue = {
-                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                appendTracksToQueue(selectedTracksOrdered)
-                                showToast(
-                                    if (selectedTracksOrdered.size == 1) {
-                                        queueAddedText
-                                    } else {
-                                        resources.getString(
-                                            R.string.player_bulk_queue_added,
-                                            selectedTracksOrdered.size,
-                                        )
-                                    },
-                                )
-                                clearTrackSelection()
-                            },
-                            onBulkPlayNext = {
-                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                insertTracksPlayNext(selectedTracksOrdered)
-                                showToast(
-                                    if (selectedTracksOrdered.size == 1) {
-                                        playNextAddedText
-                                    } else {
-                                        resources.getString(
-                                            R.string.player_bulk_play_next_added,
-                                            selectedTracksOrdered.size,
-                                        )
-                                    },
-                                )
-                                clearTrackSelection()
-                            },
-                            onBulkToggleFavorite = {
-                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                selectedTracksOrdered.forEach { viewModel.toggleFavorite(it) }
-                                clearTrackSelection()
-                            },
-                            onBulkAddToPlaylist = {
-                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                addToPlaylistDialogOpen = true
-                                addToPlaylistTracks = selectedTracksOrdered
-                                addToPlaylistExistingId = selectedPlaylistId ?: playlists.firstOrNull()?.id
-                                addToPlaylistNewName = ""
-                                addToPlaylistPickerExpanded = false
-                            },
-                            onBulkDeleteFromDevice = {
-                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                requestDeleteFromDevice(selectedTracksOrdered)
-                            },
+                            onBulkQueue = ::bulkQueue,
+                            onBulkPlayNext = ::bulkPlayNext,
+                            onBulkToggleFavorite = ::bulkToggleFavorite,
+                            onBulkAddToPlaylist = ::bulkAddToPlaylist,
+                            onBulkDeleteFromDevice = ::bulkDeleteFromDevice,
                             bulkSelectionCount = selectedTracksOrdered.size,
-                            showBulkRemoveFromPlaylist = section == PlayerSection.Playlist && selectedPlaylistId != null,
-                            onBulkRemoveFromPlaylist = {
-                                val pid = selectedPlaylistId ?: return@TrackRow
-                                if (selectedTracksOrdered.isEmpty()) return@TrackRow
-                                selectedTracksOrdered.forEach { tr ->
-                                    viewModel.removeSongFromPlaylist(
-                                        trackId = tr.id,
-                                        playlistId = pid,
-                                        removeAllOccurrences = true,
-                                    )
-                                }
-                                showToast(
-                                    if (selectedTracksOrdered.size == 1) {
-                                        resources.getString(R.string.player_playlist_removed_one)
-                                    } else {
-                                        resources.getString(R.string.player_playlist_removed_many)
-                                    },
-                                )
-                                clearTrackSelection()
-                            },
+                            showBulkRemoveFromPlaylist = bulkRemoveAvailable,
+                            onBulkRemoveFromPlaylist = ::bulkRemoveFromPlaylist,
                             isFavorite = isFavorite,
                             showRemoveFromPlaylist = showRemoveFromPlaylist,
                             onRemoveFromPlaylist = {
@@ -2059,34 +2105,23 @@ fun PlayerScreen(
                 MiniPlayerBar(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                track = currentTrack,
-                isPlaying = isPlaying,
-                position = sliderPosition,
-                artwork = currentArtwork,
-                queueSize = playbackQueueTotalCount(),
-                sliderAccessibilityLabel = miniSliderA11y,
-                onTogglePlay = {
-                    currentTrack ?: return@MiniPlayerBar
-                    context.sendPlaybackForegroundAction(
-                        if (isPlaying) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY,
-                    )
-                },
-                onPrev = {
-                    context.sendPlaybackForegroundAction(PlaybackService.ACTION_PREV)
-                },
-                onNext = {
-                    context.sendPlaybackForegroundAction(PlaybackService.ACTION_NEXT)
-                },
-                onSeekPreview = { newPos -> sliderDragPos = newPos },
-                onSeekCommit = { finalPos ->
-                    if (playbackDurationMs > 0) {
-                        boundService?.seekTo((playbackDurationMs * finalPos).toLong())
-                    }
-                    sliderDragPos = null
-                },
-                onOpenExpanded = { isExpanded = true },
-                onOpenQueue = { queueSheetOpen = true },
+                        .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+                    title = currentTrack?.title,
+                    artist = currentTrack?.artist,
+                    isPlaying = isPlaying,
+                    position = sliderPosition,
+                    artwork = currentArtwork,
+                    progressAccessibilityLabel = miniSliderA11y,
+                    onTogglePlay = {
+                        currentTrack ?: return@MiniPlayerBar
+                        context.sendPlaybackForegroundAction(
+                            if (isPlaying) PlaybackService.ACTION_PAUSE else PlaybackService.ACTION_PLAY,
+                        )
+                    },
+                    onNext = {
+                        context.sendPlaybackForegroundAction(PlaybackService.ACTION_NEXT)
+                    },
+                    onOpenExpanded = { isExpanded = true },
                 )
             }
         }
@@ -2156,6 +2191,9 @@ fun PlayerScreen(
                     onKaraokePitchChange = { viewModel.setKaraokePitchSemitones(it) },
                     onKaraokeSpeedChange = { viewModel.setKaraokeSpeed(it) },
                     onResetKaraokeTuning = { viewModel.resetKaraokeTuning() },
+                    isFavorite = currentTrack?.let { favoriteIds.contains(it.id) } == true,
+                    onToggleFavorite = { currentTrack?.let { viewModel.toggleFavorite(it) } },
+                    onOpenQueue = { queueSheetOpen = true },
                 )
             }
 
@@ -2197,287 +2235,34 @@ fun PlayerScreen(
                 } else {
                     queue.toList()
                 }
-                val canReorder = !shuffleOn
-                val queueListState = rememberLazyListState()
-                var draggingIndex by remember { mutableStateOf(-1) }
-                var dragOffsetPx by remember { mutableStateOf(0f) }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 4.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(onClick = { queueSheetOpen = false }) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(R.string.common_cancel),
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.player_queue_title),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = stringResource(
-                                        R.string.player_queue_total,
-                                        playbackQueueTotalCount(),
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                                )
-                            }
-                            if (displayQueue.isNotEmpty()) {
-                                TextButton(onClick = {
-                                    clearPlaybackQueueState(keepCurrentInShuffle = shuffleOn)
-                                }) {
-                                    Text(stringResource(R.string.player_clear_queue))
-                                }
-                            }
+                PlayerQueueScreen(
+                    currentTrack = currentTrack,
+                    upNext = displayQueue,
+                    totalCount = playbackQueueTotalCount(),
+                    shuffleOn = shuffleOn,
+                    onClose = { queueSheetOpen = false },
+                    onClear = { clearPlaybackQueueState(keepCurrentInShuffle = shuffleOn) },
+                    onPlayItem = { idx, t ->
+                        if (!shuffleOn) {
+                            val remaining = queue.drop(idx + 1)
+                            queue.clear()
+                            queue.addAll(remaining)
                         }
-
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                        ) {
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        if (currentTrack != null) {
-                            Text(
-                                text = stringResource(R.string.player_now_playing),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                ),
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(Radius.sm)),
-                                    ) {
-                                        ArtworkThumbnail(track = currentTrack!!, sizeDp = 36)
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = currentTrack!!.title.toTitleCaseSimple(),
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Text(
-                                            text = currentTrack!!.artist.toDisplayArtist(),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
+                        playTrack(t, clearQueue = false)
+                    },
+                    onRemoveItem = { idx ->
+                        if (idx in queue.indices) {
+                            queue.removeAt(idx)
+                            syncQueueToService()
                         }
-
-                        if (displayQueue.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 32.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.player_queue_empty_hint),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
-                        } else {
-                            Text(
-                                text = stringResource(R.string.player_queue_up_next, displayQueue.size) +
-                                    if (shuffleOn) " • ${stringResource(R.string.player_shuffle_suffix)}" else "",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            LazyColumn(
-                                state = queueListState,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                itemsIndexed(
-                                    items = displayQueue,
-                                    key = { idx, t -> t.id.toString() + idx },
-                                ) { idx, t ->
-                                    val isDragging = idx == draggingIndex
-                                    Card(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .zIndex(if (isDragging) 1f else 0f)
-                                            .offset {
-                                                IntOffset(0, if (isDragging) dragOffsetPx.roundToInt() else 0)
-                                            },
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = if (isDragging) {
-                                                MaterialTheme.colorScheme.surfaceContainerHighest
-                                            } else {
-                                                MaterialTheme.colorScheme.surfaceContainerHigh
-                                            },
-                                        ),
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        ) {
-                                            if (canReorder) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.DragHandle,
-                                                    contentDescription = stringResource(R.string.player_reorder_cd),
-                                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                                    modifier = Modifier
-                                                        .size(20.dp)
-                                                        .pointerInput(idx) {
-                                                            detectDragGesturesAfterLongPress(
-                                                                onDragStart = {
-                                                                    draggingIndex = idx
-                                                                    dragOffsetPx = 0f
-                                                                },
-                                                                onDrag = { change, dragAmount ->
-                                                                    change.consume()
-                                                                    dragOffsetPx += dragAmount.y
-                                                                    val itemHeight = queueListState.layoutInfo.visibleItemsInfo
-                                                                        .firstOrNull { it.index == draggingIndex }
-                                                                        ?.size ?: return@detectDragGesturesAfterLongPress
-                                                                    if (dragOffsetPx > itemHeight / 2 &&
-                                                                        draggingIndex < queue.lastIndex
-                                                                    ) {
-                                                                        queue.add(draggingIndex + 1, queue.removeAt(draggingIndex))
-                                                                        draggingIndex += 1
-                                                                        dragOffsetPx -= itemHeight
-                                                                    } else if (dragOffsetPx < -itemHeight / 2 &&
-                                                                        draggingIndex > 0
-                                                                    ) {
-                                                                        queue.add(draggingIndex - 1, queue.removeAt(draggingIndex))
-                                                                        draggingIndex -= 1
-                                                                        dragOffsetPx += itemHeight
-                                                                    }
-                                                                },
-                                                                onDragEnd = {
-                                                                    draggingIndex = -1
-                                                                    dragOffsetPx = 0f
-                                                                    syncQueueToService()
-                                                                },
-                                                                onDragCancel = {
-                                                                    draggingIndex = -1
-                                                                    dragOffsetPx = 0f
-                                                                },
-                                                            )
-                                                        },
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = "${idx + 1}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                                                    modifier = Modifier.width(20.dp),
-                                                )
-                                            }
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(34.dp)
-                                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(Radius.sm)),
-                                            ) {
-                                                ArtworkThumbnail(track = t, sizeDp = 34)
-                                            }
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = t.title.toTitleCaseSimple(),
-                                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                                Text(
-                                                    text = t.artist.toDisplayArtist(),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                            }
-                                            // Saltar directamente a esta canción
-                                            IconButton(
-                                                onClick = {
-                                                    if (!shuffleOn) {
-                                                        val remaining = queue.drop(idx + 1)
-                                                        repeat(queue.size) { queue.removeAt(0) }
-                                                        queue.addAll(remaining)
-                                                    }
-                                                    playTrack(t, clearQueue = false)
-                                                },
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.PlayArrow,
-                                                    contentDescription = stringResource(R.string.player_play_now_cd),
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(20.dp),
-                                                )
-                                            }
-                                            // Quitar de la cola (solo en modo no-shuffle)
-                                            if (!shuffleOn) {
-                                                IconButton(
-                                                    onClick = {
-                                                        queue.removeAt(idx)
-                                                        syncQueueToService()
-                                                    },
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.Close,
-                                                        contentDescription = stringResource(R.string.player_remove_from_queue_cd),
-                                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                                        modifier = Modifier.size(18.dp),
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                    },
+                    onMoveItem = { from, to ->
+                        if (from in queue.indices && to in queue.indices) {
+                            queue.add(to, queue.removeAt(from))
                         }
-                        }
-                    }
-                }
+                    },
+                    onMoveFinished = { syncQueueToService() },
+                )
                 }
                 }
             }
@@ -2512,9 +2297,6 @@ fun PlayerScreen(
                     enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
                 ) {
                 val tracksToAdd = addToPlaylistTracks
-                val currentSelectedId = addToPlaylistExistingId
-                    ?: selectedPlaylistId
-                    ?: playlists.firstOrNull()?.id
                 val tracksById = remember(deviceTracks) { deviceTracks.associateBy { it.id } }
                 val filteredPlaylists = remember(playlists, addToPlaylistSearchQuery) {
                     if (addToPlaylistSearchQuery.isBlank()) {
@@ -2659,7 +2441,7 @@ fun PlayerScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 items(filteredPlaylists, key = { it.id }) { p ->
-                                    val selected = p.id == (addToPlaylistExistingId ?: currentSelectedId)
+                                    val selected = p.id in addToPlaylistSelectedIds
                                     val coverTracks = remember(p.songIds, tracksById) {
                                         p.songIds.take(4).mapNotNull { tracksById[it] }
                                     }
@@ -2667,8 +2449,11 @@ fun PlayerScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
-                                                addToPlaylistExistingId = p.id
-                                                creatingNewPlaylistInline = false
+                                                addToPlaylistSelectedIds = if (selected) {
+                                                    addToPlaylistSelectedIds - p.id
+                                                } else {
+                                                    addToPlaylistSelectedIds + p.id
+                                                }
                                             },
                                         shape = RoundedCornerShape(Radius.sm),
                                         colors = CardDefaults.cardColors(
@@ -2704,8 +2489,9 @@ fun PlayerScreen(
                                                     overflow = TextOverflow.Ellipsis,
                                                 )
                                                 Text(
-                                                    text = stringResource(
-                                                        R.string.player_playlist_song_count_only,
+                                                    text = pluralStringResource(
+                                                        R.plurals.library_track_count,
+                                                        p.songIds.size,
                                                         p.songIds.size,
                                                     ),
                                                     style = MaterialTheme.typography.labelSmall,
@@ -2714,9 +2500,9 @@ fun PlayerScreen(
                                             }
                                             Icon(
                                                 imageVector = if (selected) {
-                                                    Icons.Filled.CheckCircle
+                                                    Icons.Filled.CheckBox
                                                 } else {
-                                                    Icons.Outlined.RadioButtonUnchecked
+                                                    Icons.Filled.CheckBoxOutlineBlank
                                                 },
                                                 contentDescription = if (selected) {
                                                     stringResource(R.string.player_playlist_selected)
@@ -2758,16 +2544,14 @@ fun PlayerScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
                                 enabled = addToPlaylistNewName.isNotBlank() ||
-                                    addToPlaylistExistingId != null ||
+                                    addToPlaylistSelectedIds.isNotEmpty() ||
                                     playlists.isEmpty(),
                                 onClick = {
                                 val newName = addToPlaylistNewName.trim()
-                                val chosenId =
-                                    addToPlaylistExistingId
-                                        ?: selectedPlaylistId
-                                        ?: playlists.firstOrNull()?.id
+                                // Solo ids que sigan existiendo (una playlist pudo borrarse mientras tanto).
+                                val chosenIds = playlists.map { it.id }.filter { it in addToPlaylistSelectedIds }
 
-                                val targetPlaylistId = if (newName.isNotBlank()) {
+                                val createdPlaylistId: Long? = if (newName.isNotBlank()) {
                                     val res = viewModel.createPlaylist(newName)
                                     when (res) {
                                         is PlayerViewModel.CreatePlaylistResult.Created -> {
@@ -2782,70 +2566,73 @@ fun PlayerScreen(
                                             res.id
                                         }
                                     }
-                                } else {
-                                    val existingId = chosenId
-                                    if (existingId == null) {
-                                        // UX: si no hay playlist todavía, crear una por defecto y continuar.
-                                        when (val created = viewModel.createPlaylist(
-                                            resources.getString(R.string.player_default_playlist_name),
-                                        )) {
-                                            is PlayerViewModel.CreatePlaylistResult.Created -> {
-                                                selectedPlaylistId = created.id
-                                                showToast(resources.getString(R.string.player_playlist_default_created))
-                                                created.id
-                                            }
-                                            is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
-                                                selectedPlaylistId = created.id
-                                                created.id
-                                            }
+                                } else if (chosenIds.isEmpty()) {
+                                    // UX: si no hay playlist todavía, crear una por defecto y continuar.
+                                    when (val created = viewModel.createPlaylist(
+                                        resources.getString(R.string.player_default_playlist_name),
+                                    )) {
+                                        is PlayerViewModel.CreatePlaylistResult.Created -> {
+                                            selectedPlaylistId = created.id
+                                            showToast(resources.getString(R.string.player_playlist_default_created))
+                                            created.id
                                         }
-                                    } else {
-                                        existingId
+                                        is PlayerViewModel.CreatePlaylistResult.AlreadyExists -> {
+                                            selectedPlaylistId = created.id
+                                            created.id
+                                        }
                                     }
+                                } else {
+                                    null
                                 }
+                                val targetPlaylistIds = (chosenIds + listOfNotNull(createdPlaylistId)).distinct()
 
-                                val duplicateIds = mutableListOf<Long>()
+                                val duplicates = linkedMapOf<Long, MutableList<Long>>()
                                 var anyAdded = false
 
-                                tracksToAdd.forEach { track ->
-                                    val addRes = viewModel.addToPlaylist(
-                                        track = track,
-                                        playlistId = targetPlaylistId,
-                                        allowDuplicate = false,
-                                    )
-                                    when (addRes) {
-                                        is PlayerViewModel.AddToPlaylistResult.Added -> {
-                                            anyAdded = true
-                                        }
-
-                                        is PlayerViewModel.AddToPlaylistResult.AlreadyExists -> {
-                                            duplicateIds.add(track.id)
+                                targetPlaylistIds.forEach { playlistId ->
+                                    tracksToAdd.forEach { track ->
+                                        when (viewModel.addToPlaylist(track, playlistId, allowDuplicate = false)) {
+                                            is PlayerViewModel.AddToPlaylistResult.Added -> anyAdded = true
+                                            is PlayerViewModel.AddToPlaylistResult.AlreadyExists ->
+                                                duplicates.getOrPut(playlistId) { mutableListOf() }.add(track.id)
                                         }
                                     }
                                 }
 
-                                selectedPlaylistId = targetPlaylistId
+                                selectedPlaylistId = createdPlaylistId ?: targetPlaylistIds.lastOrNull() ?: selectedPlaylistId
                                 addToPlaylistDialogOpen = false
                                 addToPlaylistTracks = emptyList()
+                                addToPlaylistSelectedIds = emptySet()
 
-                                if (duplicateIds.isNotEmpty()) {
+                                if (duplicates.isNotEmpty()) {
                                     duplicateDialog = DuplicateConfirmState(
-                                        trackIds = duplicateIds.distinct(),
-                                        playlistId = targetPlaylistId,
+                                        tracksByPlaylist = duplicates.mapValues { it.value.distinct() },
                                     )
                                 } else if (anyAdded) {
                                     showToast(
-                                        if (tracksToAdd.size == 1) {
-                                            resources.getString(R.string.player_track_added_playlist)
-                                        } else {
-                                            resources.getString(R.string.player_tracks_added_playlist)
+                                        when {
+                                            targetPlaylistIds.size > 1 -> resources.getQuantityString(
+                                                R.plurals.player_added_to_playlists,
+                                                targetPlaylistIds.size,
+                                                targetPlaylistIds.size,
+                                            )
+                                            tracksToAdd.size == 1 -> resources.getString(R.string.player_track_added_playlist)
+                                            else -> resources.getString(R.string.player_tracks_added_playlist)
                                         },
                                     )
                                     clearTrackSelection()
                                 }
                                 },
                             ) {
-                                Text(stringResource(R.string.player_add_button))
+                                val targetCount = addToPlaylistSelectedIds.count { id -> playlists.any { it.id == id } } +
+                                    if (addToPlaylistNewName.isNotBlank()) 1 else 0
+                                Text(
+                                    if (targetCount > 1) {
+                                        pluralStringResource(R.plurals.player_add_to_playlists_button, targetCount, targetCount)
+                                    } else {
+                                        stringResource(R.string.player_add_button)
+                                    },
+                                )
                             }
                         }
                     }
@@ -2906,25 +2693,27 @@ fun PlayerScreen(
             // DIALOG: confirmación duplicado en playlist
             if (duplicateDialog != null) {
                 val d = duplicateDialog!!
-                val count = d.trackIds.distinct().size
+                val count = d.tracksByPlaylist.values.flatten().distinct().size
                 AlertDialog(
                     onDismissRequest = { duplicateDialog = null },
                     title = { Text(stringResource(R.string.player_duplicates_title)) },
                     text = {
                         Text(
-                            stringResource(R.string.player_duplicates_message, count)
+                            pluralStringResource(R.plurals.player_duplicates_message, count, count)
                         )
                     },
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                d.trackIds.distinct().forEach { tid ->
-                                    val track = deviceTracks.firstOrNull { it.id == tid } ?: return@forEach
-                                    viewModel.addToPlaylist(
-                                        track = track,
-                                        playlistId = d.playlistId,
-                                        allowDuplicate = true,
-                                    )
+                                d.tracksByPlaylist.forEach { (playlistId, trackIds) ->
+                                    trackIds.forEach { tid ->
+                                        val track = deviceTracks.firstOrNull { it.id == tid } ?: return@forEach
+                                        viewModel.addToPlaylist(
+                                            track = track,
+                                            playlistId = playlistId,
+                                            allowDuplicate = true,
+                                        )
+                                    }
                                 }
                                 showToast(resources.getString(R.string.player_duplicates_added))
                                 duplicateDialog = null

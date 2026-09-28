@@ -1,6 +1,6 @@
-package com.imontalvodev.beatmybeat.ui.network
+package com.imontalvodev.beatmybeat.shared.lyrics
 
-import java.text.Normalizer
+import com.imontalvodev.beatmybeat.shared.text.stripDiacritics
 import kotlin.math.abs
 
 /** Resultado de búsqueda LRCLIB reducido a campos comparables (testeable sin org.json). */
@@ -25,8 +25,7 @@ internal const val LRC_DURATION_SOFT_TOLERANCE_SEC = 5
 internal const val LRC_DURATION_HARD_MISMATCH_SEC = 15
 
 internal fun normalizeLyricsMatchText(raw: String): String =
-    Normalizer.normalize(raw, Normalizer.Form.NFD)
-        .replace(Regex("\\p{M}+"), "")
+    stripDiacritics(raw)
         .lowercase()
         .replace(Regex("\\(.*?\\)|\\[.*?\\]"), " ")
         .replace(

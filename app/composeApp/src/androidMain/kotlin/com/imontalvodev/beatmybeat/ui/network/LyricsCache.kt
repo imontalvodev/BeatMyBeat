@@ -1,5 +1,9 @@
 package com.imontalvodev.beatmybeat.ui.network
 
+import com.imontalvodev.beatmybeat.shared.lyrics.ERROR_INSTRUMENTAL
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
+import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
+import com.imontalvodev.beatmybeat.shared.lyrics.LyricsResponse
 import android.content.Context
 import com.imontalvodev.beatmybeat.core.Logger
 import org.json.JSONObject
@@ -21,15 +25,22 @@ data class LyricsCacheEntry(
      * siempre: la caché respondía y LRCLIB no se volvía a consultar nunca.
      */
     val lrclibChecked: Boolean = false,
+    /** LRCLIB la marcó como instrumental: sin letra, pero la búsqueda no debe repetirse. */
+    val instrumental: Boolean = false,
 ) {
     fun hasAnyLyrics(): Boolean = plain.isNotBlank() || !syncedLrc.isNullOrBlank()
+
+    /** Hay respuesta definitiva para esta pista: letra o constancia de que es instrumental. */
+    fun isResolved(): Boolean = hasAnyLyrics() || instrumental
 
     fun displayPlain(): String {
         if (plain.isNotBlank()) return plain
         return syncedLrc?.let { LrcParser.toPlainText(it) }.orEmpty()
     }
 
-    fun toResponse(): LyricsResponse = LyricsResponse(
+    fun toResponse(): LyricsResponse = if (instrumental) {
+        LyricsResponse.failure(ERROR_INSTRUMENTAL).copy(lrclibId = lrclibId)
+    } else LyricsResponse(
         success = true,
         lyrics = displayPlain(),
         syncedLrc = syncedLrc,
@@ -72,7 +83,8 @@ object LyricsCache {
                     // Las entradas antiguas no llevan la marca: se tratan como "no consultado",
                     // así que se reintenta LRCLIB una vez y a partir de ahí ya queda marcada.
                     lrclibChecked = obj.optBoolean("lrclibChecked", false),
-                ).takeIf { it.hasAnyLyrics() }
+                    instrumental = obj.optBoolean("instrumental", false),
+                ).takeIf { it.hasAnyLyrics() || it.instrumental }
             }.getOrNull()
         }
         val legacy = legacyFileFor(context, title, artist)
@@ -88,7 +100,7 @@ object LyricsCache {
     }
 
     fun putEntry(context: Context, title: String, artist: String, entry: LyricsCacheEntry) {
-        if (!entry.hasAnyLyrics()) return
+        if (!entry.hasAnyLyrics() && !entry.instrumental) return
         val jsonFile = jsonFileFor(context, title, artist)
         runCatching {
             jsonFile.parentFile?.mkdirs()
@@ -98,6 +110,7 @@ object LyricsCache {
                 entry.source?.let { put("source", it) }
                 entry.lrclibId?.let { put("lrclibId", it) }
                 put("lrclibChecked", entry.lrclibChecked)
+                if (entry.instrumental) put("instrumental", true)
             }
             jsonFile.writeText(obj.toString())
             legacyFileFor(context, title, artist).delete()

@@ -27,6 +27,7 @@ import com.imontalvodev.beatmybeat.MainActivity
 import com.imontalvodev.beatmybeat.R
 import com.imontalvodev.beatmybeat.core.Logger
 import com.imontalvodev.beatmybeat.notifications.BeatMyBeatNotification
+import com.imontalvodev.beatmybeat.shared.playback.SleepTimer
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -92,6 +93,50 @@ class PlaybackService : Service() {
     /** Referencia pública al player para seek directo desde la UI. */
     val player: ExoPlayer get() = exoPlayer
 
+    /** Comprueba el temporizador de apagado y aplica el fundido de volumen final. */
+    private val sleepTimerTick = object : Runnable {
+        override fun run() {
+            val timer = _sleepTimer.value as? SleepTimer.AtTime ?: return
+            val remaining = timer.remainingMs(SystemClock.elapsedRealtime())
+            if (remaining <= 0) {
+                exoPlayer.pause()
+                exoPlayer.volume = 1f
+                _sleepTimer.value = null
+                updateNotification()
+                return
+            }
+            // Si el usuario ha pausado, el volumen no importa; al reanudar vuelve a su nivel.
+            exoPlayer.volume = if (exoPlayer.isPlaying) SleepTimer.fadeVolume(remaining) else 1f
+            val step = if (remaining <= SleepTimer.FADE_OUT_MS) {
+                SleepTimer.FADE_OUT_MS / SleepTimer.FADE_STEPS
+            } else {
+                SLEEP_TIMER_TICK_MS
+            }
+            mainHandler.postDelayed(this, minOf(step, remaining))
+        }
+    }
+
+    /** Para la música dentro de [minutes] minutos (sustituye cualquier temporizador activo). */
+    fun setSleepTimer(minutes: Int) {
+        cancelSleepTimer()
+        _sleepTimer.value = SleepTimer.startingAt(SystemClock.elapsedRealtime(), minutes)
+        mainHandler.post(sleepTimerTick)
+    }
+
+    /** Para la música al terminar la canción actual. */
+    fun setSleepTimerEndOfTrack() {
+        cancelSleepTimer()
+        exoPlayer.pauseAtEndOfMediaItems = true
+        _sleepTimer.value = SleepTimer.EndOfTrack
+    }
+
+    fun cancelSleepTimer() {
+        mainHandler.removeCallbacks(sleepTimerTick)
+        exoPlayer.pauseAtEndOfMediaItems = false
+        exoPlayer.volume = 1f
+        _sleepTimer.value = null
+    }
+
     override fun onCreate() {
         super.onCreate()
         BeatMyBeatNotification.ensureChannels(this)
@@ -123,6 +168,16 @@ class PlaybackService : Service() {
                 }
                 pushState(force = true)
                 updateNotification()
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // pauseAtEndOfMediaItems ya ha pausado: el temporizador "fin de canción" termina.
+                if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
+                    _sleepTimer.value == SleepTimer.EndOfTrack
+                ) {
+                    exoPlayer.pauseAtEndOfMediaItems = false
+                    _sleepTimer.value = null
+                }
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -476,6 +531,8 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(positionTick)
+        mainHandler.removeCallbacks(sleepTimerTick)
+        _sleepTimer.value = null
         artworkExecutor.shutdownNow()
         recycleNotificationArtwork()
         recycleAppLogoBitmap()
@@ -501,11 +558,16 @@ class PlaybackService : Service() {
         const val MAX_PLAYBACK_PITCH = 1.4142f  // +6 semitonos
 
         private const val POSITION_TICK_MS = 500L
+        private const val SLEEP_TIMER_TICK_MS = 1_000L
         private const val STATE_PUSH_INTERVAL_MS = 500L
         private const val NOTIFICATION_ARTWORK_PX = 256
 
         private val _state = MutableStateFlow(PlaybackState())
         val state: StateFlow<PlaybackState> = _state.asStateFlow()
+
+        private val _sleepTimer = MutableStateFlow<SleepTimer?>(null)
+        /** Temporizador de apagado activo, o `null`. */
+        val sleepTimer: StateFlow<SleepTimer?> = _sleepTimer.asStateFlow()
 
         private val _playbackError = MutableStateFlow<PlaybackErrorEvent?>(null)
         val playbackError: StateFlow<PlaybackErrorEvent?> = _playbackError.asStateFlow()
