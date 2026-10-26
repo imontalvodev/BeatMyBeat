@@ -1,0 +1,81 @@
+name: NewPipe verify
+
+# Lo lanza n8n (workflow_dispatch sobre main) cuando aparece una versión nueva de
+# NewPipeExtractor. Recrea la rama n8n-autocompile desde main, sube la versión con el script,
+# compila y pasa los tests. Si todo va bien, deja el commit en esa rama; n8n lee el resultado
+# del run y decide el merge a main. No toca main ni publica nada.
+run-name: verify NewPipe ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag de NewPipeExtractor (p. ej. v0.27.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: newpipe-verify
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Subir versión, compilar y probar
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NEWPIPE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Rama n8n-autocompile desde main
+        run: git checkout -B n8n-autocompile
+
+      - name: Subir versiones (dependencia, app, changelog, notas)
+        id: bump
+        run: .github/scripts/bump-newpipe.sh "$NEWPIPE_VERSION"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Tests (unitarios + prueba real contra YouTube)
+        working-directory: app
+        env:
+          NEWPIPE_LIVE: "1"
+        run: ./gradlew :composeApp:testDebugUnitTest --stacktrace
+
+      # Sin keystore el APK sale sin firmar; aquí solo interesa que compile y que R8 no rompa
+      # nada con la versión nueva del Extractor.
+      - name: Compilar release (R8)
+        working-directory: app
+        run: ./gradlew :composeApp:assembleRelease --stacktrace
+
+      - name: Commit y push a n8n-autocompile
+        env:
+          NEW_APP: ${{ steps.bump.outputs.new_app }}
+          OLD_EXT: ${{ steps.bump.outputs.old_ext }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- CHANGELOG.md app/gradle/libs.versions.toml app/composeApp/build.gradle.kts \
+            app/docs app/fastlane
+          git commit -m "build(deps): NewPipe Extractor $OLD_EXT a $NEWPIPE_VERSION y release $NEW_APP"
+          # La rama se recrea desde main en cada ejecución, de ahí el force.
+          git push --force origin n8n-autocompile
+
+      - name: Informe de tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/composeApp/build/reports/tests/
+          retention-days: 7

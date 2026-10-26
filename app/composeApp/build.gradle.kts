@@ -93,6 +93,20 @@ android {
         includeInApk = false
         includeInBundle = false
     }
+    // Firma de release solo si el entorno la aporta (el workflow de GitHub Actions la inyecta
+    // desde secretos). Sin variables, assembleRelease sigue generando el APK sin firmar, que es
+    // lo que necesita F-Droid y el flujo manual de docs/github-release.md.
+    val releaseKeystore = System.getenv("BMB_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    if (releaseKeystore != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("BMB_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("BMB_KEY_ALIAS")
+                keyPassword = System.getenv("BMB_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
             // Debug y release conviven como apps distintas en el mismo dispositivo. Sin esto,
@@ -158,6 +172,7 @@ android {
             ndk {
                 abiFilters += listOf("armeabi-v7a", "arm64-v8a")
             }
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

@@ -1,0 +1,114 @@
+name: NewPipe release
+
+# Lo lanza n8n (workflow_dispatch sobre main) después de mergear n8n-autocompile en main.
+# Compila el APK firmado con la versión que ya está en main y publica la release en GitHub.
+run-name: release NewPipe ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag de NewPipeExtractor que motivó la release (solo informativo)"
+        required: true
+        type: string
+
+concurrency:
+  group: newpipe-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: APK firmado y release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Comprobar secretos de firma
+        env:
+          KS: ${{ secrets.BMB_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.BMB_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BMB_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.BMB_KEY_PASSWORD }}
+        run: |
+          for v in KS KS_PASS KEY_ALIAS KEY_PASS; do
+            [ -n "${!v}" ] || { echo "::error::falta el secreto de firma ($v)"; exit 1; }
+          done
+
+      - name: Leer versión de la app
+        id: ver
+        run: |
+          G=app/composeApp/build.gradle.kts
+          APP="$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' "$G")"
+          CODE="$(sed -nE 's/^ *versionCode = ([0-9]+).*/\1/p' "$G")"
+          NOTES="app/docs/release-notes-v$APP.md"
+          [ -f "$NOTES" ] || { echo "::error::no existe $NOTES (¿se hizo el merge de n8n-autocompile?)"; exit 1; }
+          if gh release view "v$APP" >/dev/null 2>&1; then
+            echo "::error::la release v$APP ya existe"; exit 1
+          fi
+          {
+            echo "app=$APP"
+            echo "code=$CODE"
+            echo "notes=$NOTES"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: APK release firmado
+        working-directory: app
+        env:
+          KS_B64: ${{ secrets.BMB_KEYSTORE_B64 }}
+          BMB_KEYSTORE_PASSWORD: ${{ secrets.BMB_KEYSTORE_PASSWORD }}
+          BMB_KEY_ALIAS: ${{ secrets.BMB_KEY_ALIAS }}
+          BMB_KEY_PASSWORD: ${{ secrets.BMB_KEY_PASSWORD }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          export BMB_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          ./gradlew :composeApp:assembleRelease --stacktrace
+          rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Verificar firma y versión del APK
+        env:
+          APP: ${{ steps.ver.outputs.app }}
+          CODE: ${{ steps.ver.outputs.code }}
+        run: |
+          APK_DIR=app/composeApp/build/outputs/apk/release
+          SRC="$(ls "$APK_DIR"/*.apk | head -1)"
+          [[ "$SRC" != *unsigned* ]] || { echo "::error::el APK salió sin firmar"; exit 1; }
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$BT/apksigner" verify --verbose "$SRC"
+          "$BT/aapt" dump badging "$SRC" | grep -q "versionCode='$CODE' versionName='$APP'" \
+            || { echo "::error::el APK no trae la versión esperada"; exit 1; }
+          mkdir -p dist
+          cp "$SRC" dist/BeatMyBeat.apk
+          (cd dist && sha256sum BeatMyBeat.apk | tee BeatMyBeat.apk.sha256)
+
+      - name: Publicar release en GitHub
+        env:
+          APP: ${{ steps.ver.outputs.app }}
+          NOTES_FILE: ${{ steps.ver.outputs.notes }}
+        run: |
+          {
+            sed -n '/^## English/,$p' "$NOTES_FILE"
+            echo
+            echo "### Checksum (SHA-256)"
+            echo
+            echo '```'
+            cat dist/BeatMyBeat.apk.sha256
+            echo '```'
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "v$APP" dist/BeatMyBeat.apk \
+            --target "$GITHUB_SHA" \
+            --title "BeatMyBeat $APP" --notes-file "$RUNNER_TEMP/notes.md" --latest
