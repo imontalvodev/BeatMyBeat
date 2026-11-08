@@ -76,13 +76,13 @@ object ReleaseUpdateClient {
             releaseNotesExcerpt = notes,
             releasePageUrl = releasePageUrl,
             apkDownloadUrl = findApkDownloadUrl(json.optJSONArray("assets"), version)
-                ?: latestApkDownloadUrl(version),
+                ?: latestApkDownloadUrl(),
         )
     }
 
-    /** Descarga directa del APK del último release, con el nombre que se sube a mano. */
-    internal fun latestApkDownloadUrl(version: String): String =
-        LATEST_DOWNLOAD_BASE_URL + "BeatMyBeat-$version.apk"
+    /** Descarga directa del APK del último release; el workflow de release lo sube como `BeatMyBeat.apk`. */
+    internal fun latestApkDownloadUrl(): String =
+        LATEST_DOWNLOAD_BASE_URL + "BeatMyBeat.apk"
 
     /**
      * Solo acepta los nombres exactos esperados (`BeatMyBeat.apk` o `BeatMyBeat-<versión>.apk`).

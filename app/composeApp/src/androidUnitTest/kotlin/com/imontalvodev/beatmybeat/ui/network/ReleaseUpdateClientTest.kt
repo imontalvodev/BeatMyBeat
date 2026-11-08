@@ -78,8 +78,8 @@ class ReleaseUpdateClientTest {
     @Test
     fun latestApkDownloadUrl_pointsToLatestReleaseAsset() {
         assertEquals(
-            "https://github.com/imontalvodev/BeatMyBeat/releases/latest/download/BeatMyBeat-1.2.apk",
-            ReleaseUpdateClient.latestApkDownloadUrl("1.2"),
+            "https://github.com/imontalvodev/BeatMyBeat/releases/latest/download/BeatMyBeat.apk",
+            ReleaseUpdateClient.latestApkDownloadUrl(),
         )
     }
 }
