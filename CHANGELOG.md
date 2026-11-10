@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.4] — 2026-11-10
+
+### Fixed
+- **YouTube downloads and search.** Updated NewPipe Extractor from 0.27.0 to 0.27.1 to keep up with YouTube changes. No other changes.
+
 ## [1.3.3] — 2026-11-07
 
 ### Fixed
