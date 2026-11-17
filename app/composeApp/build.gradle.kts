@@ -129,7 +129,7 @@ android {
             // con todo lo demás desactivado en proguard-debug.pro.
             isMinifyEnabled = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android.txt"),
+                getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
                 "proguard-debug.pro",
             )
