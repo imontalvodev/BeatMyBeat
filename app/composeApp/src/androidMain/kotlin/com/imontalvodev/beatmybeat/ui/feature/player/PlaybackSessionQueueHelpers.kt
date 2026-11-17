@@ -39,15 +39,44 @@ internal fun appendTracksToSession(
     return state.copy(orderUris = state.orderUris + filtered)
 }
 
+/**
+ * Tamaño del bloque "a continuación" que ya espera al frente de los pendientes.
+ *
+ * [playNextUris] es el historial (en orden de inserción) de lo añadido con "Reproducir a
+ * continuación". Cuenta la racha más larga de la cabeza de [pendingUris] que coincide con un
+ * tramo contiguo del historial: si las primeras ya sonaron, el resto del bloque sigue contando;
+ * si algo se quitó o se reordenó, la racha se corta sola y no hace falta mantener contadores
+ * en cada mutación de la cola.
+ */
+internal fun playNextBlockSize(
+    pendingUris: List<String>,
+    playNextUris: List<String>,
+): Int {
+    var best = 0
+    for (start in playNextUris.indices) {
+        var k = 0
+        while (start + k < playNextUris.size && k < pendingUris.size &&
+            pendingUris[k] == playNextUris[start + k]
+        ) k++
+        if (k > best) best = k
+    }
+    return best
+}
+
+/**
+ * Inserta tras la canción actual y tras el bloque "a continuación" previo ([blockOffset]):
+ * orden FIFO, lo que se añade antes suena antes.
+ */
 internal fun insertTracksPlayNextInSession(
     state: SessionQueueState,
     trackUris: List<String>,
+    blockOffset: Int = 0,
 ): SessionQueueState {
     if (trackUris.isEmpty()) return state
     val filtered = trackUris.filter { it.isNotBlank() }
     if (filtered.isEmpty()) return state
     val mutable = state.orderUris.toMutableList()
-    var insertAt = (state.currentIndex + 1).coerceAtMost(mutable.size)
+    var insertAt = (state.currentIndex + 1 + blockOffset.coerceAtLeast(0)).coerceAtMost(mutable.size)
     filtered.forEach { uri ->
         mutable.add(insertAt, uri)
         insertAt++
@@ -81,4 +110,18 @@ internal fun removeTrackFromSession(
         else -> state.currentIndex
     }.coerceIn(0, mutable.lastIndex)
     return SessionQueueState(mutable, newIndex)
+}
+
+/**
+ * Sustituye lo pendiente (todo lo posterior a la pista actual) por [pendingUris], manteniendo lo
+ * ya reproducido y la pista actual. Se usa tras reordenar o quitar en la pantalla de cola: sin
+ * esto la lista de sesión conservaba el orden anterior y lo deshacía al añadir, avanzar o
+ * reiniciar la app.
+ */
+internal fun replacePendingInSession(
+    state: SessionQueueState,
+    pendingUris: List<String>,
+): SessionQueueState {
+    val head = state.orderUris.take(state.currentIndex + 1)
+    return state.copy(orderUris = head + pendingUris.filter { it.isNotBlank() })
 }

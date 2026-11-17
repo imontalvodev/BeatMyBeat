@@ -24,6 +24,46 @@ class PlaybackSessionQueueHelpersTest {
     }
 
     @Test
+    fun insertTracksPlayNextRespectsPreviousBlockFifo() {
+        val state = SessionQueueState(listOf("a", "b", "c", "d"), currentIndex = 0)
+        val first = insertTracksPlayNextInSession(state, listOf("x"))
+        val playNext = listOf("x")
+        val offset = playNextBlockSize(pendingUrisFromSession(first), playNext)
+        assertEquals(1, offset)
+        val second = insertTracksPlayNextInSession(first, listOf("y"), blockOffset = offset)
+        // x (primero en añadirse) suena antes que y; ambos antes de lo que ya había.
+        assertEquals(listOf("a", "x", "y", "b", "c", "d"), second.orderUris)
+    }
+
+    @Test
+    fun playNextBlockSizeShrinksWhenHeadWasConsumedOrReordered() {
+        val playNext = listOf("x", "y")
+        assertEquals(2, playNextBlockSize(listOf("x", "y", "b"), playNext))
+        // x ya sonó: y sigue siendo el resto del bloque.
+        assertEquals(1, playNextBlockSize(listOf("y", "b"), playNext))
+        // Reordenado o quitado: la racha se corta.
+        assertEquals(1, playNextBlockSize(listOf("x", "b", "y"), playNext))
+        assertEquals(0, playNextBlockSize(listOf("b", "c"), playNext))
+        assertEquals(0, playNextBlockSize(emptyList(), playNext))
+        assertEquals(0, playNextBlockSize(listOf("x"), emptyList()))
+    }
+
+    @Test
+    fun replacePendingInSessionKeepsPlayedAndCurrent() {
+        val state = SessionQueueState(listOf("a", "b", "c", "d", "e"), currentIndex = 1)
+        val updated = replacePendingInSession(state, listOf("e", "c"))
+        assertEquals(listOf("a", "b", "e", "c"), updated.orderUris)
+        assertEquals(1, updated.currentIndex)
+        assertEquals(listOf("e", "c"), pendingUrisFromSession(updated))
+    }
+
+    @Test
+    fun replacePendingInSessionWithEmptyLeavesOnlyHistory() {
+        val state = SessionQueueState(listOf("a", "b", "c"), currentIndex = 0)
+        assertEquals(listOf("a"), replacePendingInSession(state, emptyList()).orderUris)
+    }
+
+    @Test
     fun ensureSessionQueueBuildsFromCurrentAndPending() {
         val state = ensureSessionQueue(
             currentTrackUri = "b",

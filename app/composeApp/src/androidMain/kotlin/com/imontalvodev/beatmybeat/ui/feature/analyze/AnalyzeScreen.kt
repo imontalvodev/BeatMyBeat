@@ -65,7 +65,21 @@ import com.imontalvodev.beatmybeat.ui.theme.AppText
 import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.currentBeatMyBeatThemeProfile
+import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.ModeChip
+import com.imontalvodev.beatmybeat.ui.theme.charcaFieldColors
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.IconButton
+import com.imontalvodev.beatmybeat.ui.theme.ActiveDownloadRow
+import com.imontalvodev.beatmybeat.ui.theme.CharcaColors
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.layout.width
 import com.imontalvodev.beatmybeat.ui.theme.PrimaryButton
 import com.imontalvodev.beatmybeat.ui.theme.SuggestionListSkeleton
 import com.imontalvodev.beatmybeat.ui.theme.ScreenHeader
@@ -94,6 +108,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AnalyzeScreen(
     modifier: Modifier = Modifier,
@@ -177,6 +192,19 @@ fun AnalyzeScreen(
             ScreenHeader(
                 title = stringResource(R.string.nav_download),
                 subtitle = stringResource(R.string.analyze_subtitle),
+                leading = { AppLogo(size = 48.dp) },
+                actions = {
+                    // Descarga en curso: insignia ámbar sobre el icono (lienzo «Charca»).
+                    if (activeDownload != null) {
+                        DownloadActivityBadge(
+                            count = if (activeDownload?.isBatch == true) {
+                                ((activeDownload?.batchTotal ?: 1) - (activeDownload?.batchDone ?: 0)).coerceAtLeast(1)
+                            } else {
+                                1
+                            },
+                        )
+                    }
+                },
             )
 
             val tabUrl = stringResource(R.string.analyze_tab_url)
@@ -187,28 +215,20 @@ fun AnalyzeScreen(
                 "song" -> 1
                 else -> 2
             }
-            PrimaryTabRow(
-                selectedTabIndex = selectedTabIndex,
-                containerColor = Color.Transparent,
-                divider = {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                },
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             ) {
-                Tab(
-                    selected = mode == "url",
-                    onClick = { mode = "url" },
-                    text = { Text(tabUrl) },
-                )
-                Tab(
-                    selected = mode == "song",
-                    onClick = { mode = "song" },
-                    text = { Text(tabSong) },
-                )
-                Tab(
-                    selected = mode == "lyrics",
-                    onClick = { mode = "lyrics" },
-                    text = { Text(tabLyrics) },
-                )
+                listOf("url" to tabUrl, "song" to tabSong, "lyrics" to tabLyrics).forEach { (id, label) ->
+                    ModeChip(
+                        text = label,
+                        selected = mode == id,
+                        onClick = { mode = id },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(Spacing.lg))
@@ -220,6 +240,7 @@ fun AnalyzeScreen(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Column(
                     modifier = Modifier
@@ -284,8 +305,27 @@ fun AnalyzeScreen(
                             leadingIcon = {
                                 Icon(Icons.Filled.Link, contentDescription = null)
                             },
+                            trailingIcon = if (urlInput.isNotEmpty()) {
+                                {
+                                    IconButton(
+                                        onClick = {
+                                            urlInput = ""
+                                            urlInputError = null
+                                        },
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = stringResource(R.string.analyze_clear_url_cd),
+                                        )
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(Radius.lg),
+                            colors = charcaFieldColors(),
                         )
                     } else {
                         OutlinedTextField(
@@ -294,7 +334,8 @@ fun AnalyzeScreen(
                             placeholder = { Text(stringResource(R.string.analyze_song_title_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(Radius.md),
+                            shape = RoundedCornerShape(Radius.lg),
+                            colors = charcaFieldColors(),
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OutlinedTextField(
@@ -303,7 +344,8 @@ fun AnalyzeScreen(
                             placeholder = { Text(stringResource(R.string.analyze_artist_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(Radius.md),
+                            shape = RoundedCornerShape(Radius.lg),
+                            colors = charcaFieldColors(),
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OutlinedTextField(
@@ -312,7 +354,8 @@ fun AnalyzeScreen(
                             placeholder = { Text(stringResource(R.string.analyze_album_placeholder)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(Radius.md),
+                            shape = RoundedCornerShape(Radius.lg),
+                            colors = charcaFieldColors(),
                         )
                     }
 
@@ -324,11 +367,11 @@ fun AnalyzeScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(Spacing.sm))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
+                        // Se reparten en varias líneas: con scroll horizontal FLAC y WAV quedaban cortados.
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             DownloadFormat.entries.forEach { format ->
                                 ModeChip(
@@ -609,9 +652,9 @@ fun AnalyzeScreen(
                                                 .clickable(enabled = !downloadingSuggestion) {
                                                     selectedSuggestion = suggestion
                                                 },
-                                            shape = RoundedCornerShape(Radius.sm),
+                                            shape = RoundedCornerShape(Radius.md),
                                             colors = CardDefaults.cardColors(
-                                                containerColor = Color.Transparent,
+                                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                                 contentColor = MaterialTheme.colorScheme.onSurface,
                                             ),
                                         ) {
@@ -664,6 +707,27 @@ fun AnalyzeScreen(
                         }
                     }
                 }
+            }
+
+            // «En curso»: la descarga activa con su progreso, sin salir de la pantalla.
+            activeDownload?.let { download ->
+                Spacer(modifier = Modifier.height(Spacing.xl))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Text(
+                        text = stringResource(R.string.analyze_in_progress),
+                        style = AppText.sectionHeader,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                ActiveDownloadRow(
+                    download = download,
+                    onCancel = { SongDownloadService.cancelDownload(context) },
+                )
             }
         }
     }
@@ -763,6 +827,33 @@ private fun UrlPreviewSection(
     onDownloadSingle: (PreviewTrack) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Spacer(modifier = Modifier.height(Spacing.sm))
+        // Insignia «detectado» con el número de canciones (lienzo «Charca»).
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+                    .padding(horizontal = Spacing.md, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = stringResource(R.string.analyze_detected_badge),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -799,9 +890,9 @@ private fun UrlPreviewSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(Radius.sm))
+                    .clip(RoundedCornerShape(Radius.md))
                     .clickable(enabled = downloadEnabled) { onDownloadSingle(track) }
-                    .padding(vertical = Spacing.sm),
+                    .padding(vertical = Spacing.sm, horizontal = Spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.md),
             ) {
@@ -909,4 +1000,40 @@ internal class AnalyzeFormState : ViewModel() {
     val urlPreviewTitle = mutableStateOf("")
     val urlPreviewTracks = mutableStateOf<List<PreviewTrack>>(emptyList())
     val urlPreviewError = mutableStateOf<String?>(null)
+}
+
+
+/** Botón de descargas con la insignia ámbar del número de descargas activas. */
+@Composable
+private fun DownloadActivityBadge(count: Int) {
+    Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Download,
+                contentDescription = pluralStringResource(R.plurals.analyze_active_downloads_cd, count, count),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(18.dp)
+                .clip(CircleShape)
+                .background(CharcaColors.amber),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = count.coerceAtMost(99).toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = CharcaColors.onAmber,
+            )
+        }
+    }
 }

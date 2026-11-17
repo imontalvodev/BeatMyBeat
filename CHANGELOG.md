@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4] — 2026-11-17
+
+### Changed
+- **New "Charca" look.** Bricolage Grotesque for titles and Inter for everything else, four corner radii (12 · 20 · 28 · 32) instead of twelve, and a warm amber for favorites, karaoke and the sleep timer. The default Bluewave palette is refreshed (brighter accent, deeper background).
+- **Floating navigation bar and mini player.** Tabs are now Download · Library · Settings; the app still opens on Library. The mini player is a floating card with a filled play button and an edge-to-edge progress line.
+- **Splash screen** with the pond ripples and an "Enter" button.
+- **Library:** outlined chips, outlined *Shuffle* button, song duration on every row, a small amber heart on favorites and animated bars on the song that is playing.
+- **Full player:** pond ripples behind the cover while music plays, bigger play button with a glow, amber heart and karaoke mic, and amber lyrics (words you already sang stay lit).
+- **Queue:** *Now playing* card with accent outline, outlined *Clear* button and an accent outline while you drag a song.
+- **Settings:** header with the frog logo and version, and a quick theme picker with a live preview. New built-in themes: **Estanque** (light), **Brasa** and **Noche**. Your own color profiles are kept; light themes now also switch the status bar icons.
+- **Download:** mode selector as chips, a clear (✕) button in the link field, a "Detected" badge on playlist/album previews, an **In progress** section with a thin progress bar, an amber badge with the number of active downloads, and the format chips now wrap instead of being cut off.
+- **Favorites:** amber header with the song count, and a friendlier empty state.
+- **Playlist photos.** Pick a photo for any playlist from its ⋮ menu (**Change photo** / **Remove photo**) or by tapping the cover inside the playlist. The image is cropped to a square and copied into the app, so it keeps working if you move or delete the original; no permissions needed.
+- **Reorder playlists.** Drag the grip on the left of a playlist, or long-press anywhere on its row, to move it (for example to the top). The order is saved and is also used in "Add to playlist".
+- **Playlists:** gradient covers with pond rings, card rows, an outlined **Create** button and a round back button in the playlist detail.
+- **Sort:** the sort menu is now a bottom sheet with one large row per option, and the list returns to the top after sorting.
+- **Queue:** drag handle on the left (like the design) and long-press anywhere on a row to reorder.
+- Amber on light themes is now a clearer burnt amber (`#B45309`) instead of a dull brown.
+- Motion tokens are now 100 · 180 · 280 ms, with 700 ms reserved for the splash. Ripples and equalizer bars stay still when system animations are off.
+
+### Fixed
+- **Queue reorder not sticking.** Dragging or removing songs in the queue only changed the visible list; adding a song, skipping or restarting the app brought the old order back. The session order is now updated too.
+- **Library scrolled after sorting.** Sorting A-Z could leave the list scrolled with the first rows hidden.
+- **Debug builds.** NewPipe Extractor 0.27 uses `record` and Android Gradle Plugin's per-library dexing failed with "Record desugaring"; debug builds now go through R8 without shrinking or obfuscation.
+- **"Play next" order.** Adding several songs with *Play next* used to stack them in reverse (the last one added played first). They now play in the order you added them (FIFO), after the song that is playing.
+
+## [1.3.4] — 2026-11-10
+
+### Fixed
+- **YouTube downloads and search.** Updated NewPipe Extractor from 0.27.0 to 0.27.1 to keep up with YouTube changes. No other changes.
+
+## [1.3.3] — 2026-11-07
+
+### Fixed
+- **YouTube downloads and search.** Updated NewPipe Extractor from 0.26.5 to 0.27.0 to keep up with YouTube changes. No other changes.
+
+## [1.3.2] — 2026-11-07
+
+### Fixed
+- **YouTube downloads and search.** Updated NewPipe Extractor from 0.26.5 to 0.27.0 to keep up with YouTube changes. No other changes.
+
+## [1.3.1] — 2026-11-07
+
+### Fixed
+- **YouTube downloads and search.** Updated NewPipe Extractor from 0.26.5 to 0.27.0 to keep up with YouTube changes. No other changes.
+
+## [1.3] — 2026-09-28
+
 ### Added
 - **Word-by-word lyrics.** When LRCLIB has word-level timing (Lyricsfile), the current line lights up word by word as it is sung.
 - **Sleep timer.** Moon button in the full player: stop after 5–90 minutes (with a short fade-out) or at the end of the current song.
@@ -26,6 +74,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Synced lyrics first.** LRCLIB lookups now prefer time-synced lyrics over plain text, use the real song duration for downloads, remember instrumental tracks, and don't cache a temporary LRCLIB outage as "no lyrics".
 - **Cleaner tags.** Songs found on YouTube Music get the right artist and album (the artist used to include "• Album • 2:06"), and video titles like "Artist - Song (Official Video)" are split properly.
 - Paste YouTube links without `https://`; "Mix" links download the song instead of failing as a playlist.
+- **Half the download size.** The APK only ships the ARM libraries used by phones (about 53 MB instead of 110 MB). x86 devices (emulators, Android on PCs) need ARM translation to install it.
+- **Lower memory use.** Cached album art is released when the app goes to the background, so Android is less likely to close it.
 
 ### Fixed
 - Several strings that were hard-coded in Spanish (favorites menu item, playlist labels) are now translated in every supported language.
@@ -36,6 +86,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cancelling a download now stops it immediately.
 - Playlist links pick up every track (not just the first ~100) and no longer include unrelated recommended videos.
 - Streams delivered as DASH/HLS manifests or dubbed audio tracks are no longer chosen for download.
+- **Downloads on Android 7–9.** Saving to the default `Music/BeatMyBeat/` folder failed on Android 7, 8 and 9; songs are now written there and indexed so they show up in the library.
+- **Library permission on first launch.** On Android 13+ the notification and music-access requests were fired at the same time, Android dropped one, and the app treated music access as denied without ever asking. Both are now requested together.
+- **Playback position is kept.** If Android closed the app in the background, the song went back to the start; the position is now saved when you leave the app and survives repeated restarts.
+- **Album art.** Embedded covers larger than 256 KB appeared corrupted, and the full player could show a blurry cover when the list thumbnail had been loaded first.
+- **Create playlist** did nothing the second time (the default name already existed). It now creates "My playlist 2", "My playlist 3"… and asks you to name it.
+- **Artist and title capitalization.** Names were rewritten word by word ("AC/DC" → "Ac/dc", "Pharrell Williams y Nile Rodgers" → "… Y …"). Only all-caps or all-lowercase text is normalized now.
+- **In-app updates** opened the GitHub release page instead of downloading the APK. The update is now downloaded directly from the latest release.
 
 ### Internal
 - Shared, platform-independent logic (LRCLIB and lyrics.ovh clients on Ktor, lyrics matching, LRC parsing, YouTube link/metadata parsing, stream selection, ffmpeg arguments, ranged downloads) moved to Kotlin Multiplatform `commonMain` with `commonTest` coverage.

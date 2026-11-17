@@ -1,5 +1,19 @@
 package com.imontalvodev.beatmybeat.ui.feature.profile
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.text.style.TextOverflow
+import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatThemeProfile
+import com.imontalvodev.beatmybeat.ui.theme.CharcaColors
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.selection.selectable
@@ -53,6 +67,7 @@ import androidx.compose.material.icons.filled.TextFields
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import com.imontalvodev.beatmybeat.BuildConfig
 import com.imontalvodev.beatmybeat.LocalSnackbarHostState
 import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdateDialog
@@ -97,12 +112,16 @@ fun ProfileScreen(
     onChangeLanguage: (languageTag: String) -> Unit = {},
     onCustomizeBackground: () -> Unit = {},
     onCustomizeText: () -> Unit = {},
+    profiles: List<BeatMyBeatThemeProfile> = emptyList(),
+    activeProfileId: String = "",
+    onSelectProfile: (String) -> Unit = {},
     storageLocationLabel: String = "Music/BeatMyBeat/",
     onPickStorageLocation: () -> Unit = {},
     onOpenStorageFolder: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbarHostState = LocalSnackbarHostState.current
     val scope = rememberCoroutineScope()
     var pendingUpdate by remember { mutableStateOf<GitHubReleaseInfo?>(null) }
@@ -138,9 +157,12 @@ fun ProfileScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = Spacing.lg),
     ) {
-        ScreenHeader(title = stringResource(R.string.nav_profile))
+        ProfileHeader(
+            title = stringResource(R.string.nav_profile),
+            subtitle = stringResource(R.string.profile_about_version, BuildConfig.VERSION_NAME),
+        )
 
-        SectionLabel(stringResource(R.string.settings_section_library), Modifier.padding(top = Spacing.sm))
+        SectionLabel(stringResource(R.string.settings_section_library))
         SettingsGroup {
             ProfileOption(
                 label = stringResource(R.string.profile_song_location),
@@ -158,6 +180,14 @@ fun ProfileScreen(
         }
 
         SectionLabel(stringResource(R.string.settings_section_appearance))
+        if (profiles.isNotEmpty()) {
+            ThemePicker(
+                profiles = profiles,
+                activeProfileId = activeProfileId,
+                onSelect = onSelectProfile,
+            )
+            Spacer(modifier = Modifier.height(Spacing.md))
+        }
         SettingsGroup {
             ProfileOption(
                 label = stringResource(R.string.profile_customize_background),
@@ -199,13 +229,13 @@ fun ProfileScreen(
                         checkingUpdates = false
                         when {
                             release == null -> snackbarHostState.showSnackbar(
-                                context.getString(R.string.update_check_failed),
+                                resources.getString(R.string.update_check_failed),
                             )
                             VersionCompare.isNewer(release.version, BuildConfig.VERSION_NAME) -> {
                                 pendingUpdate = release
                             }
                             else -> snackbarHostState.showSnackbar(
-                                context.getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME),
+                                resources.getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME),
                             )
                         }
                     }
@@ -238,31 +268,8 @@ fun ProfileScreen(
             )
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = Spacing.xxl),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            AppLogo(size = 64.dp)
-            Spacer(modifier = Modifier.height(Spacing.sm))
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = stringResource(R.string.settings_app_tagline),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(Spacing.xs))
-            Text(
-                text = stringResource(R.string.profile_about_version, BuildConfig.VERSION_NAME),
-                style = AppText.meta,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            )
-        }
+        // Hueco para que la última fila no quede bajo el mini reproductor y la barra flotante.
+        Spacer(modifier = Modifier.height(Spacing.xxl))
     }
 
     pendingUpdate?.let { release ->
@@ -321,6 +328,7 @@ private fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(Radius.lg),
         color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(content = content)
     }
@@ -377,4 +385,195 @@ private fun ProfileOption(
         modifier = Modifier.clickable { onClick() },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
+}
+
+
+/** Cabecera de Perfil: la rana dentro de un círculo con el borde del acento, título y versión. */
+@Composable
+private fun ProfileHeader(title: String, subtitle: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Spacing.lg, bottom = Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(60.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            AppLogo(size = 56.dp)
+        }
+        Spacer(modifier = Modifier.size(Spacing.lg))
+        Column {
+            Text(
+                text = title,
+                style = AppText.screenTitle,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Selector rápido de tema: vista previa del perfil activo y una cuadrícula de muestras
+ * (diagonal fondo/acento). «Personalizar» abre el editor de colores completo.
+ */
+@Composable
+private fun ThemePicker(
+    profiles: List<BeatMyBeatThemeProfile>,
+    activeProfileId: String,
+    onSelect: (String) -> Unit,
+) {
+    val active = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.first()
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(Radius.lg),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Column(
+                modifier = Modifier.padding(Spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                Text(
+                    text = stringResource(R.string.theme_preview_kicker, active.name).uppercase(),
+                    style = AppText.kicker,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(RoundedCornerShape(Radius.md))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(active.primaryVariant.copy(alpha = 0.55f), active.primaryVariant, CharcaColors.amber),
+                                ),
+                            ),
+                    )
+                    Spacer(modifier = Modifier.size(Spacing.md))
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        Column {
+                            Text(
+                                text = active.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                            )
+                            Text(
+                                text = stringResource(R.string.app_name),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(5.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.38f)
+                                    .height(5.dp)
+                                    .background(MaterialTheme.colorScheme.primary),
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.size(Spacing.md))
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            profiles.forEach { profile ->
+                val selected = profile.id == active.id
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 92.dp)
+                        .clip(RoundedCornerShape(Radius.md))
+                        .selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { if (!selected) onSelect(profile.id) },
+                        )
+                        .padding(vertical = Spacing.sm),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm, Alignment.CenterVertically),
+                ) {
+                    ThemeSwatch(profile = profile, selected = selected, ringColor = active.primary)
+                    Text(
+                        text = profile.name,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Círculo de 56dp partido en diagonal: fondo del perfil / su acento. */
+@Composable
+private fun ThemeSwatch(profile: BeatMyBeatThemeProfile, selected: Boolean, ringColor: Color) {
+    val outline = MaterialTheme.colorScheme.outlineVariant
+    Canvas(modifier = Modifier.size(56.dp)) {
+        val r = size.minDimension / 2f
+        val half = Path().apply {
+            moveTo(size.width, 0f)
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        clipPath(Path().apply { addOval(Rect(center, r - 1.5.dp.toPx())) }) {
+            drawRect(color = profile.backgroundTop)
+            drawPath(half, color = profile.primary)
+        }
+        drawCircle(
+            color = if (selected) ringColor else outline,
+            radius = r - 1.5.dp.toPx(),
+            style = Stroke(width = 3.dp.toPx()),
+        )
+        if (selected) {
+            drawCircle(
+                color = ringColor.copy(alpha = 0.18f),
+                radius = r + 2.dp.toPx(),
+                style = Stroke(width = 4.dp.toPx()),
+            )
+        }
+    }
 }

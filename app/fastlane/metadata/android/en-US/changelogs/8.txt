@@ -1,0 +1,1 @@
+New look that opens straight into your library, word-by-word lyrics, sleep timer, add to several playlists at once and a mini player on every tab. Downloads keep the original quality. Fixes: downloads on Android 7-9, music permission on first launch, playback position kept after the app is closed, corrupted album art, playlist creation, name capitalization and in-app updates.

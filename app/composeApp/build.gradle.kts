@@ -12,7 +12,6 @@ kotlin {
     androidTarget {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
-            optIn.add("androidx.media3.common.util.UnstableApi")
         }
     }
 
@@ -31,7 +30,7 @@ kotlin {
             implementation(libs.androidx.media3.common)
             implementation(libs.androidx.navigation.compose)
             implementation(libs.androidx.documentfile)
-            implementation(compose.materialIconsExtended)
+            implementation(libs.compose.material.icons.extended)
             implementation(libs.okhttp)
             implementation(libs.coil.compose)
             implementation(libs.androidx.palette.ktx)
@@ -78,8 +77,8 @@ android {
         applicationId = "com.imontalvodev.beatmybeat"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 7
-        versionName = "1.2"
+        versionCode = 13
+        versionName = "1.4"
     }
     buildFeatures {
         buildConfig = true
@@ -93,6 +92,20 @@ android {
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
+    }
+    // Firma de release solo si el entorno la aporta (el workflow de GitHub Actions la inyecta
+    // desde secretos). Sin variables, assembleRelease sigue generando el APK sin firmar, que es
+    // lo que necesita F-Droid y el flujo manual de docs/github-release.md.
+    val releaseKeystore = System.getenv("BMB_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    if (releaseKeystore != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("BMB_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("BMB_KEY_ALIAS")
+                keyPassword = System.getenv("BMB_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -111,25 +124,65 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
 
+            // NewPipe Extractor (>= 0.27) usa `record` y el dexeo D8 por librería de AGP 8.13 no
+            // sabe desazucararlo. R8 sí (por eso release compila): se activa solo para dexear,
+            // con todo lo demás desactivado en proguard-debug.pro.
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android.txt"),
+                "proguard-rules.pro",
+                "proguard-debug.pro",
+            )
+
             // ffmpeg-kit trae libavcodec/libavformat/libavfilter compiladas para las cuatro ABIs:
             // ~90 MB de los ~136 MB del APK de debug. Al desarrollar solo se usa una, y un APK de
             // ese tamaño llega a no caber en el emulador
             // ("Requested internal only, but not enough space").
             //
-            // Release y F-Droid NO se tocan: ahí las cuatro ABIs son necesarias de verdad.
+            // Release (y F-Droid, que compila el mismo build type) lleva solo las dos ABIs ARM;
+            // ver el bloque release.
             //
             // Por defecto se dejan la del emulador (x86_64) y la de un móvil real (arm64-v8a).
             // Para bajar aún más, apuntando solo al emulador:
             //   ./gradlew installDebug -PdebugAbi=x86_64
+            //
+            // Ojo: un móvil de 32 bits (armeabi-v7a) o un emulador x86 no pueden instalar este
+            // APK (INSTALL_FAILED_NO_MATCHING_ABIS); para ellos: -PdebugAbi=armeabi-v7a, o
+            // -PdebugAbi=all para no filtrar nada.
             ndk {
-                val requested = (project.findProperty("debugAbi") as String?)
+                val supportedAbis = setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                // providers.gradleProperty (no project.findProperty): es la API compatible con
+                // el configuration cache, que está activado en gradle.properties.
+                val raw = providers.gradleProperty("debugAbi").orNull?.trim()
+                val requested = raw
                     ?.split(",")
+                    //noinspection WrongGradleMethod
                     ?.map { it.trim() }
+                    //noinspection WrongGradleMethod
                     ?.filter { it.isNotEmpty() }
-                abiFilters += requested ?: listOf("x86_64", "arm64-v8a")
+                    ?.takeIf { it.isNotEmpty() } // -PdebugAbi= vacío -> valor por defecto
+                when {
+                    raw.equals("all", ignoreCase = true) -> Unit
+                    requested == null -> abiFilters += listOf("x86_64", "arm64-v8a")
+                    else -> {
+                        val unknown = requested - supportedAbis
+                        require(unknown.isEmpty()) {
+                            "debugAbi desconocida: $unknown. Valores válidos: $supportedAbis o all"
+                        }
+                        abiFilters += requested
+                    }
+                }
             }
         }
         getByName("release") {
+            // Solo ARM: los móviles reales (Fairphone, LineageOS, etc.) son armeabi-v7a o
+            // arm64-v8a. x86/x86_64 (emuladores, Android-x86, algún Chromebook) sumaban ~56 MB
+            // de FFmpeg nativo a un APK de ~110 MB; esos equipos suelen traducir ARM
+            // (houdini/libndk_translation) y siguen pudiendo instalarlo.
+            ndk {
+                abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+            }
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

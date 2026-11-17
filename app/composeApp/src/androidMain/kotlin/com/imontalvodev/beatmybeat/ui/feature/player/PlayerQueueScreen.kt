@@ -37,7 +37,15 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import com.imontalvodev.beatmybeat.ui.theme.EqualizerBars
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
@@ -73,6 +81,7 @@ internal fun PlayerQueueScreen(
 ) {
     val canReorder = !shuffleOn
     val haptics = LocalHapticFeedback.current
+    val reorderCd = stringResource(R.string.player_reorder_cd)
     val listState = rememberLazyListState()
     // Claves estables aunque la misma canción esté dos veces en la cola: uri + número de aparición.
     val keys = buildList {
@@ -115,7 +124,7 @@ internal fun PlayerQueueScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.player_queue_title),
-                    style = MaterialTheme.typography.titleLarge,
+                    style = AppText.screenTitle,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
@@ -125,8 +134,19 @@ internal fun PlayerQueueScreen(
                 )
             }
             if (upNext.isNotEmpty()) {
-                TextButton(onClick = onClear) {
-                    Text(stringResource(R.string.player_clear_queue))
+                OutlinedButton(
+                    onClick = onClear,
+                    modifier = Modifier.padding(end = Spacing.sm),
+                    shape = RoundedCornerShape(Radius.pill),
+                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.player_clear_queue),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             }
         }
@@ -152,12 +172,7 @@ internal fun PlayerQueueScreen(
                         highlighted = true,
                         onClick = null,
                         trailing = {
-                            Icon(
-                                imageVector = Icons.Filled.GraphicEq,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(end = Spacing.md),
-                            )
+                            EqualizerBars(modifier = Modifier.padding(end = Spacing.md))
                         },
                     )
                 }
@@ -197,16 +212,55 @@ internal fun PlayerQueueScreen(
 
             itemsIndexed(items = upNext, key = { idx, _ -> keys[idx] }) { idx, track ->
                 ReorderableItem(state = reorderState, key = keys[idx], enabled = canReorder) { isDragging ->
-                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "queue_drag")
+                    val elevation by animateDpAsState(if (isDragging) 12.dp else 0.dp, label = "queue_drag")
+                    val dragStarted = {
+                        haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                    }
                     Surface(
-                        shape = RoundedCornerShape(Radius.sm),
+                        shape = RoundedCornerShape(Radius.md),
                         color = if (isDragging) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
                         shadowElevation = elevation,
+                        border = if (isDragging) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                        // Pulsación larga en cualquier punto de la fila: el asa es pequeña y mucha
+                        // gente intenta arrastrar la fila entera.
+                        modifier = if (canReorder) {
+                            Modifier.longPressDraggableHandle(
+                                onDragStarted = { dragStarted() },
+                                onDragStopped = onMoveFinished,
+                            )
+                        } else {
+                            Modifier
+                        },
                     ) {
                         QueueRow(
                             track = track,
                             highlighted = false,
                             onClick = { onPlayItem(idx, track) },
+                            leading = if (canReorder) {
+                                {
+                                    // Asa de 48dp a la izquierda, como en el diseño; arrastre inmediato.
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 40.dp, height = 48.dp)
+                                            .draggableHandle(
+                                                onDragStarted = { dragStarted() },
+                                                onDragStopped = onMoveFinished,
+                                            )
+                                            .semantics {
+                                                contentDescription = reorderCd
+                                            },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.DragHandle,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                             trailing = {
                                 if (!shuffleOn) {
                                     IconButton(onClick = { onRemoveItem(idx) }) {
@@ -215,23 +269,6 @@ internal fun PlayerQueueScreen(
                                             contentDescription = stringResource(R.string.player_remove_from_queue_cd),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                }
-                                if (canReorder) {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier.draggableHandle(
-                                            onDragStarted = {
-                                                haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-                                            },
-                                            onDragStopped = onMoveFinished,
-                                        ),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.DragHandle,
-                                            contentDescription = stringResource(R.string.player_reorder_cd),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 }
@@ -250,18 +287,28 @@ private fun QueueRow(
     highlighted: Boolean,
     onClick: (() -> Unit)?,
     trailing: @Composable () -> Unit,
+    leading: (@Composable () -> Unit)? = null,
 ) {
+    val rowShape = RoundedCornerShape(if (highlighted) Radius.md else Radius.sm)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Radius.sm))
+            .clip(rowShape)
             .background(
-                if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent,
+                if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
+            )
+            .then(
+                if (highlighted) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), rowShape)
+                } else {
+                    Modifier
+                },
             )
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(start = Spacing.sm, top = Spacing.sm, bottom = Spacing.sm),
+            .padding(start = if (leading != null) 0.dp else Spacing.sm, top = Spacing.sm, bottom = Spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        leading?.invoke()
         Box(
             modifier = Modifier
                 .size(48.dp)

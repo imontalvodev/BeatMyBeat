@@ -1,6 +1,12 @@
 package com.imontalvodev.beatmybeat.ui.theme
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -9,7 +15,9 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,10 +47,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +93,7 @@ fun ScreenHeader(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    leading: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
@@ -91,6 +102,10 @@ fun ScreenHeader(
             .padding(top = Spacing.lg, bottom = Spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (leading != null) {
+            leading()
+            Spacer(modifier = Modifier.size(Spacing.md))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -198,6 +213,9 @@ fun ModeChip(
         enabled = enabled,
         modifier = modifier.semantics { role = Role.Button },
         label = { Text(text) },
+        shape = RoundedCornerShape(Radius.pill),
+        colors = charcaChipColors(),
+        border = charcaChipBorder(selected, enabled),
         leadingIcon = if (selected) {
             {
                 Icon(
@@ -223,7 +241,7 @@ fun PrimaryButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.height(56.dp),
-        shape = RoundedCornerShape(999.dp),
+        shape = RoundedCornerShape(Radius.lg),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -240,3 +258,97 @@ fun PrimaryButton(
         )
     }
 }
+
+
+/**
+ * Indicador de «sonando»: tres barras que suben y bajan desfasadas. Con la animación del sistema
+ * desactivada se queda quieto a media altura.
+ */
+@Composable
+fun EqualizerBars(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    height: Dp = 16.dp,
+) {
+    val transition = rememberInfiniteTransition(label = "eq")
+    val reduced = rememberReducedMotionSetting()
+    Row(
+        modifier = modifier
+            .height(height)
+            .semantics { contentDescription = "" },
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        repeat(3) { index ->
+            val scale = if (reduced) {
+                0.7f
+            } else {
+                transition.animateFloat(
+                    initialValue = 0.3f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(500, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse,
+                        initialStartOffset = StartOffset(index * 250),
+                    ),
+                    label = "eq$index",
+                ).value
+            }
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(height * scale)
+                    .background(color, RoundedCornerShape(2.dp)),
+            )
+        }
+    }
+}
+
+/** Animaciones del sistema desactivadas (escala 0): quien lo pide no quiere movimiento decorativo. */
+@Composable
+fun rememberReducedMotionSetting(): Boolean {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember {
+        runCatching {
+            android.provider.Settings.Global.getFloat(
+                context.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) == 0f
+        }.getOrDefault(false)
+    }
+}
+
+
+/** Chip «Charca»: contorno fino; activo = borde y texto del acento sobre un relleno tenue. */
+@Composable
+fun charcaChipColors() = FilterChipDefaults.filterChipColors(
+    containerColor = Color.Transparent,
+    labelColor = MaterialTheme.colorScheme.onSurface,
+    iconColor = MaterialTheme.colorScheme.primary,
+    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+    selectedLabelColor = MaterialTheme.colorScheme.primary,
+    selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+)
+
+@Composable
+fun charcaChipBorder(selected: Boolean, enabled: Boolean = true) = FilterChipDefaults.filterChipBorder(
+    enabled = enabled,
+    selected = selected,
+    borderColor = MaterialTheme.colorScheme.outlineVariant,
+    selectedBorderColor = MaterialTheme.colorScheme.primary,
+    borderWidth = 1.5.dp,
+    selectedBorderWidth = 1.5.dp,
+)
+
+
+/** Campo de texto «Charca»: borde fino que se enciende con el acento al enfocar. */
+@Composable
+fun charcaFieldColors() = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = MaterialTheme.colorScheme.primary,
+    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    focusedLeadingIconColor = MaterialTheme.colorScheme.primary,
+    cursorColor = MaterialTheme.colorScheme.primary,
+)

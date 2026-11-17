@@ -1,5 +1,6 @@
 package com.imontalvodev.beatmybeat.service
 
+import android.annotation.SuppressLint
 import com.imontalvodev.beatmybeat.shared.download.DownloadFormat
 import android.app.Service
 import android.content.Context
@@ -199,9 +200,14 @@ class SongDownloadService : Service() {
 
     private fun createAutoPlaylist(name: String, fileNames: List<String>) {
         val resolver = contentResolver
-        val collection = android.provider.MediaStore.Audio.Media.getContentUri(
-            android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY,
-        )
+        val collection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            android.provider.MediaStore.Audio.Media.getContentUri(
+                android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY,
+            )
+        } else {
+            // "external_primary" no existe antes de Android 10.
+            android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        }
         val trackIds = mutableListOf<Long>()
         for (fileName in fileNames) {
             val cursor = resolver.query(
@@ -293,6 +299,7 @@ class SongDownloadService : Service() {
         stopSelf(startId)
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     private fun reportSingleProgress(title: String, artist: String, phase: String, fraction: Float?) {
         DownloadProgressBus.setSingle(title, artist, phase, fraction)
         if (!shouldPostProgressNotification()) return
@@ -317,6 +324,7 @@ class SongDownloadService : Service() {
         return true
     }
 
+    @SuppressLint("MissingPermission") // notify() va tras canPostNotifications() y dentro de runCatching; lint no lo ve a través del helper.
     private fun updatePlaylistNotification(processed: Int, total: Int, currentTitle: String) {
         if (!shouldPostProgressNotification()) return
         if (!BeatMyBeatNotification.canPostNotifications(this)) return

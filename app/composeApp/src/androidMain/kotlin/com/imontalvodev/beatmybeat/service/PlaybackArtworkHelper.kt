@@ -12,14 +12,11 @@ import java.io.File
  */
 internal object PlaybackArtworkHelper {
 
-    /** Límite para notificación / UI; evita retener varios cientos de KB por pista en RAM. */
-    private const val MAX_ARTWORK_BYTES = 256 * 1024
-
     fun resolveArtworkBytes(context: Context, uriString: String): ByteArray? {
         val embedded = readEmbeddedPicture(context, uriString)
-        if (embedded != null && embedded.isNotEmpty()) {
-            return embedded.copyOf(embedded.size.coerceAtMost(MAX_ARTWORK_BYTES))
-        }
+        // Bytes completos: truncarlos corrompe el JPEG/PNG. No se retienen; quien llama
+        // decodifica a bitmap reducido (BitmapDecoding.decodeSampled) y los suelta.
+        if (embedded != null && embedded.isNotEmpty()) return embedded
         return readSidecarMetaArtwork(uriString)
     }
 
@@ -67,7 +64,6 @@ internal object PlaybackArtworkHelper {
         if (!metaFile.exists()) return@runCatching null
         val b64 = JSONObject(metaFile.readText()).optString("artworkBase64")
         if (b64.isBlank()) return@runCatching null
-        val decoded = android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
-        decoded.copyOf(decoded.size.coerceAtMost(MAX_ARTWORK_BYTES))
+        android.util.Base64.decode(b64, android.util.Base64.NO_WRAP)
     }.getOrNull()
 }

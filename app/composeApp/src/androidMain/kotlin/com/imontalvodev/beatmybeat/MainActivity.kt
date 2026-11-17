@@ -1,11 +1,9 @@
 package com.imontalvodev.beatmybeat
 
-import android.Manifest
+import android.content.ComponentCallbacks2
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.os.Build
 import android.provider.DocumentsContract
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,6 +18,33 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.imontalvodev.beatmybeat.ui.feature.splash.SplashScreen
+import com.imontalvodev.beatmybeat.ui.theme.Radius
+import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -42,8 +67,6 @@ import com.imontalvodev.beatmybeat.download.DownloadProgressBus
 import com.imontalvodev.beatmybeat.service.SongDownloadService
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.collectAsState
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -66,7 +89,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import com.imontalvodev.beatmybeat.playback.PlaybackServiceBinding
 import com.imontalvodev.beatmybeat.ui.feature.analyze.AnalyzeScreen
@@ -79,6 +101,7 @@ import com.imontalvodev.beatmybeat.ui.feature.update.ReleaseUpdatePrompt
 import com.imontalvodev.beatmybeat.ui.feature.update.UpdateDownloadStatusPrompt
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerScreen
 import com.imontalvodev.beatmybeat.ui.feature.theme.ThemeCustomizerSection
+import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.storage.StorageSettings
 import com.imontalvodev.beatmybeat.ui.theme.BeatMyBeatTheme
 import com.imontalvodev.beatmybeat.ui.theme.ThemeProfilesStore
@@ -91,11 +114,6 @@ class MainActivity : AppCompatActivity() {
         AppCompatDelegate.setApplicationLocales(locales)
     }
 
-    private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            // No hacemos nada: si deniega, simplemente no se verán notificaciones.
-        }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -104,13 +122,6 @@ class MainActivity : AppCompatActivity() {
         // respetar el flag en cuanto la app pasa a segundo plano, sin necesidad de limpiarlo
         // manualmente en onPause.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        // Android 13+ requiere permiso runtime para notificaciones.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val permission = Manifest.permission.POST_NOTIFICATIONS
-            val granted = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-            if (!granted) notificationPermissionLauncher.launch(permission)
-        }
 
         ApkUpdateInstaller.tryCompletePendingInstall(this)
 
@@ -150,6 +161,9 @@ class MainActivity : AppCompatActivity() {
                 CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
                     ReleaseUpdatePrompt()
                     UpdateDownloadStatusPrompt()
+                    // Splash de marca por encima de todo hasta pulsar «Entrar» (sobrevive a rotaciones).
+                    var splashDone by rememberSaveable { mutableStateOf(false) }
+                    Box(modifier = Modifier.fillMaxSize()) {
                     PlaybackServiceBinding {
                         key(localeTick) {
                         val navController = rememberNavController()
@@ -177,7 +191,8 @@ class MainActivity : AppCompatActivity() {
                                 var lastDownload by remember { mutableStateOf(activeDownload) }
                                 if (activeDownload != null) lastDownload = activeDownload
                                 AnimatedVisibility(
-                                    visible = activeDownload != null && !playerImmersive,
+                                    // En Descargar ya hay una sección «En curso»: la barra global sería un duplicado.
+                                    visible = activeDownload != null && !playerImmersive && currentRoute != "analyze",
                                     enter = expandVertically(tween(Motion.LAYOUT)) + fadeIn(tween(Motion.STANDARD)),
                                     exit = shrinkVertically(tween(Motion.LAYOUT)) + fadeOut(tween(Motion.QUICK)),
                                 ) {
@@ -246,6 +261,12 @@ class MainActivity : AppCompatActivity() {
                             }
                             composable("profile") {
                                 ProfileScreen(
+                                    profiles = profiles,
+                                    activeProfileId = activeProfileId,
+                                    onSelectProfile = { id ->
+                                        activeProfileId = id
+                                        store.saveActiveProfileId(id)
+                                    },
                                     onChangeLanguage = { languageTag ->
                                         applyLanguage(languageTag)
                                         localeCompositionEpoch++
@@ -359,6 +380,23 @@ class MainActivity : AppCompatActivity() {
                     }
                         } // localeTick
                     } // PlaybackServiceBinding
+                    // Franja de la barra de estado con el tope del degradado de las pantallas
+                    // (el Scaffold pinta ahí el color del extremo opuesto y se vería un corte).
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .fillMaxWidth()
+                            .windowInsetsTopHeight(WindowInsets.statusBars)
+                            .background(activeProfile.backgroundTop),
+                    )
+                    AnimatedVisibility(
+                        visible = !splashDone,
+                        enter = fadeIn(tween(Motion.STANDARD)),
+                        exit = fadeOut(tween(Motion.BRAND)),
+                    ) {
+                        SplashScreen(onEnter = { splashDone = true })
+                    }
+                    } // Box splash
                 } // CompositionLocalProvider
             } // BeatMyBeatTheme
         } // setContent
@@ -367,6 +405,12 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         ApkUpdateInstaller.tryCompletePendingInstall(this)
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // UI oculta: las carátulas se recargan al volver; mejor soltarlas que morir por LMK.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) ArtworkCache.clear()
     }
 }
 
@@ -382,34 +426,73 @@ private data class NavTab(
     val icon: ImageVector,
 )
 
+// Orden del lienzo «Charca»: Analizar · Biblioteca · Perfil. Se arranca en Biblioteca.
 private val NAV_TABS = listOf(
-    NavTab("player", R.string.nav_player, Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
     NavTab("analyze", R.string.nav_download, Icons.Filled.Download, Icons.Outlined.Download),
+    NavTab("player", R.string.nav_player, Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
     NavTab("profile", R.string.nav_profile, Icons.Filled.Settings, Icons.Outlined.Settings),
 )
 
+/**
+ * Barra de navegación «Charca»: píldora flotante con las esquinas totalmente redondeadas; la
+ * pestaña activa se marca con un relleno tenue del acento y su etiqueta en negrita.
+ */
 @Composable
 private fun AppNavigationBar(
     currentRoute: String?,
     onSelect: (String) -> Unit,
 ) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 0.dp,
+    val accent = MaterialTheme.colorScheme.primary
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = Spacing.md, vertical = Spacing.md),
+        shape = RoundedCornerShape(Radius.pill),
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 6.dp,
     ) {
-        NAV_TABS.forEach { tab ->
-            val selected = currentRoute == tab.route
-            NavigationBarItem(
-                selected = selected,
-                onClick = { if (!selected) onSelect(tab.route) },
-                icon = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(6.dp)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+        ) {
+            NAV_TABS.forEach { tab ->
+                val selected = currentRoute == tab.route
+                val tint = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(Radius.pill))
+                        .background(if (selected) accent.copy(alpha = 0.16f) else Color.Transparent)
+                        .selectable(
+                            selected = selected,
+                            role = Role.Tab,
+                            onClick = { if (!selected) onSelect(tab.route) },
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
                     Icon(
                         imageVector = if (selected) tab.selectedIcon else tab.icon,
                         contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(22.dp),
                     )
-                },
-                label = { Text(stringResource(tab.labelRes)) },
-            )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = stringResource(tab.labelRes),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = tint,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }

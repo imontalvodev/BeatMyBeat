@@ -15,6 +15,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +36,7 @@ import com.imontalvodev.beatmybeat.playback.LocalPlaybackService
 import com.imontalvodev.beatmybeat.service.PlaybackService
 import com.imontalvodev.beatmybeat.shared.playback.SleepTimer
 import com.imontalvodev.beatmybeat.ui.theme.AppText
+import com.imontalvodev.beatmybeat.ui.theme.CharcaColors
 import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import kotlinx.coroutines.delay
 
@@ -67,7 +69,7 @@ internal fun SleepTimerButton() {
         Icon(
             imageVector = if (active) Icons.Filled.Bedtime else Icons.Outlined.Bedtime,
             contentDescription = stringResource(R.string.sleep_timer_title),
-            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            tint = if (active) CharcaColors.amber else MaterialTheme.colorScheme.onSurface,
         )
     }
 
@@ -95,7 +97,7 @@ internal fun SleepTimerStatus(modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = AppText.meta,
-        color = MaterialTheme.colorScheme.primary,
+        color = CharcaColors.amber,
         modifier = modifier,
     )
 }
@@ -110,7 +112,7 @@ private fun SleepTimerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Outlined.Bedtime, contentDescription = null) },
+        icon = { Icon(Icons.Outlined.Bedtime, contentDescription = null, tint = CharcaColors.amber) },
         title = { Text(stringResource(R.string.sleep_timer_title)) },
         text = {
             Column {
@@ -152,7 +154,12 @@ private fun SleepTimerOption(label: String, selected: Boolean, onClick: () -> Un
             .padding(vertical = Spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = onClick, modifier = Modifier.size(40.dp))
+        RadioButton(
+            selected = selected,
+            onClick = onClick,
+            modifier = Modifier.size(40.dp),
+            colors = RadioButtonDefaults.colors(selectedColor = CharcaColors.amber),
+        )
         Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = Spacing.sm))
     }
 }
