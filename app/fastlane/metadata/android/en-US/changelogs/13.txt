@@ -1,1 +1,1 @@
-New "Charca" look: floating navigation and mini player, splash screen, new themes (Estanque, Brasa, Noche). "Play next" now keeps the order you add songs.
+New "Charca" look: floating navigation and mini player, splash screen and new themes. Custom playlist photos and drag-to-reorder playlists. Fixed queue order and "Play next" now keeps the order you add songs.

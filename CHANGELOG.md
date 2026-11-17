@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [1.4] — Unreleased
+## [1.4] — 2026-11-17
 
 ### Changed
 - **New "Charca" look.** Bricolage Grotesque for titles and Inter for everything else, four corner radii (12 · 20 · 28 · 32) instead of twelve, and a warm amber for favorites, karaoke and the sleep timer. The default Bluewave palette is refreshed (brighter accent, deeper background).
