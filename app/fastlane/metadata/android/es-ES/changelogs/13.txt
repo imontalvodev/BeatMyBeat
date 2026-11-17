@@ -1,0 +1,1 @@
+Nuevo aspecto «Charca»: navegación y mini reproductor flotantes, pantalla de bienvenida y temas nuevos (Estanque, Brasa, Noche). «Reproducir a continuación» respeta el orden en que añades canciones.
