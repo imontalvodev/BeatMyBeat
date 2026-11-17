@@ -26,7 +26,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.imontalvodev.beatmybeat.ui.theme.CharcaColors
 import com.imontalvodev.beatmybeat.ui.theme.Motion
 import com.imontalvodev.beatmybeat.shared.lyrics.LrcLine
 import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
@@ -59,7 +61,8 @@ fun SyncedLyricsView(
     val isIntro = activeIndex < 0
 
     val listState = rememberLazyListState()
-    val primary = MaterialTheme.colorScheme.primary
+    // Ámbar: lo cantado y la línea que suena (el acento queda para las acciones).
+    val primary = CharcaColors.amber
     val onSurface = MaterialTheme.colorScheme.onSurface
 
     LaunchedEffect(focusIndex, lines.size) {
@@ -128,7 +131,7 @@ fun SyncedLyricsView(
                         // cantando en cada instante sin adivinar (y adivinar se desincroniza).
                         val highlightLen = LrcParser.karaokeHighlightLength(line, adjustedMs)
                         val sungColor = primary
-                        val upcomingColor = primary.copy(alpha = 0.45f)
+                        val upcomingColor = onSurface.copy(alpha = 0.55f)
                         val annotated = buildAnnotatedString {
                             withStyle(SpanStyle(color = sungColor)) {
                                 append(line.text.substring(0, highlightLen))
@@ -139,10 +142,12 @@ fun SyncedLyricsView(
                         }
                         Text(
                             text = annotated,
-                            style = MaterialTheme.typography.bodyMedium.copy(
+                            style = MaterialTheme.typography.headlineSmall.copy(
                                 fontSize = fontSize,
-                                fontWeight = fontWeight,
+                                fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Bold,
                                 lineHeight = lineHeight,
+                                // El tracking de headlineSmall está fijado para 29sp; aquí es proporcional.
+                                letterSpacing = (-0.01).em,
                             ),
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
@@ -150,10 +155,12 @@ fun SyncedLyricsView(
                     } else {
                         Text(
                             text = line.text,
-                            style = MaterialTheme.typography.bodyMedium.copy(
+                            style = MaterialTheme.typography.headlineSmall.copy(
                                 fontSize = fontSize,
-                                fontWeight = fontWeight,
+                                fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Bold,
                                 lineHeight = lineHeight,
+                                // El tracking de headlineSmall está fijado para 29sp; aquí es proporcional.
+                                letterSpacing = (-0.01).em,
                             ),
                             color = color,
                             textAlign = TextAlign.Center,

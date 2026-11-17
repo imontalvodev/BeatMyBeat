@@ -100,6 +100,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -381,6 +382,8 @@ fun PlayerScreen(
     /** Cola de sesión: lista COMPLETA de la sesión y posición absoluta de la canción actual. */
     var sessionOrderUris by remember { mutableStateOf<List<String>>(emptyList()) }
     var sessionOrderIndex by remember { mutableStateOf(0) }
+    /** URIs añadidas con "Reproducir a continuación", en orden de inserción (cola FIFO). */
+    var playNextUris by remember { mutableStateOf<List<String>>(emptyList()) }
     val queueSnapshotHydrated by viewModel.queueUiHydrated.collectAsState()
 
     fun currentSessionQueueState(): SessionQueueState? {
@@ -396,6 +399,13 @@ fun PlayerScreen(
         }
         sessionOrderUris = state.orderUris
         sessionOrderIndex = state.currentIndex.coerceIn(0, state.orderUris.lastIndex)
+    }
+
+    /** Refleja en la lista de sesión el orden actual de `queue` (tras reordenar o quitar). */
+    fun syncSessionPendingFromQueue() {
+        if (viewModel.shuffleEnabled.value) return
+        val state = currentSessionQueueState() ?: return
+        applySessionQueueState(replacePendingInSession(state, queue.map { it.uri }))
     }
 
     fun rebuildPendingQueueFromSession() {
@@ -427,7 +437,7 @@ fun PlayerScreen(
         }
     }
 
-    fun updateQueueRepeatSnapshotForPlayNext(tracks: List<DeviceTrack>) {
+    fun updateQueueRepeatSnapshotForPlayNext(tracks: List<DeviceTrack>, blockOffset: Int = 0) {
         if (shuffleOn || repeatMode != RepeatMode.LIST) return
         val ct = currentTrack ?: return
         if (tracks.isEmpty()) return
@@ -436,7 +446,7 @@ fun PlayerScreen(
             queueRepeatIndex = 0
         } else {
             val mutable = queueRepeatSnapshot.toMutableList()
-            var insertAt = (queueRepeatIndex + 1).coerceAtMost(mutable.size)
+            var insertAt = (queueRepeatIndex + 1 + blockOffset).coerceAtMost(mutable.size)
             tracks.forEach { track ->
                 mutable.add(insertAt, track)
                 insertAt++
@@ -597,6 +607,18 @@ fun PlayerScreen(
         )
     }
 
+    // Al reordenar la lista hay que volver arriba: LazyColumn mantiene anclado el primer elemento
+    // visible por clave, y tras ordenar A-Z quedaba la lista desplazada con la primera fila oculta.
+    var sortScrollSeen by remember { mutableStateOf(false) }
+    LaunchedEffect(sortOption) {
+        if (sortScrollSeen) {
+            songsListState.scrollToItem(0)
+            favoritesListState.scrollToItem(0)
+            playlistListState.scrollToItem(0)
+        }
+        sortScrollSeen = true
+    }
+
     // Persistir opción de ordenación cada vez que cambia
     LaunchedEffect(sortOption) {
         viewModel.saveSortOption(
@@ -627,6 +649,31 @@ fun PlayerScreen(
     var duplicateDialog by remember { mutableStateOf<DuplicateConfirmState?>(null) }
 
     var playlistDeleteDialogId by remember { mutableStateOf<Long?>(null) }
+    // Foto personalizada de playlist: el selector del sistema no pide permisos (Android 13+ lo da
+    // el propio sistema; antes, un respaldo de Google Play services/GetContent).
+    var coverTargetPlaylistId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val coverErrorText = stringResource(R.string.player_playlist_photo_error)
+    val coverScope = rememberCoroutineScope()
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val target = coverTargetPlaylistId
+        coverTargetPlaylistId = null
+        if (uri != null && target != null) {
+            coverScope.launch {
+                val path = PlaylistCovers.import(context, target, uri)
+                if (path != null) viewModel.setPlaylistCover(target, path)
+                else showToast(coverErrorText)
+            }
+        }
+    }
+    fun requestPlaylistCover(id: Long) {
+        coverTargetPlaylistId = id
+        photoPicker.launch(
+            androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
+    }
+
     var playlistRenameDialogId by remember { mutableStateOf<Long?>(null) }
     var playlistRenameNewName by remember { mutableStateOf("") }
 
@@ -1068,15 +1115,19 @@ fun PlayerScreen(
     }
 
     /**
-     * Inserta tras la pista actual (índice current+1 en el fichero de cola).
+     * Inserta tras la pista actual y tras lo ya añadido con "a continuación" (orden FIFO:
+     * lo primero que se añade es lo primero que suena).
      * Con shuffle: muta [shuffleOrder]; si no: cabeza de [queue] (espejo de lo pendiente).
      */
     fun insertTracksPlayNext(tracks: List<DeviceTrack>) {
         if (tracks.isEmpty()) return
         val shuffleActive = viewModel.shuffleEnabled.value
+        // `queue` espeja siempre los pendientes, así que sirve para medir el bloque previo.
+        val pendingBefore = queue.map { it.uri }
+        val blockOffset = playNextBlockSize(pendingBefore, playNextUris)
         if (shuffleActive && shuffleOrder.isNotEmpty() && shuffleIndex >= 0) {
             val mutable = shuffleOrder.toMutableList()
-            var insertAt = (shuffleIndex + 1).coerceAtMost(mutable.size)
+            var insertAt = (shuffleIndex + 1 + blockOffset).coerceAtMost(mutable.size)
             tracks.forEach { t ->
                 mutable.add(insertAt, t)
                 insertAt++
@@ -1088,13 +1139,15 @@ fun PlayerScreen(
             val updated = insertTracksPlayNextInSession(
                 state = currentSessionQueueState() ?: return,
                 trackUris = tracks.map { it.uri },
+                blockOffset = blockOffset,
             )
             applySessionQueueState(updated)
             rebuildPendingQueueFromSession()
         } else {
-            tracks.reversed().forEach { queue.add(0, it) }
+            queue.addAll(blockOffset.coerceAtMost(queue.size), tracks)
         }
-        updateQueueRepeatSnapshotForPlayNext(tracks)
+        playNextUris = pendingBefore.take(blockOffset) + tracks.map { it.uri }
+        updateQueueRepeatSnapshotForPlayNext(tracks, blockOffset)
         syncQueueToService()
     }
 
@@ -1822,9 +1875,16 @@ fun PlayerScreen(
                                 playlistDeleteDialogId = id
                             },
                             playlistId = selectedPlaylistId!!,
+                            coverPath = openPlaylist?.coverPath,
+                            onRequestChangeCover = { id -> requestPlaylistCover(id) },
+                            onRequestRemoveCover = { id -> viewModel.setPlaylistCover(id, null) },
                         )
                     } else {
                         PlaylistPickerBar(
+                            modifier = Modifier.weight(1f),
+                            onRequestChangeCover = { id -> requestPlaylistCover(id) },
+                            onRequestRemoveCover = { id -> viewModel.setPlaylistCover(id, null) },
+                            onMovePlaylist = { from, to -> viewModel.movePlaylist(from, to) },
                             playlists = playlists,
                             selectedPlaylistId = selectedPlaylistId,
                             onSelect = { id ->
@@ -1926,6 +1986,10 @@ fun PlayerScreen(
                 }
 
                 val bulkRemoveAvailable = selectedSection == PlayerSection.Playlist && selectedPlaylistId != null
+                if (selectedSection == PlayerSection.Favorites && !selectionMode && visibleTracks.isNotEmpty()) {
+                    FavoritesBanner(count = visibleTracks.size)
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                }
                 if (showTracksArea) {
                     AnimatedContent(
                         targetState = selectionMode,
@@ -2035,6 +2099,7 @@ fun PlayerScreen(
                         val isFavorite = favoriteIds.contains(track.id)
                         TrackRow(
                             track = track,
+                            isPlaying = isPlaying,
                             isCurrent = currentTrack?.id == track.id,
                             isSelected = selectedTrackUris.contains(track.uri),
                             selectionMode = selectionMode,
@@ -2253,6 +2318,7 @@ fun PlayerScreen(
                     onRemoveItem = { idx ->
                         if (idx in queue.indices) {
                             queue.removeAt(idx)
+                            syncSessionPendingFromQueue()
                             syncQueueToService()
                         }
                     },
@@ -2261,7 +2327,10 @@ fun PlayerScreen(
                             queue.add(to, queue.removeAt(from))
                         }
                     },
-                    onMoveFinished = { syncQueueToService() },
+                    onMoveFinished = {
+                        syncSessionPendingFromQueue()
+                        syncQueueToService()
+                    },
                 )
                 }
                 }

@@ -369,4 +369,21 @@
         <item quantity="few">%1$d minute</item>
         <item quantity="other">%1$d minuta</item>
     </plurals>
+
+    <!-- v1.4 Splash «Charca» -->
+    <string name="splash_tagline">Tvoja omiljena glazba, uvijek uz tebe.</string>
+    <string name="splash_subtitle">Preuzimaj s YouTubea i YouTube Musica. Bez oglasa, bez poslužitelja.</string>
+    <string name="splash_enter">Uđi</string>
+    <string name="theme_preview_kicker">PREGLED · %1$s</string>
+    <string name="analyze_in_progress">U tijeku</string>
+    <string name="analyze_detected_badge">Otkriveno</string>
+    <string name="analyze_clear_url_cd">Očisti poveznicu</string>
+    <plurals name="analyze_active_downloads_cd">
+        <item quantity="one">%d aktivno preuzimanje</item>
+        <item quantity="other">%d aktivna preuzimanja</item>
+    </plurals>
+    <string name="player_playlist_change_photo">Promijeni fotografiju</string>
+    <string name="player_playlist_remove_photo">Ukloni fotografiju</string>
+    <string name="player_playlist_photo_error">Nije moguće upotrijebiti tu sliku.</string>
+    <string name="player_playlist_reorder_cd">Promijeni redoslijed popisa</string>
 </resources>

@@ -5,7 +5,7 @@
 *
 
 # …excepto lo explícito:
-!.gitignore
+.gitignore
 !README.md
 !README.en.md
 !README.es.md
@@ -18,6 +18,8 @@
 !.github/**
 !app/
 !app/**
+!graphify-out/**
+app/docs/n8n
 
 # Legado explícito (por si se recrean carpetas locales)
 /backend/

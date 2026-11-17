@@ -67,7 +67,11 @@ class ThemeProfilesStore(private val context: Context) {
 
     fun loadProfiles(): List<BeatMyBeatThemeProfile> {
         val raw = prefs.getString(KEY_PROFILES, null)
-        if (raw.isNullOrBlank()) return defaultProfiles()
+        if (raw.isNullOrBlank()) {
+            // Instalación nueva: ya parte de todos los built-in, no hay nada que añadir luego.
+            prefs.edit().putBoolean(KEY_BUILTINS_V14, true).apply()
+            return defaultProfiles()
+        }
         val arr = runCatching { JSONArray(raw) }.getOrNull() ?: return defaultProfiles()
         val out = mutableListOf<BeatMyBeatThemeProfile>()
         for (i in 0 until arr.length()) {
@@ -92,7 +96,7 @@ class ThemeProfilesStore(private val context: Context) {
                     o.optArgbLong("onSurfaceMuted", colorToStoredLong(NeonMintProfile.onSurfaceMuted)),
                 ),
             )
-            val isBuiltin = profile.id == NeonMintProfile.id || profile.id == CherryProfile.id
+            val isBuiltin = profile.id == CherryProfile.id || BuiltinProfiles.any { it.id == profile.id }
             if (!isBuiltin && !profile.hasMinimallyReadableColors()) {
                 profile = NeonMintProfile.copy(id = profile.id, name = profile.name)
             }
@@ -102,13 +106,10 @@ class ThemeProfilesStore(private val context: Context) {
         val sanitized = out.map { profile ->
             // Si es un perfil built-in, priorizamos la versión actual del código
             // para reflejar cambios globales de paleta al instante.
-            when (profile.id) {
-                NeonMintProfile.id -> NeonMintProfile
-                CherryProfile.id -> CherryProfile
-                else -> profile
-            }
+            if (profile.id == CherryProfile.id) CherryProfile
+            else BuiltinProfiles.firstOrNull { it.id == profile.id } ?: profile
         }
-        return if (sanitized.isEmpty()) defaultProfiles() else sanitized
+        return addNewBuiltinsOnce(sanitized)
     }
 
     fun saveProfiles(profiles: List<BeatMyBeatThemeProfile>) {
@@ -149,9 +150,23 @@ class ThemeProfilesStore(private val context: Context) {
         return resolved
     }
 
-    fun defaultProfiles(): List<BeatMyBeatThemeProfile> = listOf(NeonMintProfile)
+    fun defaultProfiles(): List<BeatMyBeatThemeProfile> = BuiltinProfiles
+
+    /**
+     * v1.4 añade Estanque, Brasa y Noche. Quien ya tenía perfiles guardados no los vería (la lista
+     * persistida manda), así que se añaden una sola vez; si luego los borra, no vuelven.
+     */
+    private fun addNewBuiltinsOnce(profiles: List<BeatMyBeatThemeProfile>): List<BeatMyBeatThemeProfile> {
+        if (prefs.getBoolean(KEY_BUILTINS_V14, false)) return profiles
+        val missing = BuiltinProfiles.filter { builtin -> profiles.none { it.id == builtin.id } }
+        val merged = profiles + missing
+        prefs.edit().putBoolean(KEY_BUILTINS_V14, true).commit()
+        if (missing.isNotEmpty()) saveProfiles(merged)
+        return merged
+    }
 
     companion object {
+        private const val KEY_BUILTINS_V14 = "builtin_profiles_v14_added"
         private const val KEY_PROFILES = "profiles_json"
         private const val KEY_ACTIVE_ID = "active_profile_id"
     }

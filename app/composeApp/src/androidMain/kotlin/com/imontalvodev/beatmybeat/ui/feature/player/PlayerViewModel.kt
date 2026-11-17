@@ -45,6 +45,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val id: Long,
         val name: String,
         val songIds: List<Long>, // admite duplicados (si el usuario los permite)
+        /** Ruta de la foto personalizada (en filesDir); null = portada por defecto. */
+        val coverPath: String? = null,
     )
 
     private val _playlists = MutableStateFlow<List<PlaylistEntity>>(loadPlaylists())
@@ -158,9 +160,33 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun deletePlaylist(playlistId: Long): Boolean {
         val updated = _playlists.value.filterNot { it.id == playlistId }
         if (updated.size == _playlists.value.size) return false
+        PlaylistCovers.delete(_playlists.value.firstOrNull { it.id == playlistId }?.coverPath)
         _playlists.value = updated
         savePlaylists(updated)
         return true
+    }
+
+    /** Pone (o quita con null) la foto de una playlist y borra el archivo anterior. */
+    fun setPlaylistCover(playlistId: Long, coverPath: String?) {
+        val current = _playlists.value
+        val idx = current.indexOfFirst { it.id == playlistId }
+        if (idx < 0) {
+            PlaylistCovers.delete(coverPath)
+            return
+        }
+        val old = current[idx].coverPath
+        if (old != coverPath) PlaylistCovers.delete(old)
+        val updated = current.toMutableList().also { it[idx] = it[idx].copy(coverPath = coverPath) }
+        _playlists.value = updated
+        savePlaylists(updated)
+    }
+
+    /** Reordena las playlists (orden que se ve en la lista y en «Añadir a playlist»). */
+    fun movePlaylist(from: Int, to: Int) {
+        val updated = _playlists.value.movedItem(from, to)
+        if (updated === _playlists.value) return
+        _playlists.value = updated
+        savePlaylists(updated)
     }
 
     fun renamePlaylist(playlistId: Long, newName: String): RenamePlaylistResult {
@@ -271,7 +297,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     val v = songIdsArr.optLong(j, -1L)
                     if (v >= 0) songIds.add(v)
                 }
-                if (id > 0) list.add(PlaylistEntity(id = id, name = name, songIds = songIds))
+                val cover = obj.optString("cover", "").takeIf { it.isNotBlank() }
+                if (id > 0) list.add(PlaylistEntity(id = id, name = name, songIds = songIds, coverPath = cover))
             }
             list
         }.getOrDefault(emptyList())
@@ -298,6 +325,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             val songIdsArr = JSONArray()
             p.songIds.forEach { songIdsArr.put(it) }
             obj.put("songIds", songIdsArr)
+            p.coverPath?.let { obj.put("cover", it) }
             arr.put(obj)
         }
         root.put("playlists", arr)
