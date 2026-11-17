@@ -172,6 +172,30 @@ import com.imontalvodev.beatmybeat.shared.lyrics.LrcParser
 import com.imontalvodev.beatmybeat.ui.network.ArtworkCache
 import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.AppText
+import com.imontalvodev.beatmybeat.ui.theme.CharcaColors
+import com.imontalvodev.beatmybeat.ui.theme.EqualizerBars
+import com.imontalvodev.beatmybeat.ui.theme.charcaChipBorder
+import com.imontalvodev.beatmybeat.ui.theme.charcaChipColors
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.outlined.HideImage
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material3.Surface
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+import androidx.compose.foundation.BorderStroke
 import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
@@ -218,6 +242,7 @@ internal fun TrackRow(
     isFavorite: Boolean,
     showRemoveFromPlaylist: Boolean,
     onRemoveFromPlaylist: () -> Unit,
+    isPlaying: Boolean = false,
 ) {
     val selectedCountLabel = stringResource(R.string.player_selection_actions_cd)
     var suppressClickAfterLongPress by remember { mutableStateOf(false) }
@@ -323,6 +348,27 @@ internal fun TrackRow(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (isFavorite && !selectionMode) {
+                Icon(
+                    imageVector = Icons.Filled.Favorite,
+                    contentDescription = stringResource(R.string.player_action_favorite_remove),
+                    tint = CharcaColors.amber,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            // Sonando: barras animadas; el resto muestra la duración.
+            if (!selectionMode) {
+                if (isCurrent && isPlaying) {
+                    EqualizerBars(modifier = Modifier.padding(horizontal = Spacing.sm))
+                } else if (track.durationMs > 0) {
+                    Text(
+                        text = formatMs(track.durationMs.toInt()),
+                        style = AppText.meta,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = Spacing.xs),
                     )
                 }
             }
@@ -599,69 +645,96 @@ internal fun LibrarySectionChips(
                 onClick = { onSelectSection(section) },
                 label = { Text(stringResource(labelRes)) },
                 shape = RoundedCornerShape(Radius.pill),
-                colors = FilterChipDefaults.filterChipColors(
-                    containerColor = scheme.surfaceContainerHigh,
-                    labelColor = scheme.onSurface,
-                    selectedContainerColor = scheme.primary,
-                    selectedLabelColor = scheme.onPrimary,
-                ),
-                border = null,
+                colors = charcaChipColors(),
+                border = charcaChipBorder(selected = section == selectedSection),
             )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun LibrarySortMenu(
     selectedSort: SortOption,
     onSelectSort: (SortOption) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     val options = listOf(
         SortOption.NAME_ASC to R.string.player_sort_name_asc,
         SortOption.NAME_DESC to R.string.player_sort_name_desc,
         SortOption.NEWEST_FIRST to R.string.player_sort_recent,
         SortOption.OLDEST_FIRST to R.string.player_sort_oldest,
     )
-    Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Sort,
-                contentDescription = stringResource(R.string.player_sort_cd),
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            shape = RoundedCornerShape(Radius.sm),
+    IconButton(onClick = { open = true }) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.Sort,
+            contentDescription = stringResource(R.string.player_sort_cd),
+            tint = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    if (open) {
+        // Hoja inferior en vez de menú desplegable: el menú se abría encima del buscador y de los
+        // chips, con el estilo por defecto de M3 y sin título. Aquí cada opción es una fila grande.
+        ModalBottomSheet(
+            onDismissRequest = { open = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(topStart = Radius.lg, topEnd = Radius.lg),
         ) {
-            options.forEach { (option, labelRes) ->
-                val selected = option == selectedSort
-                DropdownMenuItem(
-                    text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg)
+                    .navigationBarsPadding()
+                    .padding(bottom = Spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                Text(
+                    text = stringResource(R.string.player_sort_cd),
+                    style = AppText.sectionHeader,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = Spacing.sm),
+                )
+                options.forEach { (option, labelRes) ->
+                    val selected = option == selectedSort
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp)
+                            .clip(RoundedCornerShape(Radius.md))
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                else Color.Transparent,
+                            )
+                            .selectable(
+                                selected = selected,
+                                role = Role.RadioButton,
+                                onClick = {
+                                    onSelectSort(option)
+                                    scope.launch { sheetState.hide() }.invokeOnCompletion { open = false }
+                                },
+                            )
+                            .padding(horizontal = Spacing.lg),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Text(
                             text = stringResource(labelRes),
+                            style = MaterialTheme.typography.titleMedium,
                             color = if (selected) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
                         )
-                    },
-                    trailingIcon = if (selected) {
-                        {
+                        if (selected) {
                             Icon(
                                 imageVector = Icons.Filled.Check,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
-                    } else {
-                        null
-                    },
-                    onClick = {
-                        onSelectSort(option)
-                        expanded = false
-                    },
-                )
+                    }
+                }
             }
         }
     }
@@ -680,21 +753,21 @@ internal fun PlayShuffleRow(
             onClick = onPlay,
             modifier = Modifier
                 .weight(1f)
-                .height(48.dp),
+                .height(52.dp),
             shape = RoundedCornerShape(Radius.pill),
         ) {
             Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(Spacing.sm))
             Text(stringResource(R.string.player_play), style = MaterialTheme.typography.labelLarge)
         }
-        FilledTonalButton(
+        OutlinedButton(
             onClick = onShuffle,
             modifier = Modifier
                 .weight(1f)
-                .height(48.dp),
+                .height(52.dp),
             shape = RoundedCornerShape(Radius.pill),
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant),
+            colors = ButtonDefaults.outlinedButtonColors(
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ),
         ) {
@@ -771,13 +844,24 @@ internal fun LibraryListEmptyHint(
             .padding(horizontal = Spacing.xl, vertical = Spacing.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-        )
-        Spacer(modifier = Modifier.height(Spacing.md))
+        val tint = if (section == PlayerSection.Favorites && query.isBlank()) CharcaColors.amber
+        else MaterialTheme.colorScheme.primary
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = 0.14f))
+                .border(1.5.dp, tint.copy(alpha = 0.35f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+                tint = tint,
+            )
+        }
+        Spacer(modifier = Modifier.height(Spacing.lg))
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
@@ -799,8 +883,11 @@ internal fun LibraryListEmptyHint(
 @Composable
 private fun PlaylistOptionsMenu(
     playlistId: Long,
+    hasCover: Boolean,
     onRequestRename: (Long) -> Unit,
     onRequestDelete: (Long) -> Unit,
+    onRequestChangeCover: (Long) -> Unit,
+    onRequestRemoveCover: (Long) -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Box {
@@ -825,6 +912,24 @@ private fun PlaylistOptionsMenu(
                 },
             )
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.player_playlist_change_photo)) },
+                leadingIcon = { MenuIcon(Icons.Outlined.Image) },
+                onClick = {
+                    menuExpanded = false
+                    onRequestChangeCover(playlistId)
+                },
+            )
+            if (hasCover) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.player_playlist_remove_photo)) },
+                    leadingIcon = { MenuIcon(Icons.Outlined.HideImage) },
+                    onClick = {
+                        menuExpanded = false
+                        onRequestRemoveCover(playlistId)
+                    },
+                )
+            }
+            DropdownMenuItem(
                 text = { DestructiveMenuText(stringResource(R.string.player_delete_playlist_menu)) },
                 leadingIcon = { MenuIcon(Icons.Outlined.Delete, destructive = true) },
                 onClick = {
@@ -837,19 +942,50 @@ private fun PlaylistOptionsMenu(
 }
 
 @Composable
-private fun PlaylistCover(size: Dp) {
+private fun PlaylistCover(size: Dp, coverPath: String? = null) {
+    val photo = remember(coverPath) { PlaylistCovers.file(coverPath) }
+    if (photo != null) {
+        AsyncImage(
+            model = photo,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(Radius.sm)),
+        )
+        return
+    }
+    val scheme = MaterialTheme.colorScheme
+    val amber = CharcaColors.amber
+    // Portada «Charca»: degradado del tema con anillos de charca en la esquina y el icono encima.
     Box(
         modifier = Modifier
             .size(size)
             .clip(RoundedCornerShape(Radius.sm))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+            .background(
+                Brush.linearGradient(
+                    listOf(scheme.tertiary.copy(alpha = 0.55f), scheme.primary.copy(alpha = 0.85f), amber.copy(alpha = 0.9f)),
+                ),
+            )
+            .drawBehind {
+                val stroke = Stroke(width = (size.toPx() * 0.035f).coerceAtLeast(1.5f))
+                val ringColor = Color.White
+                for ((i, f) in listOf(0.95f, 0.65f, 0.38f).withIndex()) {
+                    drawCircle(
+                        color = ringColor.copy(alpha = 0.34f - i * 0.07f),
+                        radius = this.size.minDimension * f / 2f,
+                        center = Offset(this.size.width * 0.12f, this.size.height * 0.95f),
+                        style = stroke,
+                    )
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.QueueMusic,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(size * 0.5f),
+            tint = scheme.onPrimary,
+            modifier = Modifier.size(size * 0.46f),
         )
     }
 }
@@ -859,28 +995,39 @@ internal fun PlaylistDetailHeader(
     playlistName: String,
     trackCount: Int,
     playlistId: Long,
+    coverPath: String?,
     onBack: () -> Unit,
     onRequestRename: (Long) -> Unit,
     onRequestDelete: (Long) -> Unit,
+    onRequestChangeCover: (Long) -> Unit,
+    onRequestRemoveCover: (Long) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .size(44.dp)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), CircleShape),
+        ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = stringResource(R.string.common_cancel),
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }
-        Spacer(modifier = Modifier.width(Spacing.xs))
-        PlaylistCover(size = 56.dp)
+        Spacer(modifier = Modifier.width(Spacing.md))
+        // Tocar la portada abre el selector de foto.
+        Box(modifier = Modifier.clip(RoundedCornerShape(Radius.sm)).clickable { onRequestChangeCover(playlistId) }) {
+            PlaylistCover(size = 56.dp, coverPath = coverPath)
+        }
         Spacer(modifier = Modifier.width(Spacing.md))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = playlistName,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp, lineHeight = 28.sp),
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -893,12 +1040,16 @@ internal fun PlaylistDetailHeader(
         }
         PlaylistOptionsMenu(
             playlistId = playlistId,
+            hasCover = coverPath != null,
             onRequestRename = onRequestRename,
             onRequestDelete = onRequestDelete,
+            onRequestChangeCover = onRequestChangeCover,
+            onRequestRemoveCover = onRequestRemoveCover,
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PlaylistPickerBar(
     playlists: List<PlayerViewModel.PlaylistEntity>,
@@ -907,6 +1058,10 @@ internal fun PlaylistPickerBar(
     onCreateEmpty: () -> Unit,
     onRequestDelete: (Long) -> Unit,
     onRequestRename: (Long) -> Unit,
+    onRequestChangeCover: (Long) -> Unit,
+    onRequestRemoveCover: (Long) -> Unit,
+    onMovePlaylist: (from: Int, to: Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (playlists.isEmpty()) {
         Column(
@@ -933,6 +1088,7 @@ internal fun PlaylistPickerBar(
             Spacer(modifier = Modifier.height(Spacing.lg))
             Button(
                 onClick = onCreateEmpty,
+                modifier = Modifier.height(52.dp),
                 shape = RoundedCornerShape(Radius.pill),
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -943,11 +1099,20 @@ internal fun PlaylistPickerBar(
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
-    ) {
+    val haptics = LocalHapticFeedback.current
+    val reorderCd = stringResource(R.string.player_playlist_reorder_cd)
+    val listState = rememberLazyListState()
+    val currentIds by rememberUpdatedState(playlists.map { it.id })
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromIdx = currentIds.indexOf(from.key)
+        val toIdx = currentIds.indexOf(to.key)
+        if (fromIdx >= 0 && toIdx >= 0) {
+            onMovePlaylist(fromIdx, toIdx)
+            haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+        }
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -955,51 +1120,107 @@ internal fun PlaylistPickerBar(
         ) {
             Text(
                 text = stringResource(R.string.player_playlists_header),
-                style = AppText.sectionLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppText.sectionHeader,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            TextButton(onClick = onCreateEmpty) {
+            OutlinedButton(
+                onClick = onCreateEmpty,
+                shape = RoundedCornerShape(Radius.pill),
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+            ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(Spacing.xs))
-                Text(stringResource(R.string.player_create_playlist_button))
+                Text(
+                    text = stringResource(R.string.player_create_playlist_button),
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
         }
+        Spacer(modifier = Modifier.height(Spacing.sm))
 
-        playlists.forEach { p ->
-            val selected = p.id == selectedPlaylistId
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(Radius.sm))
-                    .background(
-                        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-                        else Color.Transparent,
-                    )
-                    .clickable { onSelect(p.id) }
-                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PlaylistCover(size = 48.dp)
-                Spacer(modifier = Modifier.width(Spacing.md))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = p.name,
-                        style = AppText.trackTitle,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = pluralStringResource(R.plurals.library_track_count, p.songIds.size, p.songIds.size),
-                        style = AppText.trackArtist,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+            items(playlists, key = { it.id }) { p ->
+                ReorderableItem(reorderState, key = p.id) { isDragging ->
+                    val selected = p.id == selectedPlaylistId
+                    val elevation by animateDpAsState(if (isDragging) 12.dp else 0.dp, label = "playlist_drag")
+                    val dragStarted = {
+                        haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                    }
+                    val rowShape = RoundedCornerShape(Radius.md)
+                    Surface(
+                        shape = rowShape,
+                        color = when {
+                            isDragging -> MaterialTheme.colorScheme.surfaceContainerHighest
+                            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                            else -> MaterialTheme.colorScheme.surfaceContainer
+                        },
+                        border = BorderStroke(
+                            width = if (isDragging) 1.5.dp else 1.dp,
+                            color = when {
+                                isDragging -> MaterialTheme.colorScheme.primary
+                                selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                else -> MaterialTheme.colorScheme.outlineVariant
+                            },
+                        ),
+                        shadowElevation = elevation,
+                        // Pulsación larga en cualquier punto de la fila, además del asa.
+                        modifier = Modifier.longPressDraggableHandle(
+                            onDragStarted = { dragStarted() },
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .clickable { onSelect(p.id) }
+                                .padding(end = Spacing.xs, top = Spacing.sm, bottom = Spacing.sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 40.dp, height = 48.dp)
+                                    .draggableHandle(onDragStarted = { dragStarted() })
+                                    .semantics { contentDescription = reorderCd },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.DragHandle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            PlaylistCover(size = 48.dp, coverPath = p.coverPath)
+                            Spacer(modifier = Modifier.width(Spacing.md))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = p.name,
+                                    style = AppText.trackTitle,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = pluralStringResource(R.plurals.library_track_count, p.songIds.size, p.songIds.size),
+                                    style = AppText.trackArtist,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            PlaylistOptionsMenu(
+                                playlistId = p.id,
+                                hasCover = p.coverPath != null,
+                                onRequestRename = onRequestRename,
+                                onRequestDelete = onRequestDelete,
+                                onRequestChangeCover = onRequestChangeCover,
+                                onRequestRemoveCover = onRequestRemoveCover,
+                            )
+                        }
+                    }
                 }
-                PlaylistOptionsMenu(
-                    playlistId = p.id,
-                    onRequestRename = onRequestRename,
-                    onRequestDelete = onRequestDelete,
-                )
             }
         }
     }
@@ -1123,3 +1344,39 @@ internal fun LibraryEmptyState(
     }
 }
 
+
+
+/** Cabecera de Favoritos: corazón ámbar y el número de canciones (el ámbar marca favoritos). */
+@Composable
+internal fun FavoritesBanner(count: Int, modifier: Modifier = Modifier) {
+    val amber = CharcaColors.amber
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.md))
+            .background(amber.copy(alpha = 0.12f))
+            .border(1.dp, amber.copy(alpha = 0.35f), RoundedCornerShape(Radius.md))
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Favorite,
+            contentDescription = null,
+            tint = amber,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column {
+            Text(
+                text = stringResource(R.string.player_section_favorites),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = pluralStringResource(R.plurals.library_track_count, count, count),
+                style = AppText.meta,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}

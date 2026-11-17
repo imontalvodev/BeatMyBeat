@@ -366,4 +366,21 @@
         <item quantity="one">%1$d minute</item>
         <item quantity="other">%1$d minutes</item>
     </plurals>
+
+    <!-- v1.4 Splash «Charca» -->
+    <string name="splash_tagline">Your favorite music, always with you.</string>
+    <string name="splash_subtitle">Download from YouTube and YouTube Music. No ads, no server.</string>
+    <string name="splash_enter">Enter</string>
+    <string name="theme_preview_kicker">PREVIEW · %1$s</string>
+    <string name="analyze_in_progress">In progress</string>
+    <string name="analyze_detected_badge">Detected</string>
+    <string name="analyze_clear_url_cd">Clear link</string>
+    <plurals name="analyze_active_downloads_cd">
+        <item quantity="one">%d active download</item>
+        <item quantity="other">%d active downloads</item>
+    </plurals>
+    <string name="player_playlist_change_photo">Change photo</string>
+    <string name="player_playlist_remove_photo">Remove photo</string>
+    <string name="player_playlist_photo_error">Couldn\'t use that image.</string>
+    <string name="player_playlist_reorder_cd">Reorder playlist</string>
 </resources>

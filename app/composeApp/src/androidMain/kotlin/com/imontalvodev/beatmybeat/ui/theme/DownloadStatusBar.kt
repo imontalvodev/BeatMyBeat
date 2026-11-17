@@ -3,6 +3,12 @@ package com.imontalvodev.beatmybeat.ui.theme
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -76,9 +82,10 @@ fun DownloadStatusBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
         shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = 6.dp,
     ) {
         Column(modifier = Modifier.clickable(onClick = onOpen)) {
@@ -151,6 +158,132 @@ fun DownloadStatusBar(
                 )
             }
             Spacer(modifier = Modifier.height(Spacing.xs))
+        }
+    }
+}
+
+
+/** Progreso global 0..1 de una descarga (lote o canción); null si es indeterminado. */
+internal fun ActiveDownloadUiState.overallFraction(): Float? =
+    if (isBatch) {
+        val total = batchTotal ?: 0
+        if (total > 0) {
+            val done = (batchDone ?: 0) + batchFailed
+            ((done + (fileFraction ?: 0f)) / total).coerceIn(0f, 1f)
+        } else {
+            null
+        }
+    } else {
+        fileFraction
+    }
+
+/**
+ * Fila «En curso» de la pantalla Descargar (lienzo «Charca»): icono, título, porcentaje en el
+ * acento, barra fina de 4dp y la fase debajo. El botón cancela la descarga.
+ */
+@Composable
+fun ActiveDownloadRow(
+    download: ActiveDownloadUiState,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val overall = download.overallFraction()
+    val animated by animateFloatAsState(
+        targetValue = overall ?: 0f,
+        animationSpec = tween(Motion.LAYOUT),
+        label = "active_row_progress",
+    )
+    val title = download.title.ifBlank { stringResource(R.string.download_song_title) }
+    val detail = buildString {
+        if (download.isBatch && (download.batchTotal ?: 0) > 0) {
+            append((download.batchDone ?: 0) + download.batchFailed)
+            append('/')
+            append(download.batchTotal)
+            append(" · ")
+        }
+        append(download.phase.ifBlank { stringResource(R.string.download_processing) })
+    }
+    val accent = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(Radius.sm))
+                .background(accent.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = if (download.isBatch) Icons.Filled.PlaylistPlay else Icons.Filled.Download,
+                contentDescription = null,
+                tint = accent,
+            )
+        }
+        Spacer(modifier = Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (overall != null) {
+                    Text(
+                        text = "${(overall * 100).toInt()}%",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = accent,
+                        modifier = Modifier.padding(start = Spacing.sm),
+                    )
+                }
+            }
+            if (overall != null) {
+                LinearProgressIndicator(
+                    progress = { animated },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(Radius.pill)),
+                    color = accent,
+                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
+                    drawStopIndicator = {},
+                    gapSize = 0.dp,
+                )
+            } else {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(Radius.pill)),
+                    color = accent,
+                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
+                    gapSize = 0.dp,
+                )
+            }
+            Text(
+                text = detail,
+                style = AppText.meta,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = onCancel) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = stringResource(R.string.download_cancel),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

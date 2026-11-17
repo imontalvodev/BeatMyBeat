@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4] — Unreleased
+
+### Changed
+- **New "Charca" look.** Bricolage Grotesque for titles and Inter for everything else, four corner radii (12 · 20 · 28 · 32) instead of twelve, and a warm amber for favorites, karaoke and the sleep timer. The default Bluewave palette is refreshed (brighter accent, deeper background).
+- **Floating navigation bar and mini player.** Tabs are now Download · Library · Settings; the app still opens on Library. The mini player is a floating card with a filled play button and an edge-to-edge progress line.
+- **Splash screen** with the pond ripples and an "Enter" button.
+- **Library:** outlined chips, outlined *Shuffle* button, song duration on every row, a small amber heart on favorites and animated bars on the song that is playing.
+- **Full player:** pond ripples behind the cover while music plays, bigger play button with a glow, amber heart and karaoke mic, and amber lyrics (words you already sang stay lit).
+- **Queue:** *Now playing* card with accent outline, outlined *Clear* button and an accent outline while you drag a song.
+- **Settings:** header with the frog logo and version, and a quick theme picker with a live preview. New built-in themes: **Estanque** (light), **Brasa** and **Noche**. Your own color profiles are kept; light themes now also switch the status bar icons.
+- **Download:** mode selector as chips, a clear (✕) button in the link field, a "Detected" badge on playlist/album previews, an **In progress** section with a thin progress bar, an amber badge with the number of active downloads, and the format chips now wrap instead of being cut off.
+- **Favorites:** amber header with the song count, and a friendlier empty state.
+- **Playlist photos.** Pick a photo for any playlist from its ⋮ menu (**Change photo** / **Remove photo**) or by tapping the cover inside the playlist. The image is cropped to a square and copied into the app, so it keeps working if you move or delete the original; no permissions needed.
+- **Reorder playlists.** Drag the grip on the left of a playlist, or long-press anywhere on its row, to move it (for example to the top). The order is saved and is also used in "Add to playlist".
+- **Playlists:** gradient covers with pond rings, card rows, an outlined **Create** button and a round back button in the playlist detail.
+- **Sort:** the sort menu is now a bottom sheet with one large row per option, and the list returns to the top after sorting.
+- **Queue:** drag handle on the left (like the design) and long-press anywhere on a row to reorder.
+- Amber on light themes is now a clearer burnt amber (`#B45309`) instead of a dull brown.
+- Motion tokens are now 100 · 180 · 280 ms, with 700 ms reserved for the splash. Ripples and equalizer bars stay still when system animations are off.
+
+### Fixed
+- **Queue reorder not sticking.** Dragging or removing songs in the queue only changed the visible list; adding a song, skipping or restarting the app brought the old order back. The session order is now updated too.
+- **Library scrolled after sorting.** Sorting A-Z could leave the list scrolled with the first rows hidden.
+- **Debug builds.** NewPipe Extractor 0.27 uses `record` and Android Gradle Plugin's per-library dexing failed with "Record desugaring"; debug builds now go through R8 without shrinking or obfuscation.
+- **"Play next" order.** Adding several songs with *Play next* used to stack them in reverse (the last one added played first). They now play in the order you added them (FIFO), after the song that is playing.
+
 ## [1.3.4] — 2026-11-10
 
 ### Fixed

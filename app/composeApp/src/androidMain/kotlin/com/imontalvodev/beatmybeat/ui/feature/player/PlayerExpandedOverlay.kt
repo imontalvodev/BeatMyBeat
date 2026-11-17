@@ -173,6 +173,8 @@ import com.imontalvodev.beatmybeat.ui.network.BitmapDecoding
 import com.imontalvodev.beatmybeat.ui.theme.Motion
 import com.imontalvodev.beatmybeat.ui.theme.AppLogo
 import com.imontalvodev.beatmybeat.ui.theme.AppText
+import com.imontalvodev.beatmybeat.ui.theme.CharcaColors
+import com.imontalvodev.beatmybeat.ui.theme.pondRipples
 import com.imontalvodev.beatmybeat.ui.theme.Radius
 import com.imontalvodev.beatmybeat.ui.theme.Spacing
 import com.imontalvodev.beatmybeat.ui.theme.TrackListSkeleton
@@ -524,6 +526,7 @@ internal fun ExpandedPlayerOverlay(
                             .fillMaxWidth(0.74f)
                             .padding(vertical = Spacing.sm)
                             .aspectRatio(1f)
+                            .pondRipples(MaterialTheme.colorScheme.primary, active = isPlaying)
                             .shadow(
                                 elevation = 24.dp,
                                 shape = RoundedCornerShape(Radius.xl),
@@ -579,7 +582,7 @@ internal fun ExpandedPlayerOverlay(
                                     if (karaokeActive) R.string.player_karaoke_exit_cd
                                     else R.string.player_karaoke_enter_cd,
                                 ),
-                                tint = if (karaokeActive) MaterialTheme.colorScheme.primary
+                                tint = if (karaokeActive) CharcaColors.amber
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             )
                         }
@@ -596,7 +599,7 @@ internal fun ExpandedPlayerOverlay(
                                 if (isFavorite) R.string.player_action_favorite_remove
                                 else R.string.player_action_favorite_add,
                             ),
-                            tint = if (isFavorite) MaterialTheme.colorScheme.primary
+                            tint = if (isFavorite) CharcaColors.amber
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                             modifier = Modifier.scale(favoriteScale),
                         )
@@ -633,7 +636,7 @@ internal fun ExpandedPlayerOverlay(
                                             .fillMaxWidth()
                                             .padding(bottom = Spacing.sm),
                                         style = AppText.meta,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                        color = CharcaColors.amber,
                                         textAlign = TextAlign.Center,
                                     )
                                 }
@@ -803,8 +806,14 @@ internal fun ExpandedPlayerOverlay(
                             val playPauseCd = stringResource(R.string.player_cd_play_pause)
                             Box(
                                 modifier = Modifier
-                                    .size(68.dp)
+                                    .size(76.dp)
                                     .scale(expandedPlayScale)
+                                    .shadow(
+                                        elevation = 14.dp,
+                                        shape = CircleShape,
+                                        ambientColor = MaterialTheme.colorScheme.primary,
+                                        spotColor = MaterialTheme.colorScheme.primary,
+                                    )
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.primary)
                                     .clickable(onClick = onTogglePlay)
@@ -815,7 +824,7 @@ internal fun ExpandedPlayerOverlay(
                                     imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(36.dp),
+                                    modifier = Modifier.size(40.dp),
                                 )
                             }
                             IconButton(

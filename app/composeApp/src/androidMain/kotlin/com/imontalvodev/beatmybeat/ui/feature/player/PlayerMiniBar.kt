@@ -27,6 +27,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -53,6 +54,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -212,7 +214,8 @@ internal fun MiniPlayerBar(
                 }
             },
         shape = RoundedCornerShape(Radius.md),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = 8.dp,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -274,15 +277,19 @@ internal fun MiniPlayerBar(
                         )
                     }
                 }
+                // Círculo relleno con el color del texto: es la acción principal de la tarjeta.
                 IconButton(
                     onClick = onTogglePlay,
-                    modifier = Modifier.scale(playScale),
+                    modifier = Modifier
+                        .scale(playScale)
+                        .size(44.dp)
+                        .background(MaterialTheme.colorScheme.onSurface, CircleShape),
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = stringResource(R.string.player_cd_play_pause),
-                        modifier = Modifier.size(30.dp),
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.surface,
                     )
                 }
                 IconButton(onClick = onNext) {
@@ -294,21 +301,19 @@ internal fun MiniPlayerBar(
                     )
                 }
             }
-            // Solo indicador: buscar en una barra de 2dp provocaba saltos accidentales al tocar la
-            // tarjeta. La búsqueda precisa vive en el reproductor expandido.
+            // Solo indicador: buscar en una barra fina provocaba saltos accidentales al tocar la
+            // tarjeta. La búsqueda precisa vive en el reproductor expandido. Va de borde a borde.
             LinearProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.md)
-                    .height(2.dp)
+                    .height(3.dp)
                     .semantics { contentDescription = progressAccessibilityLabel },
                 color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
                 drawStopIndicator = {},
                 gapSize = 0.dp,
             )
-            Spacer(modifier = Modifier.height(Spacing.xs))
         }
     }
 }

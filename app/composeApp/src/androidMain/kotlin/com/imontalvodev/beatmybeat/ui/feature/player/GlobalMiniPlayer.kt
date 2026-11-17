@@ -84,7 +84,7 @@ fun GlobalMiniPlayer(
     MiniPlayerBar(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
         title = state.currentTitle.ifBlank { null },
         artist = state.currentArtist,
         isPlaying = state.isPlaying,

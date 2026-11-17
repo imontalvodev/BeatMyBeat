@@ -10,6 +10,8 @@ BeatMyBeat bundles or depends on the following open-source components (non-exhau
 | [AndroidX / Media3](https://developer.android.com/jetpack/androidx) | Apache-2.0 | UI, playback |
 | [Jetpack Compose](https://developer.android.com/jetpack/compose) | Apache-2.0 | UI |
 | [Coil](https://coil-kt.github.io/coil/) | Apache-2.0 | Images |
+| [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) | SIL OFL 1.1 | Title font (`app/docs/licenses/OFL-BricolageGrotesque.txt`) |
+| [Inter](https://github.com/rsms/inter) | SIL OFL 1.1 | Body font (`app/docs/licenses/OFL-Inter.txt`) |
 | [LRCLIB](https://lrclib.net) (network API) | Community lyrics database | Synced lyrics |
 
 Full dependency versions: `app/gradle/libs.versions.toml`.

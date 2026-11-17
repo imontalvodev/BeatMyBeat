@@ -77,8 +77,8 @@ android {
         applicationId = "com.imontalvodev.beatmybeat"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 12
-        versionName = "1.3.4"
+        versionCode = 13
+        versionName = "1.4"
     }
     buildFeatures {
         buildConfig = true
@@ -123,6 +123,16 @@ android {
             // a la release — cosa que de todos modos fallaría por firma.
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+
+            // NewPipe Extractor (>= 0.27) usa `record` y el dexeo D8 por librería de AGP 8.13 no
+            // sabe desazucararlo. R8 sí (por eso release compila): se activa solo para dexear,
+            // con todo lo demás desactivado en proguard-debug.pro.
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android.txt"),
+                "proguard-rules.pro",
+                "proguard-debug.pro",
+            )
 
             // ffmpeg-kit trae libavcodec/libavformat/libavfilter compiladas para las cuatro ABIs:
             // ~90 MB de los ~136 MB del APK de debug. Al desarrollar solo se usa una, y un APK de

@@ -3,9 +3,11 @@ package com.imontalvodev.beatmybeat.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /**
  * Tokens de diseño de BeatMyBeat.
@@ -30,12 +32,15 @@ object Spacing {
     val xxl = 32.dp
 }
 
-/** Radios de esquina. Cuanto más grande la superficie, más redondeada — criterio M3 Expressive. */
+/**
+ * Radios de esquina «Charca»: cuatro en lugar de doce (12 · 20 · 28 · 32). Cuanto más grande la
+ * superficie, más redondeada.
+ */
 object Radius {
     val sm = 12.dp
-    val md = 18.dp
-    val lg = 24.dp
-    val xl = 28.dp
+    val md = 20.dp
+    val lg = 28.dp
+    val xl = 32.dp
     val pill = 999.dp
 }
 
@@ -50,20 +55,51 @@ object Radius {
  */
 object Motion {
 
+    /** Pulsaciones y retroalimentación táctil. */
+    const val INSTANT = 100
+
     /** Respuesta inmediata a una acción, y salidas. Lo que desaparece no se hace esperar. */
     const val QUICK = 180
 
     /** Entradas y crossfades de contenido. Es la duración por defecto. */
-    const val STANDARD = 240
+    const val STANDARD = 280
 
     /** Cambios estructurales de layout: expandir/colapsar, barras de progreso. */
-    const val LAYOUT = 320
+    const val LAYOUT = 280
+
+    /** El momento de marca: el Splash y sus ondas de charca. */
+    const val BRAND = 700
 
     /**
      * Cambios de ambiente que no deben llamar la atención — el color dominante que tiñe el fondo
      * del reproductor al cambiar de canción. Lento a propósito: si se nota, molesta.
      */
     const val AMBIENT = 600
+}
+
+/**
+ * Colores de «Charca» que no cambian con el tema: el ámbar marca favoritos, karaoke y avisos, y la
+ * tinta es el color del texto que va sobre un relleno de acento. El resto sale del `colorScheme`.
+ */
+object CharcaColors {
+    private val amberOnDark = Color(0xFFFFC25C)
+
+    /** Ámbar más hondo para fondos claros: el vivo no llega a 3:1 sobre Estanque (B45309 = 4,7:1). */
+    private val amberOnLight = Color(0xFFB45309)
+
+    /** Ámbar del tema activo: vivo sobre fondos oscuros, hondo sobre claros. */
+    val amber: Color
+        @Composable
+        get() = if (currentBeatMyBeatThemeProfile().isLight) amberOnLight else amberOnDark
+
+    val onAmber = Color(0xFF1A1203)
+
+    val amberContainer: Color
+        @Composable
+        get() = amber.copy(alpha = 0.16f)
+
+    /** Etiquetas y líneas de letra por llegar (≈5,5:1 sobre la superficie oscura). */
+    val faint = Color(0xFF7C939B)
 }
 
 /**
@@ -77,7 +113,7 @@ object AppText {
     /** Título de la canción en el reproductor expandido. Es el elemento dominante de la pantalla. */
     val playerTitle: TextStyle
         @Composable @ReadOnlyComposable
-        get() = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+        get() = MaterialTheme.typography.headlineSmall
 
     /** Título en el reproductor cuando compite por espacio (Modo Karaoke). */
     val playerTitleCompact: TextStyle
@@ -102,7 +138,7 @@ object AppText {
     /** Título de una pantalla de nivel superior (Biblioteca, Descargar, Ajustes). */
     val screenTitle: TextStyle
         @Composable @ReadOnlyComposable
-        get() = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
+        get() = MaterialTheme.typography.headlineMedium
 
     /** Etiqueta que agrupa filas dentro de una lista. */
     val sectionLabel: TextStyle
@@ -112,7 +148,17 @@ object AppText {
     /** Cabecera de sección dentro de una pantalla. */
     val sectionHeader: TextStyle
         @Composable @ReadOnlyComposable
-        get() = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+        get() = MaterialTheme.typography.titleLarge
+
+    /** Etiqueta en mayúsculas con tracking amplio («SONANDO AHORA», «LETRA»). */
+    val kicker: TextStyle
+        @Composable @ReadOnlyComposable
+        get() = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp)
+
+    /** Línea de letra sincronizada (grande, Bricolage). */
+    val lyricLine: TextStyle
+        @Composable @ReadOnlyComposable
+        get() = MaterialTheme.typography.headlineSmall.copy(fontSize = 27.sp, lineHeight = 32.sp)
 
     /** Datos secundarios: duración, contadores, estados. */
     val meta: TextStyle
